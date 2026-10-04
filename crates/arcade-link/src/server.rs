@@ -108,10 +108,13 @@ impl Gate {
     }
 }
 
+type CancelHandler = Box<dyn FnOnce() + Send>;
+
 #[derive(Default)]
 pub(crate) struct Jobs {
     next: AtomicU64,
     running: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    on_cancel: Mutex<HashMap<String, CancelHandler>>,
     idle: Condvar,
 }
 
@@ -124,13 +127,27 @@ impl Jobs {
         match self.running.lock().ok().and_then(|m| m.get(id).cloned()) {
             Some(flag) => {
                 flag.store(true, Ordering::SeqCst);
+                let handler = self.on_cancel.lock().ok().and_then(|mut h| h.remove(id));
+                if let Some(h) = handler {
+                    h();
+                }
                 true
             }
             None => false,
         }
     }
 
+    fn cancel_all(&self) {
+        let ids: Vec<String> = self.running.lock().map(|m| m.keys().cloned().collect()).unwrap_or_default();
+        for id in ids {
+            self.cancel(&id);
+        }
+    }
+
     fn finish(&self, id: &str) {
+        if let Ok(mut h) = self.on_cancel.lock() {
+            h.remove(id);
+        }
         if let Ok(mut m) = self.running.lock() {
             m.remove(id);
             if m.is_empty() {
@@ -194,6 +211,26 @@ impl Job {
     /// The cancellation flag, for code that already takes an `&AtomicBool`.
     pub fn cancel_flag(&self) -> Arc<AtomicBool> {
         self.cancel.clone()
+    }
+
+    /// Runs `f` once if the job is cancelled (by `job.cancel`, the caller
+    /// disconnecting, or the server stopping), for work that must be told
+    /// rather than polled. Runs it now if the job is already cancelled.
+    pub fn on_cancel(&self, f: impl FnOnce() + Send + 'static) {
+        if self.is_cancelled() {
+            return f();
+        }
+        if let Some(jobs) = self.jobs.upgrade() {
+            if let Ok(mut h) = jobs.on_cancel.lock() {
+                h.insert(self.id.clone(), Box::new(f));
+            }
+            // Cancelled between the check and the insert: run it now.
+            if self.is_cancelled() {
+                if let Some(h) = jobs.on_cancel.lock().ok().and_then(|mut h| h.remove(&self.id)) {
+                    h();
+                }
+            }
+        }
     }
 
     pub fn progress(&self, fraction: Option<f32>, message: &str) {
@@ -373,9 +410,7 @@ impl Server {
             return;
         }
         endpoint::remove_if_ours(&self.inner.config.locations, &self.inner.config.app.id, &self.inner.token);
-        if let Ok(m) = self.inner.jobs.running.lock() {
-            m.values().for_each(|f| f.store(true, Ordering::SeqCst));
-        }
+        self.inner.jobs.cancel_all();
         // Wake the accept thread so it sees `stopping` and drops the listener.
         let _ = transport::connect(&self.inner.address, Duration::from_millis(100));
     }

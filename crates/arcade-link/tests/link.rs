@@ -306,3 +306,40 @@ fn version_mismatch_is_reported() {
     assert_eq!(reply["error"]["code"], "version_mismatch");
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn cancel_handlers_run_once() {
+    struct Told(Arc<AtomicUsize>);
+    impl Handler for Told {
+        fn describe(&self) -> Vec<Action> {
+            vec![]
+        }
+        fn invoke(&self, _req: InvokeRequest, ctx: &InvokeContext) -> Result<Reply, LinkError> {
+            let job = ctx.start_job();
+            let ticket = job.ticket();
+            let told = self.0.clone();
+            let flag = job.cancel_flag();
+            job.on_cancel(move || {
+                told.fetch_add(1, Ordering::SeqCst);
+            });
+            std::thread::spawn(move || {
+                while !flag.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                job.finish(Err(LinkError::cancelled()));
+            });
+            Ok(Reply::Job(ticket))
+        }
+    }
+    let (dir, loc) = root("on-cancel");
+    let told = Arc::new(AtomicUsize::new(0));
+    let _s =
+        Server::start(ServerConfig { app: PeerInfo { id: "arcade.told".into(), version: "1".into() }, locations: loc.clone() }, Arc::new(Told(told.clone())))
+            .unwrap();
+    let mut c = Client::connect(&loc, "arcade.told", &me()).unwrap();
+    let cancel = AtomicBool::new(true);
+    let e = c.invoke(&InvokeRequest::new("x", "t"), &mut |_| {}, Some(&cancel)).unwrap_err();
+    assert_eq!(e.code, ErrorCode::Cancelled);
+    assert_eq!(told.load(Ordering::SeqCst), 1);
+    std::fs::remove_dir_all(dir).ok();
+}
