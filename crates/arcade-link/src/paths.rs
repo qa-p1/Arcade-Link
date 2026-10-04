@@ -9,16 +9,11 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 fn arcade_home() -> Option<PathBuf> {
-    env::var_os("ARCADE_HOME")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
+    env::var_os("ARCADE_HOME").filter(|v| !v.is_empty()).map(PathBuf::from)
 }
 
 fn env_dir(name: &str) -> Option<PathBuf> {
-    env::var_os(name)
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
+    env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from).filter(|p| p.is_absolute())
 }
 
 fn home() -> PathBuf {
@@ -37,9 +32,7 @@ pub fn registry_dir() -> PathBuf {
     }
     #[cfg(target_os = "linux")]
     {
-        env_dir("XDG_DATA_HOME")
-            .unwrap_or_else(|| home().join(".local/share"))
-            .join("arcade/apps")
+        env_dir("XDG_DATA_HOME").unwrap_or_else(|| home().join(".local/share")).join("arcade/apps")
     }
     #[cfg(target_os = "macos")]
     {
@@ -64,9 +57,7 @@ pub fn runtime_dir() -> PathBuf {
     {
         match env_dir("XDG_RUNTIME_DIR") {
             Some(d) => d.join("arcade"),
-            None => env_dir("XDG_CACHE_HOME")
-                .unwrap_or_else(|| home().join(".cache"))
-                .join("arcade/run"),
+            None => env_dir("XDG_CACHE_HOME").unwrap_or_else(|| home().join(".cache")).join("arcade/run"),
         }
     }
     #[cfg(target_os = "macos")]
@@ -93,9 +84,7 @@ pub fn handoff_dir() -> PathBuf {
     }
     #[cfg(target_os = "linux")]
     {
-        env_dir("XDG_CACHE_HOME")
-            .unwrap_or_else(|| home().join(".cache"))
-            .join("arcade/handoff")
+        env_dir("XDG_CACHE_HOME").unwrap_or_else(|| home().join(".cache")).join("arcade/handoff")
     }
     #[cfg(target_os = "macos")]
     {
@@ -123,20 +112,12 @@ pub struct Locations {
 impl Locations {
     /// The platform locations, honoring `ARCADE_HOME`.
     pub fn discover() -> Locations {
-        Locations {
-            registry: registry_dir(),
-            runtime: runtime_dir(),
-            handoff: handoff_dir(),
-        }
+        Locations { registry: registry_dir(), runtime: runtime_dir(), handoff: handoff_dir() }
     }
 
     /// Every root under `root`, the same layout as `ARCADE_HOME`.
     pub fn under(root: &Path) -> Locations {
-        Locations {
-            registry: root.join("apps"),
-            runtime: root.join("run"),
-            handoff: root.join("handoff"),
-        }
+        Locations { registry: root.join("apps"), runtime: root.join("run"), handoff: root.join("handoff") }
     }
 
     pub fn manifest(&self, app_id: &str) -> PathBuf {
@@ -167,18 +148,12 @@ pub fn ensure_private_dir(dir: &Path) -> io::Result<()> {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         let meta = fs::symlink_metadata(dir)?;
         if meta.file_type().is_symlink() || !meta.is_dir() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("{} is not a real directory", dir.display()),
-            ));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("{} is not a real directory", dir.display())));
         }
         // SAFETY: geteuid has no preconditions.
         let uid = unsafe { geteuid() };
         if meta.uid() != uid {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                format!("{} belongs to another user", dir.display()),
-            ));
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("{} belongs to another user", dir.display())));
         }
         if meta.mode() & 0o777 != 0o700 {
             fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
@@ -209,9 +184,7 @@ pub fn user_id() -> u32 {
 /// The file is readable only by the current user on Unix.
 pub fn write_atomic(path: &Path, bytes: &[u8], private: bool) -> io::Result<()> {
     use std::io::Write;
-    let dir = path
-        .parent()
-        .ok_or_else(|| io::Error::other("path has no parent"))?;
+    let dir = path.parent().ok_or_else(|| io::Error::other("path has no parent"))?;
     fs::create_dir_all(dir)?;
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
     let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
@@ -242,14 +215,8 @@ mod tests {
     fn under_matches_the_arcade_home_layout() {
         let dir = env::temp_dir().join("arcade-link-paths-test");
         let l = Locations::under(&dir);
-        assert_eq!(
-            l.manifest("arcade.box"),
-            dir.join("apps").join("arcade.box.json")
-        );
-        assert_eq!(
-            l.endpoint("arcade.box"),
-            dir.join("run").join("arcade.box.endpoint")
-        );
+        assert_eq!(l.manifest("arcade.box"), dir.join("apps").join("arcade.box.json"));
+        assert_eq!(l.endpoint("arcade.box"), dir.join("run").join("arcade.box.endpoint"));
         assert_eq!(l.handoff, dir.join("handoff"));
     }
 
@@ -260,10 +227,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
-                0o700
-            );
+            assert_eq!(fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
         }
         fs::remove_dir_all(dir).ok();
     }

@@ -12,9 +12,7 @@ use serde_json::Value;
 
 use crate::error::{ErrorCode, LinkError};
 use crate::server::{Handler, InvokeContext, Jobs, Reply, Sink};
-use crate::wire::{
-    self, method, InvokeRequest, InvokeResult, JobDone, JobProgress, LineReader, Message, PeerInfo,
-};
+use crate::wire::{self, method, InvokeRequest, InvokeResult, JobDone, JobProgress, LineReader, Message, PeerInfo};
 
 /// The flag every app uses for one-shot mode.
 pub const FLAG: &str = "--arcade-invoke";
@@ -34,25 +32,12 @@ pub fn run(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| {
-            LinkError::new(
-                ErrorCode::LaunchFailed,
-                format!("could not start {executable}: {e}"),
-            )
-        })?;
-    let line = Message::request(
-        1,
-        method::INVOKE,
-        serde_json::to_value(request).map_err(|e| LinkError::internal(e.to_string()))?,
-    )
-    .to_line();
+        .map_err(|e| LinkError::new(ErrorCode::LaunchFailed, format!("could not start {executable}: {e}")))?;
+    let line = Message::request(1, method::INVOKE, serde_json::to_value(request).map_err(|e| LinkError::internal(e.to_string()))?).to_line();
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(line.as_bytes());
     }
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| LinkError::internal("no stdout"))?;
+    let stdout = child.stdout.take().ok_or_else(|| LinkError::internal("no stdout"))?;
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let mut r = LineReader::new(stdout);
@@ -74,19 +59,13 @@ pub fn run(
                 }
                 continue;
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                break Err(LinkError::internal(
-                    "one-shot process ended without a result",
-                ))
-            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break Err(LinkError::internal("one-shot process ended without a result")),
         };
         match m {
             Ok(Some(m)) if m.kind() == wire::Kind::Response => {
                 break match (m.result, m.error) {
                     (_, Some(e)) => Err(e),
-                    (Some(r), None) => {
-                        serde_json::from_value(r).map_err(|e| LinkError::internal(e.to_string()))
-                    }
+                    (Some(r), None) => serde_json::from_value(r).map_err(|e| LinkError::internal(e.to_string())),
                     _ => Err(LinkError::internal("empty response")),
                 };
             }
@@ -96,11 +75,7 @@ pub fn run(
                 }
             }
             Ok(Some(_)) => {}
-            Ok(None) => {
-                break Err(LinkError::internal(
-                    "one-shot process ended without a result",
-                ))
-            }
+            Ok(None) => break Err(LinkError::internal("one-shot process ended without a result")),
             Err(e) => break Err(e),
         }
     };
@@ -133,8 +108,7 @@ impl Sink for StdoutSink {
 pub fn serve(handler: &dyn Handler) -> i32 {
     // One line is enough; don't wait for the caller to close stdin.
     let mut first = String::new();
-    let mut stdin =
-        std::io::BufReader::new(std::io::stdin().lock().take(wire::MAX_LINE as u64 + 1));
+    let mut stdin = std::io::BufReader::new(std::io::stdin().lock().take(wire::MAX_LINE as u64 + 1));
     while first.trim().is_empty() {
         first.clear();
         if std::io::BufRead::read_line(&mut stdin, &mut first).unwrap_or(0) == 0 {
@@ -147,23 +121,14 @@ pub fn serve(handler: &dyn Handler) -> i32 {
             let id = m.id.unwrap_or(1);
             match serde_json::from_value::<InvokeRequest>(m.params().clone()) {
                 Ok(req) => (id, run_handler(handler, req)),
-                Err(e) => (
-                    id,
-                    Err(LinkError::unsupported(format!("invalid invoke: {e}"))),
-                ),
+                Err(e) => (id, Err(LinkError::unsupported(format!("invalid invoke: {e}")))),
             }
         }
-        Ok(m) => (
-            m.id.unwrap_or(1),
-            Err(LinkError::internal("one-shot mode only accepts invoke")),
-        ),
+        Ok(m) => (m.id.unwrap_or(1), Err(LinkError::internal("one-shot mode only accepts invoke"))),
         Err(e) => (1, Err(e)),
     };
     let ok = outcome.is_ok();
-    let response = Message::response(
-        id,
-        outcome.map(|r| serde_json::to_value(r).unwrap_or(Value::Null)),
-    );
+    let response = Message::response(id, outcome.map(|r| serde_json::to_value(r).unwrap_or(Value::Null)));
     let mut out = std::io::stdout().lock();
     let _ = wire::write_message(&mut out, &response);
     if ok {
@@ -174,16 +139,8 @@ pub fn serve(handler: &dyn Handler) -> i32 {
 }
 
 fn run_handler(handler: &dyn Handler, request: InvokeRequest) -> Result<InvokeResult, LinkError> {
-    let sink = Arc::new(StdoutSink {
-        done: Mutex::new(None),
-        finished: Condvar::new(),
-    });
-    let ctx = InvokeContext {
-        sink: sink.clone(),
-        jobs: Arc::new(Jobs::default()),
-        peer: PeerInfo::default(),
-        started: Mutex::new(Vec::new()),
-    };
+    let sink = Arc::new(StdoutSink { done: Mutex::new(None), finished: Condvar::new() });
+    let ctx = InvokeContext { sink: sink.clone(), jobs: Arc::new(Jobs::default()), peer: PeerInfo::default(), started: Mutex::new(Vec::new()) };
     match handler.invoke(request, &ctx)? {
         Reply::Done(r) => Ok(r),
         Reply::Job(ticket) => {
@@ -192,10 +149,7 @@ fn run_handler(handler: &dyn Handler, request: InvokeRequest) -> Result<InvokeRe
             while done.is_none() {
                 done = sink.finished.wait(done).unwrap_or_else(|e| e.into_inner());
             }
-            done.take().map_or_else(
-                || Err(LinkError::internal("no result")),
-                JobDone::into_result,
-            )
+            done.take().map_or_else(|| Err(LinkError::internal("no result")), JobDone::into_result)
         }
     }
 }

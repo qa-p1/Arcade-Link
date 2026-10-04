@@ -42,11 +42,7 @@ pub struct Content {
 
 impl Content {
     pub fn text(kind: &str, text: impl Into<String>) -> Content {
-        Content {
-            kind: kind.into(),
-            text: Some(text.into()),
-            ..Default::default()
-        }
+        Content { kind: kind.into(), text: Some(text.into()), ..Default::default() }
     }
 
     pub fn plain(text: impl Into<String>) -> Content {
@@ -60,22 +56,9 @@ impl Content {
     /// A file by path, typed from its extension (`file/image`, `file/pdf`, …),
     /// or `folder/reference` for a directory.
     pub fn file(path: &Path) -> Content {
-        let kind = if path.is_dir() {
-            "folder/reference".to_string()
-        } else {
-            file_type_for_path(path)
-        };
-        let size = if path.is_file() {
-            std::fs::metadata(path).ok().map(|m| m.len())
-        } else {
-            None
-        };
-        Content {
-            kind,
-            path: Some(path.to_string_lossy().into_owned()),
-            size,
-            ..Default::default()
-        }
+        let kind = if path.is_dir() { "folder/reference".to_string() } else { file_type_for_path(path) };
+        let size = if path.is_file() { std::fs::metadata(path).ok().map(|m| m.len()) } else { None };
+        Content { kind, path: Some(path.to_string_lossy().into_owned()), size, ..Default::default() }
     }
 
     /// Several files as one `file/<kind>[]` value (`file/any[]` if mixed).
@@ -85,22 +68,11 @@ impl Content {
             Some(k) if kinds.iter().all(|x| x == k) => *k,
             _ => "any",
         };
-        Content {
-            kind: format!("file/{kind}[]"),
-            paths: paths
-                .iter()
-                .map(|p| p.to_string_lossy().into_owned())
-                .collect(),
-            ..Default::default()
-        }
+        Content { kind: format!("file/{kind}[]"), paths: paths.iter().map(|p| p.to_string_lossy().into_owned()).collect(), ..Default::default() }
     }
 
     pub fn structured(name: &str, data: Value) -> Content {
-        Content {
-            kind: format!("structured/{name}"),
-            data: Some(data),
-            ..Default::default()
-        }
+        Content { kind: format!("structured/{name}"), data: Some(data), ..Default::default() }
     }
 
     pub fn with_hint(mut self, hint: &str) -> Content {
@@ -119,11 +91,7 @@ impl Content {
 
     /// Every path this value refers to.
     pub fn all_paths(&self) -> Vec<&str> {
-        self.path
-            .iter()
-            .map(String::as_str)
-            .chain(self.paths.iter().map(String::as_str))
-            .collect()
+        self.path.iter().map(String::as_str).chain(self.paths.iter().map(String::as_str)).collect()
     }
 
     /// The size used for limit checks: the file sizes, or the text length.
@@ -131,15 +99,8 @@ impl Content {
         if let Some(s) = self.size {
             return s;
         }
-        let files: u64 = self
-            .all_paths()
-            .iter()
-            .filter_map(|p| std::fs::metadata(p).ok())
-            .map(|m| m.len())
-            .sum();
-        files
-            + self.text.as_ref().map_or(0, |t| t.len() as u64)
-            + self.html.as_ref().map_or(0, |t| t.len() as u64)
+        let files: u64 = self.all_paths().iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum();
+        files + self.text.as_ref().map_or(0, |t| t.len() as u64) + self.html.as_ref().map_or(0, |t| t.len() as u64)
     }
 }
 
@@ -216,35 +177,26 @@ pub fn accepts_content(accepts: &[String], content: &Content) -> bool {
 
 /// The Link file kind for a path, from its extension. Unknown → `any`.
 pub fn file_kind_for_path(path: &Path) -> &'static str {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .unwrap_or_default();
+    let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
     file_kind_for_extension(&ext)
 }
 
 /// The Link file kind for a lower-case extension without the dot.
 pub fn file_kind_for_extension(ext: &str) -> &'static str {
     match ext {
-        "png" | "jpg" | "jpeg" | "jpe" | "jfif" | "gif" | "webp" | "bmp" | "tif" | "tiff"
-        | "heic" | "heif" | "avif" | "ico" | "svg" | "jxl" | "tga" | "qoi" | "psd" | "raw"
-        | "cr2" | "nef" | "dng" | "arw" | "exr" | "hdr" => "image",
-        "mp4" | "mkv" | "mov" | "webm" | "avi" | "m4v" | "wmv" | "flv" | "mpg" | "mpeg" | "3gp"
-        | "ogv" => "video",
-        "mp3" | "wav" | "flac" | "ogg" | "oga" | "opus" | "m4a" | "aac" | "wma" | "aiff"
-        | "aif" | "alac" | "mid" | "midi" => "audio",
+        "png" | "jpg" | "jpeg" | "jpe" | "jfif" | "gif" | "webp" | "bmp" | "tif" | "tiff" | "heic" | "heif" | "avif" | "ico" | "svg" | "jxl" | "tga"
+        | "qoi" | "psd" | "raw" | "cr2" | "nef" | "dng" | "arw" | "exr" | "hdr" => "image",
+        "mp4" | "mkv" | "mov" | "webm" | "avi" | "m4v" | "wmv" | "flv" | "mpg" | "mpeg" | "3gp" | "ogv" => "video",
+        "mp3" | "wav" | "flac" | "ogg" | "oga" | "opus" | "m4a" | "aac" | "wma" | "aiff" | "aif" | "alac" | "mid" | "midi" => "audio",
         "pdf" => "pdf",
         "doc" | "docx" | "odt" | "rtf" | "pages" | "epub" => "document",
         "xls" | "xlsx" | "ods" | "csv" | "tsv" | "numbers" => "spreadsheet",
         "ppt" | "pptx" | "odp" | "key" => "presentation",
-        "zip" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "7z" | "rar" | "zst" | "lz" | "lzma"
-        | "cab" | "iso" => "archive",
+        "zip" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "7z" | "rar" | "zst" | "lz" | "lzma" | "cab" | "iso" => "archive",
         "txt" | "md" | "markdown" | "log" | "ini" | "cfg" | "conf" | "nfo" => "text",
-        "rs" | "c" | "h" | "cpp" | "hpp" | "cc" | "py" | "js" | "mjs" | "ts" | "tsx" | "jsx"
-        | "java" | "kt" | "go" | "rb" | "php" | "swift" | "cs" | "sh" | "bash" | "zsh" | "fish"
-        | "ps1" | "json" | "yaml" | "yml" | "toml" | "xml" | "html" | "htm" | "css" | "scss"
-        | "sql" | "lua" | "dart" | "qml" | "vue" | "svelte" => "code",
+        "rs" | "c" | "h" | "cpp" | "hpp" | "cc" | "py" | "js" | "mjs" | "ts" | "tsx" | "jsx" | "java" | "kt" | "go" | "rb" | "php" | "swift" | "cs" | "sh"
+        | "bash" | "zsh" | "fish" | "ps1" | "json" | "yaml" | "yml" | "toml" | "xml" | "html" | "htm" | "css" | "scss" | "sql" | "lua" | "dart" | "qml"
+        | "vue" | "svelte" => "code",
         "ttf" | "otf" | "woff" | "woff2" | "ttc" => "font",
         "obj" | "stl" | "gltf" | "glb" | "fbx" | "3mf" | "dae" | "ply" => "model",
         _ => "any",
@@ -278,9 +230,6 @@ mod tests {
     fn hints_are_required_when_named() {
         let cmd = Content::plain("rm -rf build").with_hint("command");
         assert!(content_matches("text/plain;hint=command", &cmd));
-        assert!(!content_matches(
-            "text/plain;hint=command",
-            &Content::plain("hello")
-        ));
+        assert!(!content_matches("text/plain;hint=command", &Content::plain("hello")));
     }
 }

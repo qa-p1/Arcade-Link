@@ -32,10 +32,7 @@ USAGE
 <app> is a canonical ID (arcade.box) or its short form (box).";
 
 fn me() -> PeerInfo {
-    PeerInfo {
-        id: "arcade.link-cli".into(),
-        version: env!("CARGO_PKG_VERSION").into(),
-    }
+    PeerInfo { id: "arcade.link-cli".into(), version: env!("CARGO_PKG_VERSION").into() }
 }
 
 fn app_id(arg: &str) -> String {
@@ -51,10 +48,7 @@ fn flag(args: &[String], name: &str) -> bool {
 }
 
 fn values<'a>(args: &'a [String], name: &str) -> Vec<&'a str> {
-    args.windows(2)
-        .filter(|w| w[0] == name)
-        .map(|w| w[1].as_str())
-        .collect()
+    args.windows(2).filter(|w| w[0] == name).map(|w| w[1].as_str()).collect()
 }
 
 fn value<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
@@ -70,12 +64,7 @@ fn main() -> ExitCode {
         Some("invoke") => invoke(&loc, &args),
         Some("status") => simple(&loc, &args, "app.status", json!({})),
         Some("activate") => simple(&loc, &args, "app.activate", json!({})),
-        Some("quit") => simple(
-            &loc,
-            &args,
-            "app.quit",
-            json!({ "force": flag(&args, "--force") }),
-        ),
+        Some("quit") => simple(&loc, &args, "app.quit", json!({ "force": flag(&args, "--force") })),
         Some("watch") => watch(&loc),
         Some("mock") => mock::run(&loc, &args),
         Some("check-manifest") => check_manifest(&args),
@@ -116,10 +105,7 @@ fn ls(loc: &Locations, args: &[String]) -> Result<(), String> {
         })
         .collect();
     if flag(args, "--json") {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&rows).unwrap_or_default()
-        );
+        println!("{}", serde_json::to_string_pretty(&rows).unwrap_or_default());
         return Ok(());
     }
     println!("registry: {}", loc.registry.display());
@@ -135,23 +121,14 @@ fn ls(loc: &Locations, args: &[String]) -> Result<(), String> {
             r["state"].as_str().unwrap_or(""),
             r["actions"],
             r["available"],
-            if r["linkEnabled"] == json!(false) {
-                "  [Link off]"
-            } else {
-                ""
-            }
+            if r["linkEnabled"] == json!(false) { "  [Link off]" } else { "" }
         );
     }
     Ok(())
 }
 
 fn manifest_for(loc: &Locations, id: &str) -> Result<Manifest, String> {
-    Registry::load(loc).get(id).cloned().ok_or_else(|| {
-        format!(
-            "{id} is not installed (no manifest in {})",
-            loc.registry.display()
-        )
-    })
+    Registry::load(loc).get(id).cloned().ok_or_else(|| format!("{id} is not installed (no manifest in {})", loc.registry.display()))
 }
 
 fn describe(loc: &Locations, args: &[String]) -> Result<(), String> {
@@ -161,10 +138,7 @@ fn describe(loc: &Locations, args: &[String]) -> Result<(), String> {
         Err(_) => ("manifest", manifest_for(loc, &id)?.actions),
     };
     if flag(args, "--json") {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&actions).unwrap_or_default()
-        );
+        println!("{}", serde_json::to_string_pretty(&actions).unwrap_or_default());
         return Ok(());
     }
     println!("{id} ({source}, {} actions)", actions.len());
@@ -173,22 +147,9 @@ fn describe(loc: &Locations, args: &[String]) -> Result<(), String> {
         let flags = format!(
             "{}{}",
             if a.interactive { " interactive" } else { "" },
-            if a.effects.is_empty() {
-                String::new()
-            } else {
-                format!(" [{}]", a.effects.join(", "))
-            }
+            if a.effects.is_empty() { String::new() } else { format!(" [{}]", a.effects.join(", ")) }
         );
-        println!(
-            "{mark} {:<42} {:<32} accepts {}{flags}",
-            a.id,
-            a.title,
-            if a.accepts.is_empty() {
-                "-".into()
-            } else {
-                a.accepts.join(" ")
-            }
-        );
+        println!("{mark} {:<42} {:<32} accepts {}{flags}", a.id, a.title, if a.accepts.is_empty() { "-".into() } else { a.accepts.join(" ") });
         if let Some(r) = &a.reason {
             println!("    unavailable: {r}");
         }
@@ -209,10 +170,7 @@ fn inputs(args: &[String]) -> Result<Vec<Content>, String> {
     }
     if let Some(t) = value(args, "--text") {
         let mut c = Content::text(value(args, "--type").unwrap_or("text/plain"), t);
-        c.hints = values(args, "--hint")
-            .into_iter()
-            .map(String::from)
-            .collect();
+        c.hints = values(args, "--hint").into_iter().map(String::from).collect();
         out.push(c);
     }
     if let Some(u) = value(args, "--url") {
@@ -229,25 +187,15 @@ fn invoke(loc: &Locations, args: &[String]) -> Result<(), String> {
     let action = args.get(2).ok_or("invoke needs an action")?;
     let mut options = serde_json::Map::new();
     for kv in values(args, "--option") {
-        let (k, v) = kv
-            .split_once('=')
-            .ok_or_else(|| format!("--option {kv}: expected key=value"))?;
-        options.insert(
-            k.into(),
-            serde_json::from_str(v).unwrap_or_else(|_| Value::String(v.into())),
-        );
+        let (k, v) = kv.split_once('=').ok_or_else(|| format!("--option {kv}: expected key=value"))?;
+        options.insert(k.into(), serde_json::from_str(v).unwrap_or_else(|_| Value::String(v.into())));
     }
-    let mut req = InvokeRequest::new(action, "arcade.link-cli")
-        .preset(value(args, "--preset"))
-        .options(Value::Object(options));
+    let mut req = InvokeRequest::new(action, "arcade.link-cli").preset(value(args, "--preset")).options(Value::Object(options));
     req.inputs = inputs(args)?;
     let manifest = manifest_for(loc, &id)?;
     let cancel = Arc::new(AtomicBool::new(false));
     let mut progress = |p: &arcade_link::JobProgress| {
-        let pct = p
-            .fraction
-            .map(|f| format!("{:>3.0}% ", f * 100.0))
-            .unwrap_or_default();
+        let pct = p.fraction.map(|f| format!("{:>3.0}% ", f * 100.0)).unwrap_or_default();
         eprintln!("… {pct}{}", p.message);
     };
     let mut launching = || eprintln!("… starting {id}");
@@ -257,11 +205,7 @@ fn invoke(loc: &Locations, args: &[String]) -> Result<(), String> {
         &me(),
         &manifest,
         &req,
-        CallOptions {
-            on_progress: Some(&mut progress),
-            cancel: Some(&cancel),
-            on_launching: Some(&mut launching),
-        },
+        CallOptions { on_progress: Some(&mut progress), cancel: Some(&cancel), on_launching: Some(&mut launching) },
     );
     let elapsed = started.elapsed();
     match result {
@@ -315,11 +259,7 @@ fn watch(loc: &Locations) -> Result<(), String> {
             if let Ok(mut c) = Client::connect(&loc, &id, &me()) {
                 if c.subscribe(&["app.changed"]).is_ok() {
                     while let Ok(n) = c.next_notification(None) {
-                        println!(
-                            "{id}: {} {}",
-                            n.method.unwrap_or_default(),
-                            n.params.unwrap_or_default()
-                        );
+                        println!("{id}: {} {}", n.method.unwrap_or_default(), n.params.unwrap_or_default());
                     }
                 }
                 println!("{id}: connection closed");

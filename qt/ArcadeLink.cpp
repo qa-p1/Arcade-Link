@@ -450,11 +450,15 @@ bool writeManifest(const Locations &locations, QJsonObject manifest, QString *er
 
 QString executablePath()
 {
+    const QString exe = QCoreApplication::applicationFilePath();
 #ifdef Q_OS_LINUX
+    // Only when this binary runs from that AppImage's mount: a process started
+    // by some other AppImage inherits APPIMAGE and APPDIR too.
     const QString appImage = qEnvironmentVariable("APPIMAGE");
-    if (!appImage.isEmpty()) return appImage;
+    const QString appDir = qEnvironmentVariable("APPDIR");
+    if (!appImage.isEmpty() && !appDir.isEmpty() && exe.startsWith(QDir(appDir).absolutePath() + QLatin1Char('/'))) return appImage;
 #endif
-    return QCoreApplication::applicationFilePath();
+    return exe;
 }
 
 static bool onThisPlatform(const QJsonObject &action)

@@ -55,25 +55,11 @@ pub enum Kind {
 
 impl Message {
     pub fn request(id: u64, method: &str, params: Value) -> Message {
-        Message {
-            v: PROTOCOL_VERSION,
-            id: Some(id),
-            method: Some(method.into()),
-            params: Some(params),
-            result: None,
-            error: None,
-        }
+        Message { v: PROTOCOL_VERSION, id: Some(id), method: Some(method.into()), params: Some(params), result: None, error: None }
     }
 
     pub fn notification(method: &str, params: Value) -> Message {
-        Message {
-            v: PROTOCOL_VERSION,
-            id: None,
-            method: Some(method.into()),
-            params: Some(params),
-            result: None,
-            error: None,
-        }
+        Message { v: PROTOCOL_VERSION, id: None, method: Some(method.into()), params: Some(params), result: None, error: None }
     }
 
     pub fn response(id: u64, result: Result<Value, LinkError>) -> Message {
@@ -81,14 +67,7 @@ impl Message {
             Ok(v) => (Some(v), None),
             Err(e) => (None, Some(e)),
         };
-        Message {
-            v: PROTOCOL_VERSION,
-            id: Some(id),
-            method: None,
-            params: None,
-            result,
-            error,
-        }
+        Message { v: PROTOCOL_VERSION, id: Some(id), method: None, params: None, result, error }
     }
 
     pub fn kind(&self) -> Kind {
@@ -116,23 +95,16 @@ impl Message {
         if line.len() > MAX_LINE {
             return Err(LinkError::too_large(MAX_LINE as u64));
         }
-        let m: Message = serde_json::from_str(line.trim_end_matches(['\r', '\n']))
-            .map_err(|e| LinkError::internal(format!("invalid message: {e}")))?;
+        let m: Message = serde_json::from_str(line.trim_end_matches(['\r', '\n'])).map_err(|e| LinkError::internal(format!("invalid message: {e}")))?;
         if m.v == 0 {
             return Err(LinkError::internal("invalid message: v must be 1 or later"));
         }
         let ok = match m.kind() {
-            Kind::Request | Kind::Notification => {
-                m.result.is_none()
-                    && m.error.is_none()
-                    && !m.method.as_deref().unwrap_or("").is_empty()
-            }
+            Kind::Request | Kind::Notification => m.result.is_none() && m.error.is_none() && !m.method.as_deref().unwrap_or("").is_empty(),
             Kind::Response => m.id.is_some() && (m.result.is_some() != m.error.is_some()),
         };
         if !ok {
-            return Err(LinkError::internal(
-                "invalid message: not a request, notification or response",
-            ));
+            return Err(LinkError::internal("invalid message: not a request, notification or response"));
         }
         Ok(m)
     }
@@ -147,10 +119,7 @@ pub struct LineReader<R> {
 
 impl<R: Read> LineReader<R> {
     pub fn new(inner: R) -> Self {
-        LineReader {
-            inner,
-            pending: Vec::new(),
-        }
+        LineReader { inner, pending: Vec::new() }
     }
 
     /// The next message; `Ok(None)` at end of stream. A timeout surfaces as
@@ -159,8 +128,7 @@ impl<R: Read> LineReader<R> {
         loop {
             if let Some(i) = self.pending.iter().position(|&b| b == b'\n') {
                 let line: Vec<u8> = self.pending.drain(..=i).collect();
-                let text = std::str::from_utf8(&line)
-                    .map_err(|_| LinkError::internal("message is not UTF-8"))?;
+                let text = std::str::from_utf8(&line).map_err(|_| LinkError::internal("message is not UTF-8"))?;
                 if text.trim().is_empty() {
                     continue;
                 }
@@ -173,11 +141,7 @@ impl<R: Read> LineReader<R> {
             let mut chunk = [0u8; 16 * 1024];
             match self.inner.read(&mut chunk) {
                 Ok(0) => {
-                    return if self.pending.iter().all(u8::is_ascii_whitespace) {
-                        Ok(None)
-                    } else {
-                        Err(LinkError::internal("connection closed mid-message"))
-                    };
+                    return if self.pending.iter().all(u8::is_ascii_whitespace) { Ok(None) } else { Err(LinkError::internal("connection closed mid-message")) };
                 }
                 Ok(n) => self.pending.extend_from_slice(&chunk[..n]),
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
@@ -236,11 +200,7 @@ impl InvokeRequest {
         InvokeRequest {
             action: action.into(),
             options: json!({}),
-            context: InvokeContextInfo {
-                source: source.into(),
-                interactive: true,
-                reason: "user-click".into(),
-            },
+            context: InvokeContextInfo { source: source.into(), interactive: true, reason: "user-click".into() },
             ..Default::default()
         }
     }
@@ -274,18 +234,11 @@ pub struct InvokeResult {
 
 impl InvokeResult {
     pub fn message(msg: impl Into<String>) -> InvokeResult {
-        InvokeResult {
-            message: Some(msg.into()),
-            ..Default::default()
-        }
+        InvokeResult { message: Some(msg.into()), ..Default::default() }
     }
 
     pub fn outputs(outputs: Vec<Content>, msg: impl Into<String>) -> InvokeResult {
-        InvokeResult {
-            outputs,
-            message: Some(msg.into()),
-            data: None,
-        }
+        InvokeResult { outputs, message: Some(msg.into()), data: None }
     }
 }
 
@@ -306,9 +259,7 @@ impl JobDone {
         match self.status.as_str() {
             "success" => Ok(self.result),
             "cancelled" => Err(self.error.unwrap_or_else(LinkError::cancelled)),
-            _ => Err(self
-                .error
-                .unwrap_or_else(|| LinkError::internal(self.result.message.unwrap_or_default()))),
+            _ => Err(self.error.unwrap_or_else(|| LinkError::internal(self.result.message.unwrap_or_default()))),
         }
     }
 }
@@ -324,12 +275,7 @@ pub struct JobProgress {
 }
 
 pub(crate) fn version_mismatch(theirs: &[u32]) -> LinkError {
-    LinkError::new(
-        ErrorCode::VersionMismatch,
-        format!(
-            "no common protocol version (peer speaks {theirs:?}, we speak {SUPPORTED_PROTOCOLS:?})"
-        ),
-    )
+    LinkError::new(ErrorCode::VersionMismatch, format!("no common protocol version (peer speaks {theirs:?}, we speak {SUPPORTED_PROTOCOLS:?})"))
 }
 
 #[cfg(test)]
@@ -338,37 +284,17 @@ mod tests {
 
     #[test]
     fn shapes() {
-        assert_eq!(
-            Message::parse(r#"{"v":1,"id":1,"method":"hello","params":{}}"#)
-                .unwrap()
-                .kind(),
-            Kind::Request
-        );
-        assert_eq!(
-            Message::parse(r#"{"v":1,"method":"job.progress","params":{}}"#)
-                .unwrap()
-                .kind(),
-            Kind::Notification
-        );
-        assert_eq!(
-            Message::parse(r#"{"v":1,"id":3,"result":{}}"#)
-                .unwrap()
-                .kind(),
-            Kind::Response
-        );
-        assert!(
-            Message::parse(r#"{"v":1,"id":3,"result":{},"error":{"code":"internal"}}"#).is_err()
-        );
+        assert_eq!(Message::parse(r#"{"v":1,"id":1,"method":"hello","params":{}}"#).unwrap().kind(), Kind::Request);
+        assert_eq!(Message::parse(r#"{"v":1,"method":"job.progress","params":{}}"#).unwrap().kind(), Kind::Notification);
+        assert_eq!(Message::parse(r#"{"v":1,"id":3,"result":{}}"#).unwrap().kind(), Kind::Response);
+        assert!(Message::parse(r#"{"v":1,"id":3,"result":{},"error":{"code":"internal"}}"#).is_err());
         assert!(Message::parse(r#"{"v":1,"id":3}"#).is_err());
         assert!(Message::parse(r#"{"id":3,"result":1}"#).is_err());
     }
 
     #[test]
     fn oversized_lines_are_refused() {
-        let big = format!(
-            "{{\"v\":1,\"method\":\"x\",\"params\":\"{}\"}}\n",
-            "a".repeat(MAX_LINE)
-        );
+        let big = format!("{{\"v\":1,\"method\":\"x\",\"params\":\"{}\"}}\n", "a".repeat(MAX_LINE));
         let mut r = LineReader::new(big.as_bytes());
         assert_eq!(r.read_message().unwrap_err().code, ErrorCode::TooLarge);
     }

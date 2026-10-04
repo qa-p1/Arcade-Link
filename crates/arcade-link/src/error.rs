@@ -65,12 +65,7 @@ pub struct LinkError {
 
 impl LinkError {
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
-        LinkError {
-            code,
-            message: message.into(),
-            reason: None,
-            limit: None,
-        }
+        LinkError { code, message: message.into(), reason: None, limit: None }
     }
 
     pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
@@ -133,9 +128,7 @@ impl std::error::Error for LinkError {}
 impl From<std::io::Error> for LinkError {
     fn from(e: std::io::Error) -> Self {
         match e.kind() {
-            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => {
-                LinkError::new(ErrorCode::Timeout, e.to_string())
-            }
+            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => LinkError::new(ErrorCode::Timeout, e.to_string()),
             _ => LinkError::internal(e.to_string()),
         }
     }
@@ -163,12 +156,7 @@ fn sentence(reason: &str) -> String {
 /// The standard, user-facing message for an error code. Every Arcade app
 /// uses these verbatim (the Qt module implements the same table, and the
 /// conformance vectors in `spec/vectors/errors.json` pin them).
-pub fn standard_message(
-    code: ErrorCode,
-    app: &str,
-    reason: Option<&str>,
-    limit: Option<u64>,
-) -> String {
+pub fn standard_message(code: ErrorCode, app: &str, reason: Option<&str>, limit: Option<u64>) -> String {
     let reason = reason.filter(|r| !r.trim().is_empty());
     match code {
         ErrorCode::NotInstalled => format!("{app} isn't installed."),
@@ -181,9 +169,7 @@ pub fn standard_message(
             None => format!("{app} can't do this right now."),
         },
         ErrorCode::TooLarge => {
-            let limit = limit
-                .map(|l| format!(" (limit {})", format_limit(l)))
-                .unwrap_or_default();
+            let limit = limit.map(|l| format!(" (limit {})", format_limit(l))).unwrap_or_default();
             if app == "Arcade Clipboard" {
                 format!("Too large to send to your devices{limit}.")
             } else {
@@ -215,39 +201,17 @@ mod tests {
 
     #[test]
     fn unknown_codes_become_internal() {
-        let e: LinkError =
-            serde_json::from_str(r#"{"code":"from_the_future","message":"x"}"#).unwrap();
+        let e: LinkError = serde_json::from_str(r#"{"code":"from_the_future","message":"x"}"#).unwrap();
         assert_eq!(e.code, ErrorCode::Internal);
     }
 
     #[test]
     fn plan_examples() {
         assert_eq!(
-            standard_message(
-                ErrorCode::Unavailable,
-                "Arcade Box",
-                Some("FFmpeg isn't installed"),
-                None
-            ),
+            standard_message(ErrorCode::Unavailable, "Arcade Box", Some("FFmpeg isn't installed"), None),
             "Arcade Box can't do this yet: FFmpeg isn't installed."
         );
-        assert_eq!(
-            standard_message(
-                ErrorCode::TooLarge,
-                "Arcade Clipboard",
-                None,
-                Some(16 * 1024 * 1024)
-            ),
-            "Too large to send to your devices (limit 16 MB)."
-        );
-        assert_eq!(
-            standard_message(
-                ErrorCode::Denied,
-                "Arcade Clipboard",
-                Some(reason::PRIVATE_MODE),
-                None
-            ),
-            "Arcade Clipboard is in Private mode."
-        );
+        assert_eq!(standard_message(ErrorCode::TooLarge, "Arcade Clipboard", None, Some(16 * 1024 * 1024)), "Too large to send to your devices (limit 16 MB).");
+        assert_eq!(standard_message(ErrorCode::Denied, "Arcade Clipboard", Some(reason::PRIVATE_MODE), None), "Arcade Clipboard is in Private mode.");
     }
 }

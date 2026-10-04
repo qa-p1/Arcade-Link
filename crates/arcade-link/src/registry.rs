@@ -31,11 +31,7 @@ pub struct Registry {
 impl Registry {
     /// An empty registry for `locations`; call [`Registry::refresh`] to read it.
     pub fn new(locations: &Locations) -> Registry {
-        Registry {
-            dir: locations.registry.clone(),
-            entries: HashMap::new(),
-            apps: Vec::new(),
-        }
+        Registry { dir: locations.registry.clone(), entries: HashMap::new(), apps: Vec::new() }
     }
 
     /// Reads the registry now.
@@ -65,22 +61,12 @@ impl Registry {
                 let modified = meta.modified().ok();
                 let entry = match self.entries.get(&path) {
                     Some(old) if old.modified == modified && old.len == meta.len() => old.clone(),
-                    _ => Entry {
-                        modified,
-                        len: meta.len(),
-                        manifest: std::fs::read_to_string(&path)
-                            .ok()
-                            .and_then(|t| Manifest::from_json(&t).ok()),
-                    },
+                    _ => Entry { modified, len: meta.len(), manifest: std::fs::read_to_string(&path).ok().and_then(|t| Manifest::from_json(&t).ok()) },
                 };
                 seen.insert(path, entry);
             }
         }
-        let mut apps: Vec<Manifest> = seen
-            .values()
-            .filter_map(|e| e.manifest.clone())
-            .filter(Manifest::executable_exists)
-            .collect();
+        let mut apps: Vec<Manifest> = seen.values().filter_map(|e| e.manifest.clone()).filter(Manifest::executable_exists).collect();
         apps.sort_by(|a, b| a.id.cmp(&b.id));
         self.entries = seen;
         let changed = apps != self.apps;
@@ -104,32 +90,13 @@ impl Registry {
 
     /// Every action from a peer (not `me`) that is usable for `content`,
     /// skipping peers in `disabled`.
-    pub fn offers_for<'a>(
-        &'a self,
-        me: &'a str,
-        disabled: &'a [String],
-        content: &'a Content,
-    ) -> Vec<(&'a Manifest, &'a Action)> {
-        self.peers(me)
-            .filter(|m| !disabled.contains(&m.id))
-            .flat_map(|m| {
-                m.usable_actions()
-                    .filter(|a| a.offer_for(content))
-                    .map(move |a| (m, a))
-            })
-            .collect()
+    pub fn offers_for<'a>(&'a self, me: &'a str, disabled: &'a [String], content: &'a Content) -> Vec<(&'a Manifest, &'a Action)> {
+        self.peers(me).filter(|m| !disabled.contains(&m.id)).flat_map(|m| m.usable_actions().filter(|a| a.offer_for(content)).map(move |a| (m, a))).collect()
     }
 
     /// Effective shortcuts other apps use, for clash warnings: (app name, shortcut id, accelerator).
-    pub fn shortcuts<'a>(
-        &'a self,
-        me: &'a str,
-    ) -> impl Iterator<Item = (&'a str, &'a str, &'a str)> + 'a {
-        self.peers(me).flat_map(|m| {
-            m.shortcuts
-                .iter()
-                .map(move |s| (m.name.as_str(), s.id.as_str(), s.accelerator.as_str()))
-        })
+    pub fn shortcuts<'a>(&'a self, me: &'a str) -> impl Iterator<Item = (&'a str, &'a str, &'a str)> + 'a {
+        self.peers(me).flat_map(|m| m.shortcuts.iter().map(move |s| (m.name.as_str(), s.id.as_str(), s.accelerator.as_str())))
     }
 
     /// The app that already uses `accelerator`, comparing case-insensitively
@@ -139,9 +106,7 @@ impl Registry {
         if want.is_empty() {
             return None;
         }
-        self.shortcuts(me)
-            .find(|(_, _, a)| normalize_accelerator(a) == want)
-            .map(|(name, _, _)| name.to_string())
+        self.shortcuts(me).find(|(_, _, a)| normalize_accelerator(a) == want).map(|(name, _, _)| name.to_string())
     }
 }
 
@@ -178,19 +143,12 @@ pub struct SharedRegistry {
 impl SharedRegistry {
     /// Reads the registry once (call it off the UI thread).
     pub fn load(locations: &Locations) -> SharedRegistry {
-        SharedRegistry {
-            inner: Arc::new(RwLock::new(Registry::load(locations))),
-            locations: locations.clone(),
-            watcher: Arc::new(std::sync::Mutex::new(None)),
-        }
+        SharedRegistry { inner: Arc::new(RwLock::new(Registry::load(locations))), locations: locations.clone(), watcher: Arc::new(std::sync::Mutex::new(None)) }
     }
 
     /// The cached snapshot. Never touches the disk.
     pub fn snapshot(&self) -> Registry {
-        self.inner
-            .read()
-            .map(|r| r.clone())
-            .unwrap_or_else(|_| Registry::new(&self.locations))
+        self.inner.read().map(|r| r.clone()).unwrap_or_else(|_| Registry::new(&self.locations))
     }
 
     /// Runs `f` with the cached registry. Never touches the disk.
@@ -219,11 +177,7 @@ impl SharedRegistry {
             if res.is_err() {
                 return;
             }
-            let changed_runtime = res.as_ref().is_ok_and(|e| {
-                e.paths
-                    .iter()
-                    .any(|p| p.extension().is_some_and(|x| x == "endpoint"))
-            });
+            let changed_runtime = res.as_ref().is_ok_and(|e| e.paths.iter().any(|p| p.extension().is_some_and(|x| x == "endpoint")));
             let snapshot = match inner.write() {
                 Ok(mut r) => {
                     let changed = r.refresh();
@@ -242,9 +196,7 @@ impl SharedRegistry {
         };
         let _ = std::fs::create_dir_all(&self.locations.registry);
         let _ = crate::paths::ensure_private_dir(&self.locations.runtime);
-        let ok = watcher
-            .watch(&self.locations.registry, RecursiveMode::NonRecursive)
-            .is_ok();
+        let ok = watcher.watch(&self.locations.registry, RecursiveMode::NonRecursive).is_ok();
         let _ = watcher.watch(&self.locations.runtime, RecursiveMode::NonRecursive);
         if let Ok(mut slot) = self.watcher.lock() {
             *slot = Some(Box::new(watcher));
@@ -272,20 +224,14 @@ mod tests {
         let exe = std::env::current_exe().unwrap();
         let mut good = Manifest::new("arcade.good", "1", exe.to_str().unwrap());
         good.name = "Arcade Good".into();
-        good.shortcuts.push(Shortcut {
-            id: "main".into(),
-            accelerator: "Ctrl+Alt+Space".into(),
-        });
+        good.shortcuts.push(Shortcut { id: "main".into(), accelerator: "Ctrl+Alt+Space".into() });
         write_manifest(&loc, &good).unwrap();
         write_manifest(&loc, &Manifest::new("arcade.gone", "1", "/nonexistent/app")).unwrap();
         std::fs::write(loc.registry.join("junk.json"), "{not json").unwrap();
         let mut r = Registry::load(&loc);
         assert_eq!(r.apps().len(), 1);
         assert!(!r.refresh());
-        assert_eq!(
-            r.shortcut_owner("arcade.me", "alt+ctrl+space").as_deref(),
-            Some("Arcade Good")
-        );
+        assert_eq!(r.shortcut_owner("arcade.me", "alt+ctrl+space").as_deref(), Some("Arcade Good"));
         assert_eq!(r.shortcut_owner("arcade.good", "Ctrl+Alt+Space"), None);
         std::fs::remove_dir_all(dir).ok();
     }

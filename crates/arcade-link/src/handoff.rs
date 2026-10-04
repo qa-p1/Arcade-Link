@@ -37,11 +37,7 @@ impl Handoff {
         let dir = locations.handoff.join(random_name()?);
         std::fs::create_dir(&dir)?;
         paths::ensure_private_dir(&dir)?;
-        Ok(Handoff {
-            dir,
-            owner: owner.into(),
-            keep: false,
-        })
+        Ok(Handoff { dir, owner: owner.into(), keep: false })
     }
 
     pub fn dir(&self) -> &Path {
@@ -50,11 +46,7 @@ impl Handoff {
 
     /// Writes `bytes` as `name` (only the file name part is used).
     pub fn write(&self, name: &str, bytes: &[u8]) -> io::Result<PathBuf> {
-        let name = Path::new(name)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .filter(|n| !n.starts_with('.'))
-            .unwrap_or("content");
+        let name = Path::new(name).file_name().and_then(|n| n.to_str()).filter(|n| !n.starts_with('.')).unwrap_or("content");
         let path = self.dir.join(name);
         let mut opts = std::fs::OpenOptions::new();
         opts.write(true).create_new(true);
@@ -113,10 +105,7 @@ pub fn read_text(c: &Content) -> io::Result<String> {
     }
     match &c.path {
         Some(p) => std::fs::read_to_string(p),
-        None => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "value has no text",
-        )),
+        None => Err(io::Error::new(io::ErrorKind::InvalidInput, "value has no text")),
     }
 }
 
@@ -129,16 +118,8 @@ pub fn cleanup_stale(locations: &Locations) -> usize {
     let now = SystemTime::now();
     let mut removed = 0;
     for e in rd.flatten() {
-        let old = e
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| now.duration_since(t).ok())
-            .is_some_and(|age| age > MAX_AGE);
-        if old
-            && e.file_type().is_ok_and(|t| t.is_dir())
-            && std::fs::remove_dir_all(e.path()).is_ok()
-        {
+        let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| now.duration_since(t).ok()).is_some_and(|age| age > MAX_AGE);
+        if old && e.file_type().is_ok_and(|t| t.is_dir()) && std::fs::remove_dir_all(e.path()).is_ok() {
             removed += 1;
         }
     }
@@ -162,14 +143,8 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
-            assert_eq!(
-                std::fs::metadata(h.dir()).unwrap().permissions().mode() & 0o777,
-                0o700
-            );
+            assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+            assert_eq!(std::fs::metadata(h.dir()).unwrap().permissions().mode() & 0o777, 0o700);
         }
         let dir = h.dir().to_path_buf();
         drop(h);

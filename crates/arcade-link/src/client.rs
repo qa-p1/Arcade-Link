@@ -15,9 +15,7 @@ use crate::error::{ErrorCode, LinkError};
 use crate::manifest::{Action, Manifest};
 use crate::paths::Locations;
 use crate::transport;
-use crate::wire::{
-    self, method, InvokeRequest, InvokeResult, JobDone, JobProgress, LineReader, Message, PeerInfo,
-};
+use crate::wire::{self, method, InvokeRequest, InvokeResult, JobDone, JobProgress, LineReader, Message, PeerInfo};
 
 /// An endpoint is dead if connecting or `hello` takes longer than this.
 pub const HELLO_TIMEOUT: Duration = Duration::from_millis(150);
@@ -54,20 +52,11 @@ fn not_running(app_id: &str) -> LinkError {
 
 impl Client {
     /// Connects to `app_id`'s endpoint and authenticates.
-    pub fn connect(
-        locations: &Locations,
-        app_id: &str,
-        me: &PeerInfo,
-    ) -> Result<Client, LinkError> {
+    pub fn connect(locations: &Locations, app_id: &str, me: &PeerInfo) -> Result<Client, LinkError> {
         Client::connect_with(locations, app_id, me, HELLO_TIMEOUT)
     }
 
-    pub fn connect_with(
-        locations: &Locations,
-        app_id: &str,
-        me: &PeerInfo,
-        timeout: Duration,
-    ) -> Result<Client, LinkError> {
+    pub fn connect_with(locations: &Locations, app_id: &str, me: &PeerInfo, timeout: Duration) -> Result<Client, LinkError> {
         let ep = endpoint::read(locations, app_id).map_err(|_| not_running(app_id))?;
         let stream = transport::connect(&ep.address, timeout).map_err(|_| not_running(app_id))?;
         let stream = Arc::new(stream);
@@ -80,22 +69,13 @@ impl Client {
             protocol: 0,
             notifications: Default::default(),
         };
-        let hello = c.call_raw(
-            method::HELLO,
-            json!({ "token": ep.token, "client": me, "protocol": wire::SUPPORTED_PROTOCOLS }),
-        );
+        let hello = c.call_raw(method::HELLO, json!({ "token": ep.token, "client": me, "protocol": wire::SUPPORTED_PROTOCOLS }));
         let r = match hello {
             Ok(r) => r,
-            Err(e) if e.code == ErrorCode::Internal && e.message.contains("closed") => {
-                return Err(not_running(app_id))
-            }
+            Err(e) if e.code == ErrorCode::Internal && e.message.contains("closed") => return Err(not_running(app_id)),
             Err(e) => return Err(e),
         };
-        c.server = r
-            .get("server")
-            .cloned()
-            .and_then(|s| serde_json::from_value(s).ok())
-            .unwrap_or_default();
+        c.server = r.get("server").cloned().and_then(|s| serde_json::from_value(s).ok()).unwrap_or_default();
         c.protocol = r.get("protocol").and_then(Value::as_u64).unwrap_or(0) as u32;
         if !wire::SUPPORTED_PROTOCOLS.contains(&c.protocol) {
             return Err(wire::version_mismatch(&[c.protocol]));
@@ -107,18 +87,14 @@ impl Client {
     fn send(&mut self, method: &str, params: Value) -> Result<u64, LinkError> {
         self.next_id += 1;
         let id = self.next_id;
-        wire::write_message(&mut &*self.stream, &Message::request(id, method, params))
-            .map_err(LinkError::from)?;
+        wire::write_message(&mut &*self.stream, &Message::request(id, method, params)).map_err(LinkError::from)?;
         Ok(id)
     }
 
     fn next_message(&mut self) -> Result<Message, LinkError> {
         match self.reader.read_message() {
             Ok(Some(m)) => Ok(m),
-            Ok(None) => Err(LinkError::internal(format!(
-                "{} closed the connection",
-                self.server.id
-            ))),
+            Ok(None) => Err(LinkError::internal(format!("{} closed the connection", self.server.id))),
             Err(e) => Err(e),
         }
     }
@@ -150,8 +126,7 @@ impl Client {
     /// The live action list.
     pub fn describe(&mut self) -> Result<Vec<Action>, LinkError> {
         let r = self.call(method::DESCRIBE, json!({}))?;
-        serde_json::from_value(r.get("actions").cloned().unwrap_or(Value::Array(vec![])))
-            .map_err(|e| LinkError::internal(e.to_string()))
+        serde_json::from_value(r.get("actions").cloned().unwrap_or(Value::Array(vec![]))).map_err(|e| LinkError::internal(e.to_string()))
     }
 
     pub fn status(&mut self) -> Result<Value, LinkError> {
@@ -159,8 +134,7 @@ impl Client {
     }
 
     pub fn subscribe(&mut self, topics: &[&str]) -> Result<(), LinkError> {
-        self.call(method::SUBSCRIBE, json!({ "topics": topics }))
-            .map(|_| ())
+        self.call(method::SUBSCRIBE, json!({ "topics": topics })).map(|_| ())
     }
 
     /// Runs an action. If it starts a job, waits for `job.done`, passing
@@ -171,27 +145,17 @@ impl Client {
         on_progress: &mut dyn FnMut(&JobProgress),
         cancel: Option<&AtomicBool>,
     ) -> Result<InvokeResult, LinkError> {
-        let r = self.call(
-            method::INVOKE,
-            serde_json::to_value(request).map_err(|e| LinkError::internal(e.to_string()))?,
-        )?;
+        let r = self.call(method::INVOKE, serde_json::to_value(request).map_err(|e| LinkError::internal(e.to_string()))?)?;
         let Some(job) = r.get("job").and_then(Value::as_str).map(String::from) else {
             return serde_json::from_value(r).map_err(|e| LinkError::internal(e.to_string()));
         };
         self.wait_job(&job, on_progress, cancel)
     }
 
-    fn wait_job(
-        &mut self,
-        job: &str,
-        on_progress: &mut dyn FnMut(&JobProgress),
-        cancel: Option<&AtomicBool>,
-    ) -> Result<InvokeResult, LinkError> {
+    fn wait_job(&mut self, job: &str, on_progress: &mut dyn FnMut(&JobProgress), cancel: Option<&AtomicBool>) -> Result<InvokeResult, LinkError> {
         // While a cancel flag is supplied, wake up every 100 ms to check it;
         // this only happens during an active job, never while idle.
-        let _ = self
-            .stream
-            .set_recv_timeout(cancel.map(|_| Duration::from_millis(100)));
+        let _ = self.stream.set_recv_timeout(cancel.map(|_| Duration::from_millis(100)));
         let mut cancel_sent = false;
         let result = loop {
             if let Some(flag) = cancel {
@@ -205,12 +169,7 @@ impl Client {
                 None => match self.next_message() {
                     Ok(m) => m,
                     Err(e) if e.code == ErrorCode::Timeout => continue,
-                    Err(_) => {
-                        break Err(LinkError::new(
-                            ErrorCode::NotRunning,
-                            format!("{} stopped while working", self.server.id),
-                        ))
-                    }
+                    Err(_) => break Err(LinkError::new(ErrorCode::NotRunning, format!("{} stopped while working", self.server.id))),
                 },
             };
             let p = m.params();
@@ -227,9 +186,7 @@ impl Client {
                     }
                 }
                 Some(method::JOB_DONE) => {
-                    break serde_json::from_value::<JobDone>(p.clone())
-                        .map_err(|e| LinkError::internal(e.to_string()))
-                        .and_then(JobDone::into_result);
+                    break serde_json::from_value::<JobDone>(p.clone()).map_err(|e| LinkError::internal(e.to_string())).and_then(JobDone::into_result);
                 }
                 _ => {}
             }
@@ -258,9 +215,7 @@ impl Client {
 
 /// Connects and says hello; `Some(server)` if the app is alive.
 pub fn probe(locations: &Locations, app_id: &str, me: &PeerInfo) -> Option<PeerInfo> {
-    Client::connect(locations, app_id, me)
-        .ok()
-        .map(|c| c.server)
+    Client::connect(locations, app_id, me).ok().map(|c| c.server)
 }
 
 /// What the Connected apps page shows for an app.
@@ -273,26 +228,13 @@ pub enum AppState {
 
 /// The state of `app_id`: running (endpoint answers), installed (manifest
 /// with an existing executable), or not installed.
-pub fn app_state(
-    locations: &Locations,
-    registry: &crate::registry::Registry,
-    app_id: &str,
-    me: &PeerInfo,
-) -> AppState {
+pub fn app_state(locations: &Locations, registry: &crate::registry::Registry, app_id: &str, me: &PeerInfo) -> AppState {
     let Some(m) = registry.get(app_id) else {
         return AppState::NotInstalled;
     };
     match probe(locations, app_id, me) {
-        Some(p) => AppState::Running {
-            version: if p.version.is_empty() {
-                m.version.clone()
-            } else {
-                p.version
-            },
-        },
-        None => AppState::Installed {
-            version: m.version.clone(),
-        },
+        Some(p) => AppState::Running { version: if p.version.is_empty() { m.version.clone() } else { p.version } },
+        None => AppState::Installed { version: m.version.clone() },
     }
 }
 
@@ -330,16 +272,9 @@ pub fn invoke_action(
     if !manifest.settings.link_enabled {
         return Err(LinkError::denied(crate::error::reason::DISABLED));
     }
-    let action = find_action(manifest, request).ok_or_else(|| {
-        LinkError::unavailable(format!(
-            "{} has no action {}",
-            manifest.name, request.action
-        ))
-    })?;
+    let action = find_action(manifest, request).ok_or_else(|| LinkError::unavailable(format!("{} has no action {}", manifest.name, request.action)))?;
     if !action.available {
-        return Err(LinkError::unavailable(
-            action.reason.clone().unwrap_or_default(),
-        ));
+        return Err(LinkError::unavailable(action.reason.clone().unwrap_or_default()));
     }
     let mut noop = |_: &JobProgress| {};
     let on_progress: &mut dyn FnMut(&JobProgress) = match opts.on_progress.take() {
@@ -351,13 +286,7 @@ pub fn invoke_action(
     }
     if !action.interactive {
         if let Some(args) = &manifest.launch.invoke {
-            return crate::oneshot::run(
-                &manifest.executable,
-                args,
-                request,
-                on_progress,
-                opts.cancel,
-            );
+            return crate::oneshot::run(&manifest.executable, args, request, on_progress, opts.cancel);
         }
     }
     if let Some(f) = opts.on_launching.take() {
@@ -369,23 +298,12 @@ pub fn invoke_action(
 
 /// Starts `manifest`'s app in the background and connects once its
 /// endpoint answers (within [`LAUNCH_TIMEOUT`]).
-pub fn launch_and_connect(
-    locations: &Locations,
-    manifest: &Manifest,
-    me: &PeerInfo,
-) -> Result<Client, LinkError> {
+pub fn launch_and_connect(locations: &Locations, manifest: &Manifest, me: &PeerInfo) -> Result<Client, LinkError> {
     if !manifest.executable_exists() {
-        return Err(LinkError::new(
-            ErrorCode::NotInstalled,
-            format!("{} is not installed", manifest.name),
-        ));
+        return Err(LinkError::new(ErrorCode::NotInstalled, format!("{} is not installed", manifest.name)));
     }
-    spawn_detached(&manifest.executable, &manifest.launch.background).map_err(|e| {
-        LinkError::new(
-            ErrorCode::LaunchFailed,
-            format!("could not start {}: {e}", manifest.name),
-        )
-    })?;
+    spawn_detached(&manifest.executable, &manifest.launch.background)
+        .map_err(|e| LinkError::new(ErrorCode::LaunchFailed, format!("could not start {}: {e}", manifest.name)))?;
     let deadline = Instant::now() + LAUNCH_TIMEOUT;
     // A bounded wait during a user-initiated launch (not idle polling).
     while Instant::now() < deadline {
@@ -394,23 +312,13 @@ pub fn launch_and_connect(
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    Err(LinkError::new(
-        ErrorCode::LaunchFailed,
-        format!(
-            "{} did not start within {} s",
-            manifest.name,
-            LAUNCH_TIMEOUT.as_secs()
-        ),
-    ))
+    Err(LinkError::new(ErrorCode::LaunchFailed, format!("{} did not start within {} s", manifest.name, LAUNCH_TIMEOUT.as_secs())))
 }
 
 /// Starts a process that outlives the caller, with no inherited stdio.
 pub fn spawn_detached(executable: &str, args: &[String]) -> std::io::Result<()> {
     let mut cmd = Command::new(executable);
-    cmd.args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

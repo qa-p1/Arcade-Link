@@ -93,9 +93,7 @@ pub struct LinkInfo {
 
 impl Default for LinkInfo {
     fn default() -> Self {
-        LinkInfo {
-            protocol: crate::wire::SUPPORTED_PROTOCOLS.to_vec(),
-        }
+        LinkInfo { protocol: crate::wire::SUPPORTED_PROTOCOLS.to_vec() }
     }
 }
 
@@ -231,11 +229,7 @@ impl Action {
 
     /// Supported on this OS (an empty list means everywhere).
     pub fn on_this_platform(&self) -> bool {
-        self.platforms.is_empty()
-            || self
-                .platforms
-                .iter()
-                .any(|p| p == paths::current_platform())
+        self.platforms.is_empty() || self.platforms.iter().any(|p| p == paths::current_platform())
     }
 
     /// Takes no input at all.
@@ -246,9 +240,7 @@ impl Action {
     /// Shown for `content`: available here, and accepts it. This is the
     /// ecosystem's "never show a broken entry" rule in one place.
     pub fn offer_for(&self, content: &Content) -> bool {
-        self.available
-            && self.on_this_platform()
-            && content::accepts_content(&self.accepts, content)
+        self.available && self.on_this_platform() && content::accepts_content(&self.accepts, content)
     }
 
     pub fn offer_for_type(&self, kind: &str) -> bool {
@@ -265,10 +257,7 @@ impl Manifest {
             version: version.into(),
             link: LinkInfo::default(),
             executable: executable.into(),
-            launch: Launch {
-                background: vec!["--background".into()],
-                invoke: None,
-            },
+            launch: Launch { background: vec!["--background".into()], invoke: None },
             icon: None,
             shortcuts: Vec::new(),
             settings: ManifestSettings::default(),
@@ -284,9 +273,7 @@ impl Manifest {
     /// The actions a caller may show: link enabled and the action offered here.
     pub fn usable_actions(&self) -> impl Iterator<Item = &Action> {
         let enabled = self.settings.link_enabled;
-        self.actions
-            .iter()
-            .filter(move |a| enabled && a.available && a.on_this_platform())
+        self.actions.iter().filter(move |a| enabled && a.available && a.on_this_platform())
     }
 
     pub fn to_json(&self) -> String {
@@ -312,9 +299,7 @@ impl Manifest {
 
 /// The current UTC time as RFC 3339, without a date-time dependency.
 pub fn now_rfc3339() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let (days, rem) = (secs / 86_400, secs % 86_400);
     // Civil-from-days (Howard Hinnant), valid for the Unix era.
     let z = days as i64 + 719_468;
@@ -326,12 +311,7 @@ pub fn now_rfc3339() -> String {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + i64::from(m <= 2);
-    format!(
-        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
-        rem / 3600,
-        rem % 3600 / 60,
-        rem % 60
-    )
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
 /// Writes `manifest` atomically, only if it changed (ignoring `writtenAt`).
@@ -363,18 +343,39 @@ pub fn remove_manifest(locations: &Locations, app_id: &str) -> io::Result<()> {
 /// The path to advertise as this app's executable: `$APPIMAGE` for an
 /// AppImage (never the temporary mount), otherwise the current executable.
 pub fn current_executable() -> String {
+    let exe = std::env::current_exe().unwrap_or_default();
     #[cfg(target_os = "linux")]
-    if let Some(appimage) = std::env::var_os("APPIMAGE").filter(|v| !v.is_empty()) {
-        return appimage.to_string_lossy().into_owned();
+    if let Some(appimage) = appimage_for(&exe) {
+        return appimage;
     }
-    std::env::current_exe()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default()
+    exe.to_string_lossy().into_owned()
+}
+
+/// `$APPIMAGE`, but only if `exe` really runs from that AppImage's mount
+/// (`$APPDIR`). A process started by some other AppImage inherits both
+/// variables and must not advertise that AppImage as itself.
+#[cfg(target_os = "linux")]
+fn appimage_for(exe: &Path) -> Option<String> {
+    let appimage = std::env::var_os("APPIMAGE").filter(|v| !v.is_empty())?;
+    let appdir = std::env::var_os("APPDIR").filter(|v| !v.is_empty())?;
+    exe.starts_with(Path::new(&appdir)).then(|| appimage.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_only_for_its_own_mount() {
+        // These variables are process-wide; this is the only test that reads them.
+        std::env::set_var("APPIMAGE", "/home/u/Other.AppImage");
+        std::env::set_var("APPDIR", "/tmp/.mount_OtherXYZ");
+        assert_eq!(appimage_for(Path::new("/usr/bin/arcade-lens")), None);
+        assert_eq!(appimage_for(Path::new("/tmp/.mount_OtherXYZ/usr/bin/x")).as_deref(), Some("/home/u/Other.AppImage"));
+        std::env::remove_var("APPIMAGE");
+        std::env::remove_var("APPDIR");
+    }
 
     #[test]
     fn rfc3339_shape() {

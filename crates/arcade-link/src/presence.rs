@@ -29,15 +29,7 @@ impl Presence {
     /// With the master switch off the manifest has no actions and nothing
     /// listens, but the app still shows up as installed.
     pub fn start(locations: Locations, manifest: Manifest, handler: Arc<dyn Handler>) -> Presence {
-        let p = Presence {
-            locations,
-            handler,
-            state: Mutex::new(State {
-                manifest: manifest.clone(),
-                server: None,
-                last_error: None,
-            }),
-        };
+        let p = Presence { locations, handler, state: Mutex::new(State { manifest: manifest.clone(), server: None, last_error: None }) };
         p.apply(manifest, true);
         handoff::cleanup_stale(&p.locations);
         p
@@ -63,13 +55,7 @@ impl Presence {
             }
         };
         if enabled && st.server.is_none() {
-            let config = ServerConfig {
-                app: PeerInfo {
-                    id: manifest.id.clone(),
-                    version: manifest.version.clone(),
-                },
-                locations: self.locations.clone(),
-            };
+            let config = ServerConfig { app: PeerInfo { id: manifest.id.clone(), version: manifest.version.clone() }, locations: self.locations.clone() };
             match Server::start(config, self.handler.clone()) {
                 Ok(s) => {
                     st.server = Some(s);
@@ -89,10 +75,7 @@ impl Presence {
     }
 
     pub fn manifest(&self) -> Manifest {
-        self.state
-            .lock()
-            .map(|s| s.manifest.clone())
-            .unwrap_or_else(|e| e.into_inner().manifest.clone())
+        self.state.lock().map(|s| s.manifest.clone()).unwrap_or_else(|e| e.into_inner().manifest.clone())
     }
 
     pub fn locations(&self) -> &Locations {
@@ -101,18 +84,12 @@ impl Presence {
 
     /// Listening right now.
     pub fn listening(&self) -> bool {
-        self.state
-            .lock()
-            .map(|s| s.server.is_some())
-            .unwrap_or(false)
+        self.state.lock().map(|s| s.server.is_some()).unwrap_or(false)
     }
 
     /// Jobs are running (`app.quit` answers `busy`).
     pub fn busy(&self) -> bool {
-        self.state
-            .lock()
-            .map(|s| s.server.as_ref().is_some_and(Server::busy))
-            .unwrap_or(false)
+        self.state.lock().map(|s| s.server.as_ref().is_some_and(Server::busy)).unwrap_or(false)
     }
 
     /// The last problem writing the manifest or listening, for diagnostics.
@@ -130,30 +107,11 @@ impl Presence {
 
 /// The diagnostics block every Connected apps page shows.
 pub fn diagnostics(presence: Option<&Presence>, locations: &Locations) -> Vec<(String, String)> {
-    let mut rows = vec![
-        (
-            "Registry".to_string(),
-            locations.registry.display().to_string(),
-        ),
-        (
-            "Runtime".to_string(),
-            locations.runtime.display().to_string(),
-        ),
-    ];
+    let mut rows = vec![("Registry".to_string(), locations.registry.display().to_string()), ("Runtime".to_string(), locations.runtime.display().to_string())];
     match presence {
         Some(p) => {
-            rows.push((
-                "Endpoint".into(),
-                if p.listening() {
-                    "listening".into()
-                } else {
-                    "not listening".into()
-                },
-            ));
-            rows.push((
-                "Last error".into(),
-                p.last_error().unwrap_or_else(|| "none".into()),
-            ));
+            rows.push(("Endpoint".into(), if p.listening() { "listening".into() } else { "not listening".into() }));
+            rows.push(("Last error".into(), p.last_error().unwrap_or_else(|| "none".into())));
         }
         None => rows.push(("Endpoint".into(), "not started".into())),
     }

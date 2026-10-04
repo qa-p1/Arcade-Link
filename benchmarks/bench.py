@@ -186,7 +186,7 @@ def is_ready(kind: str, pid: int, root: Path, env: dict) -> bool:
 def isolated_env(root: Path) -> dict:
     env = {k: v for k, v in os.environ.items() if k not in (
         "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP",
-        "DESKTOP_SESSION", "SWAYSOCK", "XDG_SESSION_TYPE")}
+        "DESKTOP_SESSION", "SWAYSOCK", "XDG_SESSION_TYPE", "APPIMAGE", "APPDIR", "OWD", "ARGV0")}
     for d in ("home", "config", "data", "cache", "runtime", "lens", "clipdata", "arcade", "wheel"):
         (root / d).mkdir(parents=True, exist_ok=True)
     os.chmod(root / "runtime", 0o700)

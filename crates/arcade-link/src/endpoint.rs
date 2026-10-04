@@ -62,12 +62,7 @@ pub fn list(locations: &Locations) -> Vec<String> {
         .into_iter()
         .flatten()
         .flatten()
-        .filter_map(|e| {
-            e.file_name()
-                .to_str()
-                .and_then(|n| n.strip_suffix(".endpoint"))
-                .map(String::from)
-        })
+        .filter_map(|e| e.file_name().to_str().and_then(|n| n.strip_suffix(".endpoint")).map(String::from))
         .collect();
     ids.sort();
     ids
@@ -91,32 +86,15 @@ mod tests {
     fn endpoint_file_is_private() {
         let dir = std::env::temp_dir().join(format!("arcade-link-endpoint-{}", std::process::id()));
         let loc = Locations::under(&dir);
-        let info = EndpointInfo {
-            protocol: vec![1],
-            transport: "unix".into(),
-            address: "/x".into(),
-            pid: 1,
-            started_at: String::new(),
-            token: "t".into(),
-        };
+        let info = EndpointInfo { protocol: vec![1], transport: "unix".into(), address: "/x".into(), pid: 1, started_at: String::new(), token: "t".into() };
         write(&loc, "arcade.test", &info).unwrap();
         assert_eq!(read(&loc, "arcade.test").unwrap(), info);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(loc.endpoint("arcade.test"))
-                .unwrap()
-                .permissions()
-                .mode();
+            let mode = std::fs::metadata(loc.endpoint("arcade.test")).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
-            assert_eq!(
-                std::fs::metadata(&loc.runtime)
-                    .unwrap()
-                    .permissions()
-                    .mode()
-                    & 0o777,
-                0o700
-            );
+            assert_eq!(std::fs::metadata(&loc.runtime).unwrap().permissions().mode() & 0o777, 0o700);
         }
         remove_if_ours(&loc, "arcade.test", "other");
         assert!(read(&loc, "arcade.test").is_ok());

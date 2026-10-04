@@ -4,9 +4,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use interprocess::local_socket::{
-    prelude::*, ConnectOptions, GenericFilePath, Listener, ListenerOptions, Stream,
-};
+use interprocess::local_socket::{prelude::*, ConnectOptions, GenericFilePath, Listener, ListenerOptions, Stream};
 
 use crate::paths::Locations;
 
@@ -45,27 +43,16 @@ pub fn address_for(locations: &Locations, app_id: &str) -> io::Result<Address> {
     {
         let user = std::env::var("USERNAME").unwrap_or_default();
         let hash = short_hash(&format!("{user}|{}", locations.runtime.display()));
-        Ok(Address {
-            transport: "pipe",
-            address: format!(r"\\.\pipe\arcade-{hash}-{app_id}"),
-        })
+        Ok(Address { transport: "pipe", address: format!(r"\\.\pipe\arcade-{hash}-{app_id}") })
     }
     #[cfg(not(windows))]
     {
         let path = locations.runtime.join(format!("{app_id}.sock"));
         let s = path.to_string_lossy().into_owned();
         if s.len() <= MAX_SOCKET_PATH {
-            return Ok(Address {
-                transport: "unix",
-                address: s,
-            });
+            return Ok(Address { transport: "unix", address: s });
         }
-        Ok(Address {
-            transport: "unix",
-            address: short_socket_path(locations, app_id)?
-                .to_string_lossy()
-                .into_owned(),
-        })
+        Ok(Address { transport: "unix", address: short_socket_path(locations, app_id)?.to_string_lossy().into_owned() })
     }
 }
 
@@ -73,26 +60,17 @@ pub fn address_for(locations: &Locations, app_id: &str) -> io::Result<Address> {
 fn short_socket_path(locations: &Locations, app_id: &str) -> io::Result<PathBuf> {
     let dir = PathBuf::from(format!("/tmp/arcade-{}", crate::paths::user_id()));
     crate::paths::ensure_private_dir(&dir)?;
-    Ok(dir.join(format!(
-        "{}.sock",
-        short_hash(&format!("{}|{app_id}", locations.runtime.display()))
-    )))
+    Ok(dir.join(format!("{}.sock", short_hash(&format!("{}|{app_id}", locations.runtime.display())))))
 }
 
 pub(crate) fn listen(address: &str) -> io::Result<Listener> {
     let name = address.to_fs_name::<GenericFilePath>()?;
-    let opts = ListenerOptions::new()
-        .name(name)
-        .try_overwrite(true)
-        .max_spin_time(Duration::from_millis(200));
+    let opts = ListenerOptions::new().name(name).try_overwrite(true).max_spin_time(Duration::from_millis(200));
     #[cfg(windows)]
     let opts = {
-        use interprocess::os::windows::{
-            local_socket::ListenerOptionsExt, security_descriptor::SecurityDescriptor,
-        };
+        use interprocess::os::windows::{local_socket::ListenerOptionsExt, security_descriptor::SecurityDescriptor};
         // Owner (the current user) and SYSTEM only; nobody else may connect.
-        let sd =
-            SecurityDescriptor::deserialize(widestring::u16cstr!("D:P(A;;GA;;;SY)(A;;GA;;;OW)"))?;
+        let sd = SecurityDescriptor::deserialize(widestring::u16cstr!("D:P(A;;GA;;;SY)(A;;GA;;;OW)"))?;
         opts.security_descriptor(sd)
     };
     let listener = opts.create_sync()?;
@@ -134,11 +112,7 @@ mod tests {
     #[test]
     fn macos_style_tmpdir_fits() {
         let tmp = PathBuf::from("/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/arcade");
-        let loc = Locations {
-            registry: tmp.clone(),
-            runtime: tmp.clone(),
-            handoff: tmp,
-        };
+        let loc = Locations { registry: tmp.clone(), runtime: tmp.clone(), handoff: tmp };
         let a = address_for(&loc, "arcade.clipboard").unwrap();
         assert!(a.address.len() <= MAX_SOCKET_PATH && a.address.len() < 104);
         assert!(a.address.ends_with("arcade.clipboard.sock"));

@@ -17,9 +17,7 @@ use crate::error::{reason, ErrorCode, LinkError};
 use crate::manifest::{self, Action};
 use crate::paths::{self, Locations};
 use crate::transport;
-use crate::wire::{
-    self, method, InvokeRequest, InvokeResult, JobDone, JobProgress, LineReader, Message, PeerInfo,
-};
+use crate::wire::{self, method, InvokeRequest, InvokeResult, JobDone, JobProgress, LineReader, Message, PeerInfo};
 
 /// How long a new connection may take to say `hello`.
 const HELLO_TIMEOUT: Duration = Duration::from_secs(2);
@@ -46,9 +44,7 @@ pub trait Handler: Send + Sync + 'static {
 
     /// Quits the app. Called after the `app.quit` response is sent.
     fn quit(&self) -> Result<(), LinkError> {
-        Err(LinkError::unavailable(
-            "this app can't be quit over the Link",
-        ))
+        Err(LinkError::unavailable("this app can't be quit over the Link"))
     }
 }
 
@@ -89,9 +85,7 @@ struct Gate {
 
 impl Gate {
     fn closed() -> Arc<Gate> {
-        Arc::new(Gate {
-            queue: Mutex::new(Some(Vec::new())),
-        })
+        Arc::new(Gate { queue: Mutex::new(Some(Vec::new())) })
     }
 
     fn send(&self, sink: &dyn Sink, m: Message) {
@@ -172,14 +166,7 @@ impl InvokeContext {
         if let Ok(mut s) = self.started.lock() {
             s.push(id.clone());
         }
-        Job {
-            id,
-            sink: self.sink.clone(),
-            cancel,
-            gate: Gate::closed(),
-            jobs: Arc::downgrade(&self.jobs),
-            finished: false,
-        }
+        Job { id, sink: self.sink.clone(), cancel, gate: Gate::closed(), jobs: Arc::downgrade(&self.jobs), finished: false }
     }
 }
 
@@ -210,18 +197,8 @@ impl Job {
     }
 
     pub fn progress(&self, fraction: Option<f32>, message: &str) {
-        let p = JobProgress {
-            job: self.id.clone(),
-            fraction: fraction.map(|f| f.clamp(0.0, 1.0)),
-            message: message.into(),
-        };
-        self.gate.send(
-            &*self.sink,
-            Message::notification(
-                method::JOB_PROGRESS,
-                serde_json::to_value(p).unwrap_or_default(),
-            ),
-        );
+        let p = JobProgress { job: self.id.clone(), fraction: fraction.map(|f| f.clamp(0.0, 1.0)), message: message.into() };
+        self.gate.send(&*self.sink, Message::notification(method::JOB_PROGRESS, serde_json::to_value(p).unwrap_or_default()));
     }
 
     /// Reports the outcome. A cancelled job reports `cancelled` whatever `result` says.
@@ -235,38 +212,16 @@ impl Job {
         }
         self.finished = true;
         let done = match result {
-            _ if self.is_cancelled() => JobDone {
-                job: self.id.clone(),
-                status: "cancelled".into(),
-                result: InvokeResult::default(),
-                error: Some(LinkError::cancelled()),
-            },
-            Ok(r) => JobDone {
-                job: self.id.clone(),
-                status: "success".into(),
-                result: r,
-                error: None,
-            },
-            Err(e) if e.code == ErrorCode::Cancelled => JobDone {
-                job: self.id.clone(),
-                status: "cancelled".into(),
-                result: InvokeResult::default(),
-                error: Some(e),
-            },
-            Err(e) => JobDone {
-                job: self.id.clone(),
-                status: "error".into(),
-                result: InvokeResult::message(e.message.clone()),
-                error: Some(e),
-            },
+            _ if self.is_cancelled() => {
+                JobDone { job: self.id.clone(), status: "cancelled".into(), result: InvokeResult::default(), error: Some(LinkError::cancelled()) }
+            }
+            Ok(r) => JobDone { job: self.id.clone(), status: "success".into(), result: r, error: None },
+            Err(e) if e.code == ErrorCode::Cancelled => {
+                JobDone { job: self.id.clone(), status: "cancelled".into(), result: InvokeResult::default(), error: Some(e) }
+            }
+            Err(e) => JobDone { job: self.id.clone(), status: "error".into(), result: InvokeResult::message(e.message.clone()), error: Some(e) },
         };
-        self.gate.send(
-            &*self.sink,
-            Message::notification(
-                method::JOB_DONE,
-                serde_json::to_value(done).unwrap_or_default(),
-            ),
-        );
+        self.gate.send(&*self.sink, Message::notification(method::JOB_DONE, serde_json::to_value(done).unwrap_or_default()));
         if let Some(jobs) = self.jobs.upgrade() {
             jobs.finish(&self.id);
         }
@@ -274,11 +229,7 @@ impl Job {
 
     /// What [`Handler::invoke`] returns for this job.
     pub fn ticket(&self) -> JobTicket {
-        JobTicket {
-            id: self.id.clone(),
-            sink: self.sink.clone(),
-            gate: self.gate.clone(),
-        }
+        JobTicket { id: self.id.clone(), sink: self.sink.clone(), gate: self.gate.clone() }
     }
 }
 
@@ -351,10 +302,7 @@ impl Server {
         let loc = &config.locations;
         paths::ensure_private_dir(&loc.runtime)?;
         if crate::client::probe(loc, &config.app.id, &config.app).is_some() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::AddrInUse,
-                format!("{} is already serving the Link", config.app.id),
-            ));
+            return Err(std::io::Error::new(std::io::ErrorKind::AddrInUse, format!("{} is already serving the Link", config.app.id)));
         }
         let addr = transport::address_for(loc, &config.app.id)?;
         #[cfg(unix)]
@@ -383,29 +331,22 @@ impl Server {
             stopping: AtomicBool::new(false),
         });
         let accept = inner.clone();
-        std::thread::Builder::new()
-            .name("arcade-link-accept".into())
-            .spawn(move || {
-                for conn in listener.incoming() {
-                    if accept.stopping.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    let Ok(stream) = conn else { continue };
-                    let inner = accept.clone();
-                    let _ = std::thread::Builder::new()
-                        .name("arcade-link-conn".into())
-                        .spawn(move || serve(inner, stream));
+        std::thread::Builder::new().name("arcade-link-accept".into()).spawn(move || {
+            for conn in listener.incoming() {
+                if accept.stopping.load(Ordering::SeqCst) {
+                    break;
                 }
-            })?;
+                let Ok(stream) = conn else { continue };
+                let inner = accept.clone();
+                let _ = std::thread::Builder::new().name("arcade-link-conn".into()).spawn(move || serve(inner, stream));
+            }
+        })?;
         Ok(Server { inner })
     }
 
     /// Tells subscribers that this app's actions or availability changed.
     pub fn notify_changed(&self) {
-        let m = Message::notification(
-            method::APP_CHANGED,
-            json!({ "app": self.inner.config.app.id }),
-        );
+        let m = Message::notification(method::APP_CHANGED, json!({ "app": self.inner.config.app.id }));
         for c in self.subscribers(method::APP_CHANGED) {
             c.send(&m);
         }
@@ -414,16 +355,7 @@ impl Server {
     fn subscribers(&self, topic: &str) -> Vec<Arc<Conn>> {
         let mut conns = self.inner.conns.lock().unwrap_or_else(|e| e.into_inner());
         conns.retain(|w| w.strong_count() > 0);
-        conns
-            .iter()
-            .filter_map(Weak::upgrade)
-            .filter(|c| {
-                c.topics
-                    .lock()
-                    .map(|t| t.iter().any(|x| topic_matches(x, topic)))
-                    .unwrap_or(false)
-            })
-            .collect()
+        conns.iter().filter_map(Weak::upgrade).filter(|c| c.topics.lock().map(|t| t.iter().any(|x| topic_matches(x, topic))).unwrap_or(false)).collect()
     }
 
     /// Jobs are running (an update should wait).
@@ -440,11 +372,7 @@ impl Server {
         if self.inner.stopping.swap(true, Ordering::SeqCst) {
             return;
         }
-        endpoint::remove_if_ours(
-            &self.inner.config.locations,
-            &self.inner.config.app.id,
-            &self.inner.token,
-        );
+        endpoint::remove_if_ours(&self.inner.config.locations, &self.inner.config.app.id, &self.inner.token);
         if let Ok(m) = self.inner.jobs.running.lock() {
             m.values().for_each(|f| f.store(true, Ordering::SeqCst));
         }
@@ -460,20 +388,12 @@ impl Drop for Server {
 }
 
 fn topic_matches(subscribed: &str, topic: &str) -> bool {
-    subscribed == topic
-        || subscribed
-            .strip_suffix('*')
-            .is_some_and(|p| topic.starts_with(p))
+    subscribed == topic || subscribed.strip_suffix('*').is_some_and(|p| topic.starts_with(p))
 }
 
 fn serve(inner: Arc<Inner>, stream: Stream) {
     let stream = Arc::new(stream);
-    let conn = Arc::new(Conn {
-        stream: stream.clone(),
-        write: Mutex::new(()),
-        alive: AtomicBool::new(true),
-        topics: Mutex::new(Vec::new()),
-    });
+    let conn = Arc::new(Conn { stream: stream.clone(), write: Mutex::new(()), alive: AtomicBool::new(true), topics: Mutex::new(Vec::new()) });
     let mut reader = LineReader::new(ArcRead(stream.clone()));
     let _ = stream.set_recv_timeout(Some(HELLO_TIMEOUT));
     let peer = match handshake(&inner, &conn, &mut reader) {
@@ -498,11 +418,7 @@ fn serve(inner: Arc<Inner>, stream: Stream) {
                 continue;
             }
             method::JOB_CANCEL => {
-                let job = m
-                    .params()
-                    .get("job")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
+                let job = m.params().get("job").and_then(Value::as_str).unwrap_or_default();
                 Ok(json!({ "cancelled": inner.jobs.cancel(job) }))
             }
             method::SUBSCRIBE => {
@@ -510,11 +426,7 @@ fn serve(inner: Arc<Inner>, stream: Stream) {
                     .params()
                     .get("topics")
                     .and_then(Value::as_array)
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|t| t.as_str().map(String::from))
-                            .collect()
-                    })
+                    .map(|a| a.iter().filter_map(|t| t.as_str().map(String::from)).collect())
                     .unwrap_or_default();
                 if let Ok(mut t) = conn.topics.lock() {
                     t.clone_from(&topics);
@@ -530,16 +442,9 @@ fn serve(inner: Arc<Inner>, stream: Stream) {
                 "jobs": inner.jobs.count(),
                 "status": inner.handler.status(),
             })),
-            method::APP_ACTIVATE => inner
-                .handler
-                .activate()
-                .map(|_| json!({ "activated": true })),
+            method::APP_ACTIVATE => inner.handler.activate().map(|_| json!({ "activated": true })),
             method::APP_QUIT => {
-                let force = m
-                    .params()
-                    .get("force")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
+                let force = m.params().get("force").and_then(Value::as_bool).unwrap_or(false);
                 if inner.jobs.count() > 0 && !force {
                     Err(LinkError::busy())
                 } else {
@@ -564,43 +469,23 @@ fn handshake(inner: &Inner, conn: &Conn, reader: &mut LineReader<ArcRead>) -> Op
     let m = reader.read_message().ok()??;
     let id = m.id?;
     if m.method.as_deref() != Some(method::HELLO) {
-        conn.send(&Message::response(
-            id,
-            Err(LinkError::denied(reason::TOKEN).with_reason("hello must come first")),
-        ));
+        conn.send(&Message::response(id, Err(LinkError::denied(reason::TOKEN).with_reason("hello must come first"))));
         return None;
     }
     let p = m.params();
     let token = p.get("token").and_then(Value::as_str).unwrap_or_default();
     if !endpoint::token_eq(token, &inner.token) {
-        conn.send(&Message::response(
-            id,
-            Err(LinkError::denied(reason::TOKEN)),
-        ));
+        conn.send(&Message::response(id, Err(LinkError::denied(reason::TOKEN))));
         return None;
     }
-    let theirs: Vec<u32> = p
-        .get("protocol")
-        .and_then(Value::as_array)
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_u64().map(|x| x as u32))
-                .collect()
-        })
-        .unwrap_or_default();
+    let theirs: Vec<u32> =
+        p.get("protocol").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_u64().map(|x| x as u32)).collect()).unwrap_or_default();
     let Some(version) = wire::negotiate(&theirs, wire::SUPPORTED_PROTOCOLS) else {
         conn.send(&Message::response(id, Err(wire::version_mismatch(&theirs))));
         return None;
     };
-    let peer: PeerInfo = p
-        .get("client")
-        .cloned()
-        .and_then(|c| serde_json::from_value(c).ok())
-        .unwrap_or_default();
-    conn.send(&Message::response(
-        id,
-        Ok(json!({ "server": inner.config.app, "protocol": version })),
-    ));
+    let peer: PeerInfo = p.get("client").cloned().and_then(|c| serde_json::from_value(c).ok()).unwrap_or_default();
+    conn.send(&Message::response(id, Ok(json!({ "server": inner.config.app, "protocol": version }))));
     Some(peer)
 }
 
@@ -609,27 +494,16 @@ fn invoke(inner: &Inner, conn: &Arc<Conn>, peer: &PeerInfo, m: &Message, id: u64
     let request: InvokeRequest = match serde_json::from_value(m.params().clone()) {
         Ok(r) => r,
         Err(e) => {
-            conn.send(&Message::response(
-                id,
-                Err(LinkError::unsupported(format!("invalid invoke: {e}"))),
-            ));
+            conn.send(&Message::response(id, Err(LinkError::unsupported(format!("invalid invoke: {e}")))));
             return Vec::new();
         }
     };
-    let ctx = InvokeContext {
-        sink: conn.clone(),
-        jobs: inner.jobs.clone(),
-        peer: peer.clone(),
-        started: Mutex::new(Vec::new()),
-    };
+    let ctx = InvokeContext { sink: conn.clone(), jobs: inner.jobs.clone(), peer: peer.clone(), started: Mutex::new(Vec::new()) };
     let outcome = inner.handler.invoke(request, &ctx);
     let started = ctx.started.into_inner().unwrap_or_default();
     match outcome {
         Ok(Reply::Done(result)) => {
-            conn.send(&Message::response(
-                id,
-                Ok(serde_json::to_value(result).unwrap_or_default()),
-            ));
+            conn.send(&Message::response(id, Ok(serde_json::to_value(result).unwrap_or_default())));
         }
         Ok(Reply::Job(ticket)) => {
             conn.send(&Message::response(id, Ok(json!({ "job": ticket.id() }))));
