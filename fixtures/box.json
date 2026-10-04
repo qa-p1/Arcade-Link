@@ -1,0 +1,24 @@
+{
+  "id": "arcade.box",
+  "name": "Arcade Box",
+  "version": "0.0.0-mock",
+  "oneshot": true,
+  "shortcuts": [{ "id": "island", "accelerator": "Ctrl+Alt+Space" }],
+  "actions": [
+    { "id": "box:arcade.image.convert#webp", "title": "Convert to WebP", "verb": "convert", "preset": "webp",
+      "accepts": ["file/image"], "produces": ["file/image"], "effects": ["writes-files"], "featuredFor": ["file/image"],
+      "mock": { "steps": 3, "stepMs": 30 } },
+    { "id": "box:arcade.video.compress#share-25mb", "title": "Compress for sharing", "verb": "compress", "preset": "share-25mb",
+      "accepts": ["file/video"], "produces": ["file/video"], "effects": ["writes-files"], "featuredFor": ["file/video"],
+      "mock": { "steps": 10, "stepMs": 100 } },
+    { "id": "box:arcade.pdf.ocr", "title": "Make searchable (OCR)", "verb": "ocr",
+      "accepts": ["file/pdf"], "produces": ["file/pdf"], "effects": ["writes-files"], "available": false,
+      "reason": "Tesseract isn't installed" },
+    { "id": "box:arcade.text.structured#format-json", "title": "Format JSON", "verb": "format", "preset": "format-json",
+      "accepts": ["text/plain"], "produces": ["text/plain"], "effects": [],
+      "mock": { "result": { "outputs": [{ "type": "text/plain", "text": "{\n  \"ok\": true\n}" }], "message": "Formatted" } } },
+    { "id": "box:arcade.media.inspect", "title": "Crash test", "verb": "inspect", "accepts": ["file/*"],
+      "mock": { "steps": 10, "stepMs": 50, "crashAfterMs": 120 } },
+    { "id": "box.open", "title": "More in Arcade Box…", "verb": "open", "accepts": ["*"], "effects": ["opens-ui"], "interactive": true }
+  ]
+}

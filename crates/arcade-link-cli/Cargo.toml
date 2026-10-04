@@ -1,0 +1,16 @@
+[package]
+name = "arcade-link-cli"
+description = "arcade-link: inspect and drive Arcade Link apps (ls, describe, invoke, watch, mock)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "arcade-link"
+path = "src/main.rs"
+
+[dependencies]
+arcade-link = { path = "../arcade-link", features = ["watch"] }
+serde_json = "1"

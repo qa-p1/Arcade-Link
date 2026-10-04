@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        if: runner.os == 'Linux'
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # Permissions, the stale-endpoint case and the macOS socket path length
+      # are covered by the crate's own tests on each OS.
+      - name: Test
+        run: cargo test --workspace --locked
+
+  qt:
+    name: Qt module (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the debug CLI (for interop tests)
+        run: cargo build -p arcade-link-cli --locked
+      - name: Configure
+        run: cmake -S qt -B qt/build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build qt/build --config Release
+      - name: Test (conformance vectors + Rust interop)
+        shell: bash
+        run: |
+          cli="$PWD/target/debug/arcade-link"
+          [ -f "$cli.exe" ] && cli="$cli.exe"
+          ARCADE_LINK_CLI="$cli" ctest --test-dir qt/build -C Release --output-on-failure

@@ -1,0 +1,26 @@
+[package]
+name = "arcade-link"
+description = "Arcade Link: registry, presence and wire protocol shared by the Arcade apps"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+# A lazily started directory watcher (inotify / FSEvents / ReadDirectoryChangesW)
+# that refreshes a shared registry when manifests or endpoints change.
+watch = ["dep:notify"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+interprocess = "2.4"
+getrandom = "0.4"
+notify = { version = "8", optional = true, default-features = false, features = ["macos_fsevent"] }
+
+[target.'cfg(windows)'.dependencies]
+widestring = "1"
+
+[dev-dependencies]

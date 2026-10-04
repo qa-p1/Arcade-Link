@@ -1,0 +1,86 @@
+# Arcade Link
+
+How the Arcade apps (Box, Lens, Look, Wheel, Clipboard and the optional
+manager, Tools) recognize each other and work together: a file-based
+registry, one local socket per running app, one shared vocabulary. A protocol
+and a small library, not a process.
+
+- [`SPEC.md`](SPEC.md): the protocol (version 1, frozen), manifests, content
+  types, errors and standard messages, lifecycle, the shared CLI flags and
+  the Connected apps page.
+- [`crates/arcade-link`](crates/arcade-link): the Rust library (registry,
+  endpoint, client, server, content, handoff, one-shot). Used by Box, Lens,
+  Look, Clipboard's core and Arcade Tools. MSRV 1.88; dependencies: `serde`,
+  `serde_json`, `interprocess`, `getrandom` (+ `notify` with the `watch`
+  feature).
+- [`crates/arcade-link-cli`](crates/arcade-link-cli): `arcade-link`, the debug
+  CLI and mock peer.
+- [`qt/`](qt): `ArcadeLink.{h,cpp}` for Arcade Wheel (vendored into Wheel's
+  `src/link/`), with its own tests.
+- [`spec/vectors/`](spec/vectors): conformance vectors both implementations
+  run.
+- [`fixtures/`](fixtures): mock-peer fixtures for each app.
+- [`assets/`](assets): app glyphs and `tokens.json` for integration surfaces.
+- [`tools/e2e.py`](tools/e2e.py): the ecosystem end-to-end run.
+- [`benchmarks/`](benchmarks): the Phase 0 baseline and the regression runner.
+
+## The debug CLI
+
+```sh
+cargo build -p arcade-link-cli
+arcade-link ls                                   # installed apps and their state
+arcade-link describe box                         # actions (live if running)
+arcade-link invoke box box:arcade.image.convert --preset webp --file shot.png
+arcade-link invoke look look.preview --file report.pdf
+arcade-link watch                                # registry and app.changed events
+arcade-link mock --as box --actions fixtures/box.json   # a scriptable fake Box
+```
+
+Every command honors `ARCADE_HOME`, so tests and experiments never touch the
+real registry:
+
+```sh
+export ARCADE_HOME=$(mktemp -d)
+arcade-link mock --as box --actions fixtures/box.json &
+arcade-link invoke box box:arcade.text.structured --preset format-json --text '{"a":1}'
+```
+
+## Using the crate
+
+```rust
+use arcade_link::{ids, Action, Locations, Manifest, Presence};
+
+// After the first frame, on a background thread:
+let mut manifest = Manifest::new(ids::LOOK, env!("CARGO_PKG_VERSION"), &arcade_link::manifest::current_executable());
+manifest.actions.push(Action::new("look.preview", "Quick Look", "preview").accepts(&["file/*"]).effects(&["opens-ui"]).interactive(true));
+let presence = Presence::start(Locations::discover(), manifest, handler);
+```
+
+Calling a peer (from a worker thread, never the UI thread):
+
+```rust
+let registry = arcade_link::Registry::load(&locations);
+let box_app = registry.get(ids::BOX).unwrap();
+let request = InvokeRequest::new("box:arcade.image.convert", ids::LENS).preset(Some("webp")).input(Content::file(path));
+let result = arcade_link::invoke_action(&locations, &me, box_app, &request, Default::default())?;
+```
+
+## Testing
+
+```sh
+cargo test --workspace                       # unit, vectors, server/client, CLI + mock
+cmake -S qt -B qt/build -G Ninja && cmake --build qt/build
+ARCADE_LINK_CLI=$PWD/target/debug/arcade-link ctest --test-dir qt/build   # + Rust interop
+```
+
+## Status
+
+| Platform | Rust crate | Qt module |
+|---|---|---|
+| Linux | tested (this repository's tests) | tested |
+| Windows | build only: compiled and tested in CI, never run by hand | build only |
+| macOS | build only: compiled and tested in CI, never run by hand | build only |
+
+Before the apps depend on a published version, this repository needs a
+GitHub home and a tag; until then the apps use a relative path dependency
+(see the plan's §5.9).
