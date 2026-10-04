@@ -346,10 +346,17 @@ def main() -> int:
         if not shutil.which(tool):
             print(f"bench: {tool} is required", file=sys.stderr)
             return 2
-    env = {k: v for k, v in os.environ.items() if k not in ("DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY",
-                                                              "HYPRLAND_INSTANCE_SIGNATURE", "DISPLAY")}
+    # The private bus starts inside an isolated environment too, so services
+    # it activates (portals, gvfs) never see the real profile.
+    bus_root = Path(tempfile.mkdtemp(prefix="arcade-bench-bus-"))
+    env = isolated_env(bus_root)
+    env.pop("DBUS_SESSION_BUS_ADDRESS", None)
+    env.pop("DISPLAY", None)
     env["ARCADE_BENCH_INNER"] = "1"
-    return subprocess.call(["dbus-run-session", "--", sys.executable, *sys.argv], env=env)
+    try:
+        return subprocess.call(["dbus-run-session", "--", sys.executable, *sys.argv], env=env)
+    finally:
+        shutil.rmtree(bus_root, ignore_errors=True)
 
 
 if __name__ == "__main__":
