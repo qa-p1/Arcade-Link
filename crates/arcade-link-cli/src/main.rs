@@ -7,7 +7,6 @@ mod mock;
 
 use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
 use arcade_link::client::{self, AppState, CallOptions, Client};
 use arcade_link::{Content, InvokeRequest, Locations, Manifest, PeerInfo, Registry};
@@ -55,7 +54,31 @@ fn value<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     values(args, name).into_iter().next()
 }
 
+/// Set by the first Ctrl-C during `invoke`: the running job gets `job.cancel`.
+static CANCEL: AtomicBool = AtomicBool::new(false);
+
+fn cancel_on_interrupt() {
+    #[cfg(unix)]
+    {
+        extern "C" fn on_interrupt(_: libc::c_int) {
+            CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+            // A second Ctrl-C ends the CLI at once.
+            unsafe {
+                libc::signal(libc::SIGINT, libc::SIG_DFL);
+            }
+        }
+        unsafe {
+            libc::signal(libc::SIGINT, on_interrupt as extern "C" fn(libc::c_int) as libc::sighandler_t);
+        }
+    }
+}
+
 fn main() -> ExitCode {
+    // `arcade-link describe box | head` must end quietly, not panic.
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let loc = Locations::discover();
     let r = match args.first().map(String::as_str) {
@@ -193,7 +216,7 @@ fn invoke(loc: &Locations, args: &[String]) -> Result<(), String> {
     let mut req = InvokeRequest::new(action, "arcade.link-cli").preset(value(args, "--preset")).options(Value::Object(options));
     req.inputs = inputs(args)?;
     let manifest = manifest_for(loc, &id)?;
-    let cancel = Arc::new(AtomicBool::new(false));
+    cancel_on_interrupt();
     let mut progress = |p: &arcade_link::JobProgress| {
         let pct = p.fraction.map(|f| format!("{:>3.0}% ", f * 100.0)).unwrap_or_default();
         eprintln!("… {pct}{}", p.message);
@@ -205,7 +228,7 @@ fn invoke(loc: &Locations, args: &[String]) -> Result<(), String> {
         &me(),
         &manifest,
         &req,
-        CallOptions { on_progress: Some(&mut progress), cancel: Some(&cancel), on_launching: Some(&mut launching) },
+        CallOptions { on_progress: Some(&mut progress), cancel: Some(&CANCEL), on_launching: Some(&mut launching) },
     );
     let elapsed = started.elapsed();
     match result {

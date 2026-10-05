@@ -19,6 +19,7 @@ name = "arcade-link-cli"
 version = "0.1.0"
 dependencies = [
  "arcade-link",
+ "libc",
  "serde_json",
 ]
 
