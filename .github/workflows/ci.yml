@@ -32,6 +32,8 @@ jobs:
       # are covered by the crate's own tests on each OS.
       - name: Test
         run: cargo test --workspace --locked
+      - name: Release manifest tool
+        run: python3 -m unittest discover -s tools -p "test_*.py"
 
   qt:
     name: Qt module (${{ matrix.os }})

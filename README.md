@@ -84,3 +84,15 @@ ARCADE_LINK_CLI=$PWD/target/debug/arcade-link ctest --test-dir qt/build   # + Ru
 Before the apps depend on a published version, this repository needs a
 GitHub home and a tag; until then the apps use a relative path dependency
 (see the plan's §5.9).
+
+## Release manifests
+
+`tools/arcade-release.py` writes `arcade-release.json` (schema:
+`spec/arcade-release.schema.json`, plan §11) and `SHA256SUMS.txt` for a
+directory of release files. Each app's release pipeline vendors it (standard
+library only):
+
+```sh
+python3 arcade-release.py --id arcade.look --version 0.4.0 --channel stable \
+  --notes https://github.com/qa-p1/Arcade-look/releases/tag/v0.4.0 dist/
+```
