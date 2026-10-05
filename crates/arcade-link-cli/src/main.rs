@@ -151,7 +151,13 @@ fn ls(loc: &Locations, args: &[String]) -> Result<(), String> {
 }
 
 fn manifest_for(loc: &Locations, id: &str) -> Result<Manifest, String> {
-    Registry::load(loc).get(id).cloned().ok_or_else(|| format!("{id} is not installed (no manifest in {})", loc.registry.display()))
+    Registry::load(loc).get(id).cloned().ok_or_else(|| {
+        let file = loc.registry.join(format!("{id}.json"));
+        match file.exists() {
+            true => format!("{id} is not installed (the executable in {} is gone)", file.display()),
+            false => format!("{id} is not installed (no manifest in {})", loc.registry.display()),
+        }
+    })
 }
 
 fn describe(loc: &Locations, args: &[String]) -> Result<(), String> {
@@ -255,8 +261,10 @@ fn invoke(loc: &Locations, args: &[String]) -> Result<(), String> {
 
 fn simple(loc: &Locations, args: &[String], method: &str, params: Value) -> Result<(), String> {
     let id = app_id(args.get(1).ok_or("needs an app")?);
-    let mut c = Client::connect(loc, &id, &me()).map_err(|e| e.to_string())?;
-    let r = c.call(method, params).map_err(|e| e.to_string())?;
+    let name = arcade_link::manifest::app_name(&id).to_string();
+    let shown = |e: arcade_link::LinkError| format!("{} [{}]", e.user_message(&name), e);
+    let mut c = Client::connect(loc, &id, &me()).map_err(shown)?;
+    let r = c.call(method, params).map_err(shown)?;
     println!("{}", serde_json::to_string_pretty(&r).unwrap_or_default());
     Ok(())
 }
