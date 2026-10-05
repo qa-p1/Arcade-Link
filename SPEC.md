@@ -243,6 +243,28 @@ An action's `accepts` holds patterns; a value matches if any pattern does:
   off the startup path).
 - Existing user files are never copied; only their path travels.
 
+### 5.4 Structured data
+
+The `data` of each `structured/<name>` value. Readers ignore unknown fields;
+writers never remove a field within protocol version 1.
+
+| Name | `data` |
+|---|---|
+| `findings` | array of `{capability, text, summary, confidence, recognizer, details:[{label, value}]}`; `capability` is Lens's (`text`, `url`, `path`, `command`, `color`, `qr`, `email`, …) |
+| `file-info` | `{path, name, type, kind, format, mime, size, modified, width?, height?, durationMs?, tags?, family?}` (`type` is the Link content type) |
+| `devices` | array of `{name, platform, online}`; `platform` lower-case (`linux`, `windows`, `macos`, `android`, `ios`, `device`). Never keys, IDs or addresses |
+| `pipelines` | array of `{id, name, version, accepts:[type], produces:[type], effects:[effect], interactive}`: `accepts` is the first node's input types (empty for a pipeline that takes no input), `interactive` is true when the first node is interactive |
+| `arcade-action` | `{app, action, version, title, preset?, input?}`: a runnable reference to another app's action, e.g. for "Add to Wheel". `input` is a suggested input mode (`none`, `clipboard`, `lens-selection`, `file-selection`) |
+| `region` | `{rect:{x,y,width,height}, monitor}` (the same as `screen/region`'s `data`) |
+| `color` | `{hex, rgb:[r,g,b]}` |
+| `barcode` | `{format, text}` |
+| `table` | `{columns:[string], rows:[[string]]}` |
+
+`box.pipeline.run` takes the pipeline as `options.pipeline` (its `id`) and the
+first node's input in `inputs`; its effects are the union of its nodes'
+effects. A pipeline's `{app:"arcade.box", action:"box.pipeline.run",
+options.pipeline}` is what Wheel slots and Lens/Look entries store.
+
 ## 6. Errors
 
 | Code | Meaning |
