@@ -349,8 +349,9 @@ Every app has the same page:
 - A master switch, **Connect with other Arcade apps**. Off: no listener, no
   manifest actions (§3).
 - One row per Arcade app: glyph, name, state (*Running · v0.2.0* /
-  *Installed* / *Not installed*) and a toggle **Use with <this app>**; off
-  hides that peer's entries in this app only.
+  *Installed* / *Not installed*) and a toggle **Use with <this app's full
+  name>** ("Use with Arcade Lens"); off hides that peer's entries in this
+  app only.
 - For an app that isn't installed: one line on what it would add here, and
   **Get** (opens Arcade Tools if installed, otherwise the releases page).
   Promotion appears only on this page, never in palettes, menus or results.
