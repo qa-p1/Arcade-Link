@@ -24,8 +24,10 @@ import shutil
 import signal
 import subprocess
 import sys
+import struct
 import tempfile
 import time
+import zlib
 from pathlib import Path
 
 LINK = Path(__file__).resolve().parents[1]
@@ -102,9 +104,13 @@ class Session:
         self.root = root
         self.env = isolated_env(root)
         self.procs: dict[str, subprocess.Popen] = {}
-        display = ":96"
-        self.xvfb = subprocess.Popen(["Xvfb", display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Xvfb picks a free display itself, so several runs can go in parallel.
+        rfd, wfd = os.pipe()
+        self.xvfb = subprocess.Popen(["Xvfb", "-displayfd", str(wfd), "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, pass_fds=(wfd,))
+        os.close(wfd)
+        with os.fdopen(rfd) as r:
+            display = ":" + r.readline().strip()
         self.env["DISPLAY"] = display
         self.env["DBUS_SESSION_BUS_ADDRESS"] = os.environ.get("DBUS_SESSION_BUS_ADDRESS", "")
         # Let D-Bus-activated services (portals) reach the virtual display.
@@ -154,6 +160,29 @@ class Session:
             time.sleep(0.05)
         raise AssertionError(f"{app} did not start serving the Link; log:\n{self.log(app)}")
 
+    def invoke(self, app: str, action: str, *args: str, timeout: float = 60, background: bool = False):
+        """`arcade-link invoke … --json`: (exit code, outputs/result or error text).
+
+        With `background`, returns the Popen so the caller can drive the UI first.
+        """
+        cmd = [str(CLI), "invoke", app, action, *args, "--json"]
+        if background:
+            return subprocess.Popen(cmd, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        r = subprocess.run(cmd, env=self.env, capture_output=True, text=True, timeout=timeout)
+        return parse_invoke(r.returncode, r.stdout, r.stderr)
+
+    def xdotool(self, *args: str) -> str:
+        return subprocess.run(["xdotool", *args], env=self.env, capture_output=True, text=True).stdout.strip()
+
+    def wait_window(self, name: str, timeout: float = 10) -> str:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            found = self.xdotool("search", "--onlyvisible", "--name", name)
+            if found:
+                return found.splitlines()[0]
+            time.sleep(0.1)
+        raise AssertionError(f"no visible window named {name!r}")
+
     def state(self, app: str) -> str:
         r = self.cli("ls", "--json")
         for row in json.loads(r.stdout or "[]"):
@@ -186,6 +215,29 @@ class Session:
         self.xvfb.terminate()
 
 
+def parse_invoke(code: int, stdout: str, stderr: str):
+    if code == 0:
+        try:
+            return 0, json.loads(stdout[: stdout.rfind("}") + 1] or "{}")
+        except json.JSONDecodeError:
+            return 0, stdout
+    return code, (stderr or stdout).strip()
+
+
+def finish(p: subprocess.Popen, timeout: float = 20):
+    out, err = p.communicate(timeout=timeout)
+    return parse_invoke(p.returncode, out, err)
+
+
+def write_png(path: Path, width: int = 8, height: int = 6) -> Path:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    rows = b"".join(b"\0" + bytes([200, 40, 40]) * width for _ in range(height))
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+                     + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    return path
+
+
 # ---- checks -----------------------------------------------------------------
 
 CHECKS: dict[str, callable] = {}
@@ -209,7 +261,126 @@ def every_app_registers_and_serves(s: Session) -> str:
     return r.stdout.strip()
 
 
+def ensure_running(s: Session, *apps: str) -> None:
+    for app in apps:
+        if app not in s.procs or s.procs[app].poll() is not None:
+            s.start(app)
+
+
+def outputs(result) -> list:
+    assert isinstance(result, dict), result
+    return result.get("outputs", [])
+
+
+@check("actions")
+def box_runs_a_tool_preset_headless(s: Session) -> str:
+    ensure_running(s, "arcade.box")
+    png = write_png(s.root / "in.png", 64, 48)
+    code, r = s.invoke("box", "box:arcade.image.convert#webp", "--file", str(png), timeout=120)
+    assert code == 0, r
+    out = outputs(r)[0]
+    assert out["type"] == "file/image" and out["path"].endswith(".webp"), out
+    assert Path(out["path"]).read_bytes()[8:12] == b"WEBP", out
+    return out["path"]
+
+
+@check("actions")
+def box_one_shot_without_a_running_box(s: Session) -> str:
+    spec = APPS["arcade.box"]
+    png = write_png(s.root / "oneshot.png", 64, 48)
+    req = {"action": "box:arcade.image.convert", "preset": "png", "inputs": [{"type": "file/image", "path": str(png)}],
+           "options": {}, "context": {"source": "e2e", "interactive": False, "reason": "test"}}
+    r = subprocess.run([str(spec["dir"] / "target/release/arcadebox"), "--arcade-invoke"], input=json.dumps(req),
+                       env=s.env, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+    return r.stdout.strip()[:200]
+
+
+@check("actions")
+def look_inspects_and_previews(s: Session) -> str:
+    ensure_running(s, "arcade.look")
+    png = write_png(s.root / "look.png", 12, 7)
+    code, r = s.invoke("look", "look.inspect", "--file", str(png))
+    assert code == 0, r
+    info = outputs(r)[0]
+    assert info["type"] == "structured/file-info", info
+    assert (info["data"]["width"], info["data"]["height"]) == (12, 7), info
+    code, r = s.invoke("look", "look.preview", "--file", str(png))
+    assert code == 0 and "Previewing" in r.get("message", ""), r
+    code, r = s.invoke("look", "look.preview", "--url", "https://example.com")
+    assert code != 0 and "unsupported_input" in r, r
+    return json.dumps(info["data"])
+
+
+@check("actions")
+def lens_recognizes_pins_and_analyzes(s: Session) -> str:
+    ensure_running(s, "arcade.lens")
+    png = write_png(s.root / "lens.png", 40, 30)
+    code, r = s.invoke("lens", "lens.recognize", "--file", str(png), timeout=120)
+    assert code == 0, r
+    found = outputs(r)
+    code, r = s.invoke("lens", "lens.pin", "--file", str(png))
+    assert code == 0, r
+    p = s.invoke("lens", "lens.analyze", "--file", str(png), background=True)
+    time.sleep(2)
+    s.xdotool("key", "Escape")
+    code, r = finish(p)
+    assert code in (0, 1), r
+    return f"recognize -> {[o['type'] for o in found]}; analyze -> {r if code else 'done'}"
+
+
+@check("actions")
+def lens_capture_returns_the_selected_region(s: Session) -> str:
+    ensure_running(s, "arcade.lens")
+    p = s.invoke("lens", "lens.capture", background=True)
+    time.sleep(1.5)
+    s.xdotool("mousemove", "100", "100", "mousedown", "1", "mousemove", "300", "250", "mouseup", "1")
+    code, r = finish(p)
+    assert code == 0, r
+    kinds = [o["type"] for o in outputs(r)]
+    assert "file/image" in kinds and "screen/region" in kinds, r
+    region = next(o for o in outputs(r) if o["type"] == "screen/region")
+    return json.dumps(region.get("data"))
+
+
+@check("actions")
+def wheel_shows_and_offers_add_action(s: Session) -> str:
+    ensure_running(s, "arcade.wheel")
+    code, r = s.invoke("wheel", "wheel.show")
+    assert code == 0, r
+    s.xdotool("key", "Escape")
+    p = s.invoke("wheel", "wheel.add_action", "--url", "https://example.com", background=True)
+    win = s.wait_window("Arcade Wheel")
+    time.sleep(0.5)
+    s.xdotool("windowclose", win)
+    code, r = finish(p)
+    assert code != 0 and "user_cancelled" in r, r
+    return r
+
+
+@check("actions")
+def clipboard_actions_without_devices(s: Session) -> str:
+    ensure_running(s, "arcade.clipboard")
+    code, r = s.invoke("clipboard", "clipboard.devices")
+    assert code == 0 and outputs(r)[0]["data"] == [], r
+    code, r = s.invoke("clipboard", "clipboard.add", "--text", "hello")
+    assert code != 0 and "unavailable" in r, r
+    return r
+
+
+def load_check_modules() -> None:
+    """Per-app check groups live in tools/e2e_checks/<name>.py; each module
+    uses `check(group)` and the `Session` helpers from this file."""
+    import importlib.util
+    for path in sorted((Path(__file__).parent / "e2e_checks").glob("*.py")):
+        spec = importlib.util.spec_from_file_location(f"e2e_checks.{path.stem}", path)
+        module = importlib.util.module_from_spec(spec)
+        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "CLI": CLI})
+        spec.loader.exec_module(module)
+
+
 def run_checks(root: Path, only: str | None) -> int:
+    load_check_modules()
     s = Session(root)
     failures = 0
     try:
