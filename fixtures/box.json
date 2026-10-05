@@ -19,6 +19,14 @@
       "mock": { "result": { "outputs": [{ "type": "text/plain", "text": "{\n  \"ok\": true\n}" }], "message": "Formatted" } } },
     { "id": "box:arcade.media.inspect", "title": "Crash test", "verb": "inspect", "accepts": ["file/*"],
       "mock": { "steps": 10, "stepMs": 50, "crashAfterMs": 120 } },
+    { "id": "box.pipelines", "title": "Saved pipelines", "verb": "list", "produces": ["structured/pipelines"],
+      "mock": { "result": { "outputs": [{ "type": "structured/pipelines", "data": [
+        { "id": "p-optimized-screenshot", "name": "Send optimized screenshot", "version": 1, "accepts": [], "produces": [],
+          "effects": ["opens-ui", "writes-files", "sends-to-device"], "interactive": true },
+        { "id": "p-web-image", "name": "Web image", "version": 1, "accepts": ["file/image"], "produces": ["file/image"],
+          "effects": ["writes-files"], "interactive": false } ] }] } } },
+    { "id": "box.pipeline.run", "title": "Run pipeline", "verb": "run", "accepts": ["*"], "effects": ["writes-files"],
+      "mock": { "steps": 4, "stepMs": 40 } },
     { "id": "box.open", "title": "More in Arcade Box…", "verb": "open", "accepts": ["*"], "effects": ["opens-ui"], "interactive": true }
   ]
 }

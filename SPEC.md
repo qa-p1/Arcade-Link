@@ -254,7 +254,7 @@ writers never remove a field within protocol version 1.
 | `file-info` | `{path, name, type, kind, format, mime, size, modified, width?, height?, durationMs?, tags?, family?}` (`type` is the Link content type) |
 | `devices` | array of `{name, platform, online}`; `platform` lower-case (`linux`, `windows`, `macos`, `android`, `ios`, `device`). Never keys, IDs or addresses |
 | `pipelines` | array of `{id, name, version, accepts:[type], produces:[type], effects:[effect], interactive}`: `accepts` is the first node's input types (empty for a pipeline that takes no input), `interactive` is true when the first node is interactive |
-| `arcade-action` | `{app, action, version, title, preset?, input?}`: a runnable reference to another app's action, e.g. for "Add to Wheel". `input` is a suggested input mode (`none`, `clipboard`, `lens-selection`, `file-selection`) |
+| `arcade-action` | `{app, action, version, title, preset?, options?, input?}`: a runnable reference to another app's action, e.g. for "Add to Wheel". `options` are passed as the invoke's `options` (a pipeline: `{pipeline: id}`); `input` is a suggested input mode (`none`, `clipboard`, `lens-selection`, `file-selection`) |
 | `region` | `{rect:{x,y,width,height}, monitor}` (the same as `screen/region`'s `data`) |
 | `color` | `{hex, rgb:[r,g,b]}` |
 | `barcode` | `{format, text}` |
