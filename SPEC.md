@@ -174,7 +174,7 @@ are ignored and never given authority.
 | `invoke` | `{action, version?, preset?, inputs:[Content], options, context:{source, interactive, reason}}` → an `InvokeResult` `{outputs:[Content], message?, data?}` or `{job}` |
 | `job.cancel` | `{job}` → `{cancelled: bool}`. Partial outputs are removed by the owner |
 | `subscribe` | `{topics:["app.changed", "job.*"]}` → `{topics}`. Job notifications always go to the connection that started the job |
-| `app.status` | `{}` → `{id, version, pid, protocol, busy, jobs, status}` |
+| `app.status` | `{}` → `{id, version, pid, protocol, busy, jobs, status}`. `status` is an app-defined object; it should include `mode`: `"background"` (started with `--background`, no window) or `"foreground"`, so a manager can relaunch the app the same way after an update |
 | `app.activate` | `{}` → `{activated: true}` (bring the main window forward) |
 | `app.quit` | `{force?}` → `{quitting: true}`, or `busy` while jobs run unless `force` |
 
