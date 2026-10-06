@@ -13,3 +13,7 @@ def inspect_reports_dimensions(s):
 ```
 
 Run one group: `python3 tools/e2e.py --only look`.
+
+`s.screenshot("look-strip")` saves the virtual screen as a PNG in
+`$ARCADE_E2E_SHOTS` (default: the run's temporary root); pass an X window id
+from `s.wait_window(...)` to capture one window.

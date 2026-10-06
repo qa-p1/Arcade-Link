@@ -183,6 +183,16 @@ class Session:
             time.sleep(0.1)
         raise AssertionError(f"no visible window named {name!r}")
 
+    def screenshot(self, name: str, window: str = "root") -> Path:
+        """Saves the virtual screen (or one X window id) as `<name>.png` in
+        `$ARCADE_E2E_SHOTS` (default: the run's temporary root) and returns the path."""
+        out = Path(os.environ.get("ARCADE_E2E_SHOTS") or self.root) / f"{name}.png"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        r = subprocess.run(["import", "-window", window, str(out)], env=self.env, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise AssertionError(f"screenshot {name} failed: {r.stderr}")
+        return out
+
     def state(self, app: str) -> str:
         r = self.cli("ls", "--json")
         for row in json.loads(r.stdout or "[]"):
