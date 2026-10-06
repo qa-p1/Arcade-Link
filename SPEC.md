@@ -410,7 +410,7 @@ clipboard contents without the user acting in the owner's UI.
 |---|---|---|---|---|---|---|
 | `look.preview` | Look | `file/*`, `file/*[]`, `folder/reference`, `text/url` | — | opens-ui | yes | no |
 | `look.inspect` | Look | `file/*` | `structured/file-info` | — | no | yes |
-| `look.preview_selection` | Look | — | — | opens-ui | yes | no |
+| `look.preview_selection` | Look | — | `file/*[]` with `options.resolveOnly` (the selection, no UI) | opens-ui | yes | no |
 | `lens.capture` | Lens | — | `file/image`, `screen/region` | opens-ui | yes | no |
 | `lens.capture_and_act` | Lens | — | — | opens-ui | yes | no |
 | `lens.analyze` | Lens | `file/image` | — | opens-ui | yes | no |
