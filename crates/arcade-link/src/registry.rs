@@ -174,10 +174,14 @@ impl SharedRegistry {
         let listener: Listener = Box::new(on_change);
         let inner = self.inner.clone();
         let handler = move |res: notify::Result<notify::Event>| {
-            if res.is_err() {
+            let Ok(event) = res else { return };
+            // Readers opening and reading endpoint files and manifests (every
+            // probe does) must not count as changes, or watchers that probe
+            // on change would wake each other forever.
+            if is_read_only(&event.kind) {
                 return;
             }
-            let changed_runtime = res.as_ref().is_ok_and(|e| e.paths.iter().any(|p| p.extension().is_some_and(|x| x == "endpoint")));
+            let changed_runtime = event.paths.iter().any(|p| p.extension().is_some_and(|x| x == "endpoint"));
             let snapshot = match inner.write() {
                 Ok(mut r) => {
                     let changed = r.refresh();
@@ -212,6 +216,15 @@ impl SharedRegistry {
     }
 }
 
+/// An event that only reports a read (open, read, close without writing).
+/// Closing a file that was written still counts: inotify reports some writes
+/// only that way.
+#[cfg(feature = "watch")]
+fn is_read_only(kind: &notify::EventKind) -> bool {
+    use notify::event::{AccessKind, AccessMode};
+    matches!(kind, notify::EventKind::Access(a) if *a != AccessKind::Close(AccessMode::Write))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +246,35 @@ mod tests {
         assert!(!r.refresh());
         assert_eq!(r.shortcut_owner("arcade.me", "alt+ctrl+space").as_deref(), Some("Arcade Good"));
         assert_eq!(r.shortcut_owner("arcade.good", "Ctrl+Alt+Space"), None);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn watcher_ignores_reads_of_endpoint_files() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let dir = std::env::temp_dir().join(format!("arcade-link-watch-{}", std::process::id()));
+        let loc = Locations::under(&dir);
+        let shared = SharedRegistry::load(&loc);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        assert!(shared.watch(move |_| {
+            seen.fetch_add(1, Ordering::SeqCst);
+        }));
+        let settle = || std::thread::sleep(std::time::Duration::from_millis(300));
+        let endpoint = loc.runtime.join("arcade.test.endpoint");
+        let tmp = loc.runtime.join("arcade.test.endpoint.tmp");
+        std::fs::write(&tmp, "{}").unwrap();
+        std::fs::rename(&tmp, &endpoint).unwrap();
+        settle();
+        let after_write = calls.load(Ordering::SeqCst);
+        assert!(after_write >= 1, "a new endpoint is a change");
+        for _ in 0..5 {
+            std::fs::read_to_string(&endpoint).unwrap();
+        }
+        settle();
+        assert_eq!(calls.load(Ordering::SeqCst), after_write, "reading an endpoint is not a change");
         std::fs::remove_dir_all(dir).ok();
     }
 }
