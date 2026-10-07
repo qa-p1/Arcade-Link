@@ -49,7 +49,7 @@ APPS = {
     },
     "arcade.look": {
         "dir": CODING / "Rust/arcade-look",
-        "bin": "src-tauri/target/release/arcade-look",
+        "bin": "src-tauri/target/link-tests/debug/arcade-look",  # scripts/verify-link.py --build-e2e
         "args": ["--background"],
         "build": None,  # npm run build && cargo build --release (in src-tauri)
     },

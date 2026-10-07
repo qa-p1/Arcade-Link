@@ -12,10 +12,6 @@ import time
 import zlib
 
 
-if os.environ.get('ALOOK_E2E_DEBUG_BINARY') == '1':
-    APPS['arcade.look']['bin'] = 'src-tauri/target/debug/arcade-look'
-
-
 def png(path, width=12, height=7):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
@@ -102,7 +98,7 @@ def unsupported_url_and_linux_selection(s):
 
 @check("look")
 def look_consumer_boundaries(s):
-    deps = APPS["arcade.look"]["dir"] / "src-tauri/target/debug/deps"
+    deps = APPS["arcade.look"]["dir"] / "src-tauri/target/link-tests/debug/deps"
     binaries = [p for p in deps.glob("link_consumer-*") if p.is_file() and os.access(p, os.X_OK)]
     assert binaries, "build Look's consumer tests first: cargo test --test link_consumer --no-run"
     binary = max(binaries, key=lambda p: p.stat().st_mtime)
