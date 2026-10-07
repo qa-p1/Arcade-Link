@@ -312,14 +312,21 @@ def _ui_lines(s, win="root"):
     for Tesseract; dark surfaces (the palette) also read far better inverted
     and thresholded, light ones (Settings) as they are, so both are read."""
     shot = s.root / "lens-ui.png"
+    if win != "root":
+        # import cannot recover an obscured window's pixels in Xvfb. Lens's
+        # frozen overlay can cover a peer or Settings while a job is pending.
+        s.xdotool("windowraise", win, "windowfocus", "--sync", win)
     subprocess.run(["import", "-window", win, str(shot)], env=s.env, check=True)
     out = []
-    for prep in (["-resize", f"{OCR_SCALE * 100}%"],
-                 ["-colorspace", "Gray", "-negate", "-resize", f"{OCR_SCALE * 100}%", "-threshold", "60%"]):
+    for prep, psm in ((["-resize", f"{OCR_SCALE * 100}%"], "11"),
+                      (["-colorspace", "Gray", "-negate", "-resize", f"{OCR_SCALE * 100}%", "-threshold", "60%"], "11"),
+                      # The red clash label has less luminance than body
+                      # text and disappears at the palette's 60% threshold.
+                      (["-colorspace", "Gray", "-negate", "-resize", f"{OCR_SCALE * 100}%", "-threshold", "85%"], "11")):
         img = s.root / "lens-ui-ocr.png"
         subprocess.run(["magick", str(shot), *prep, str(img)], env=s.env, check=True)
-        r = subprocess.run(["tesseract", str(img), "stdout", "--psm", "11", "tsv"],
-                           env=s.env, capture_output=True, text=True, timeout=15)
+        r = subprocess.run(["tesseract", str(img), "stdout", "--psm", psm, "tsv"],
+                           env=dict(s.env, OMP_THREAD_LIMIT="1"), capture_output=True, text=True, timeout=15)
         assert r.returncode == 0, r.stderr
         lines = {}
         for word in csv.DictReader(io.StringIO(r.stdout), delimiter="\t"):
@@ -545,7 +552,7 @@ def command_finding_opens_real_wheel_settings(s):
     s.xdotool("key", "Return")
     win = s.wait_window("Arcade Wheel.*Settings")
     s.xdotool("windowsize", win, "1240", "820")
-    s.xdotool("windowfocus", "--sync", win)
+    s.xdotool("windowraise", win, "windowfocus", "--sync", win)
     time.sleep(1.0)  # let Settings paint before the screenshot
     s.screenshot("lens-wheel-command-prefilled", win)
     configs = [p for p in (s.root / "config").rglob("config.json") if "Arcade Wheel" in str(p)]
@@ -662,15 +669,36 @@ def connected_apps_real_toggles_and_shortcut_clash(s):
         _ui_click(s, "Save", win, occurrence=-1)  # the button, not "Save to apply changes"
         s.wait_running("arcade.lens")
         assert json.loads(manifest.read_text())["actions"], "master on did not republish Lens actions"
+        # Test the installed shortcut cache after stopping the real Box. Its
+        # global X11 grab would otherwise consume Ctrl+Alt+Space and open the
+        # island before Lens's recorder receives it. Keep the real manifest.
+        box = Path(s.env["ARCADE_HOME"]) / "apps/arcade.box.json"
+        assert any(sc["accelerator"] == "Ctrl+Alt+Space" for sc in json.loads(box.read_text())["shortcuts"])
+        s.kill("arcade.box", signal.SIGTERM)
+        # Session.kill waits for this PID to exit and release its X grab.
+        # A signal exit may leave a stale Link endpoint file, by design.
+        _focus(s, "^Arcade Lens Settings$")
         _ui_click(s, "Shortcut", win)
+        _focus(s, "^Arcade Lens Settings$")
         _ui_click(s, "Change", win)
-        s.xdotool("key", "ctrl+alt+space")
+        s.screenshot("lens-shortcut-recording", win)
         try:
+            # The outlined recorder button is visible in the screenshot but
+            # sparse OCR skips it. Give egui a frame after the click instead.
+            time.sleep(0.2)
+            _focus(s, "^Arcade Lens Settings$")
+            s.xdotool("key", "ctrl+alt+space")
             _wait(lambda: any(_has(l["text"], "Used by Arcade Box") for l in _ui_lines(s, win)),
                   "recorder did not identify Box's cached shortcut")
         except AssertionError:
             s.screenshot("lens-shortcut-clash-failed", win)
-            raise
+            s.screenshot("lens-shortcut-clash-desktop-failed")
+            box = Path(s.env["ARCADE_HOME"]) / "apps/arcade.box.json"
+            lines = "\n".join(l["text"] for l in _ui_lines(s, win))
+            raise AssertionError(f"recorder did not identify Box's cached shortcut; "
+                                 f"focus={s.xdotool('getwindowfocus')}, settings={win}; "
+                                 f"Box shortcuts={json.loads(box.read_text()).get('shortcuts') if box.exists() else 'missing'}; "
+                                 f"recorder text:\n{lines}") from None
         s.screenshot("lens-shortcut-clash", win)
         _ui_click(s, "Revert", win)  # the test's draft must not change the saved shortcut
     finally:
