@@ -352,11 +352,16 @@ def mock_pipeline_picker_selection_and_failures(s):
     assert _calls(log, 'box:arcade.image.convert#webp')[-1]['inputs'][0]['path'] == str(selected)
     time.sleep(.3)
     _bind(s, 'arcade.look', 'look.preview_selection', title='Preview selection')
+    activity = s.wait_window('Arcade Wheel.*Activity')
+    _click(s, activity, 470, 34)  # Clear earlier finished jobs so this result is visible.
     count = len(_calls(log, 'look.preview_selection'))
     _run_slot(s)
     _wait(lambda: len(_calls(log, 'look.preview_selection')) > count, 'flow 9 slot not invoked')
     assert not _calls(log, 'look.preview_selection')[-1]['options'].get('resolveOnly', False)
-    s.screenshot('wheel-preview-selection', s.wait_window('Arcade Wheel.*Activity'))
+    activity = s.wait_window('Arcade Wheel.*Activity')
+    s.xdotool('windowraise', activity)
+    _wait(lambda: 'Preview selection' in _surface_text(s, activity), 'selection activity did not paint')
+    s.screenshot('wheel-preview-selection', activity)
     return 'mock optimized pipeline bound and run; searched grouped picker; shortcut clash; peer/master toggles; unavailable saved slot; resolveOnly chain and direct flow 9'
 
 
