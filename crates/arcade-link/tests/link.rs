@@ -343,3 +343,35 @@ fn cancel_handlers_run_once() {
     assert_eq!(told.load(Ordering::SeqCst), 1);
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn cancel_handlers_may_report_and_finish_synchronously() {
+    // A handler that reports progress and finishes its job from inside the
+    // cancel callback must not deadlock on the server's job bookkeeping.
+    struct Reentrant;
+    impl Handler for Reentrant {
+        fn describe(&self) -> Vec<Action> {
+            vec![]
+        }
+        fn invoke(&self, _req: InvokeRequest, ctx: &InvokeContext) -> Result<Reply, LinkError> {
+            let job = Arc::new(std::sync::Mutex::new(Some(ctx.start_job())));
+            let ticket = job.lock().unwrap().as_ref().unwrap().ticket();
+            let held = job.clone();
+            job.lock().unwrap().as_ref().unwrap().on_cancel(move || {
+                if let Some(job) = held.lock().unwrap().take() {
+                    job.progress(None, "stopping");
+                    job.finish(Err(LinkError::cancelled()));
+                }
+            });
+            Ok(Reply::Job(ticket))
+        }
+    }
+    let (dir, loc) = root("on-cancel-reentrant");
+    let _s = Server::start(ServerConfig { app: PeerInfo { id: "arcade.reentrant".into(), version: "1".into() }, locations: loc.clone() }, Arc::new(Reentrant))
+        .unwrap();
+    let mut c = Client::connect(&loc, "arcade.reentrant", &me()).unwrap();
+    let cancel = AtomicBool::new(true);
+    let e = c.invoke(&InvokeRequest::new("x", "t"), &mut |_| {}, Some(&cancel)).unwrap_err();
+    assert_eq!(e.code, ErrorCode::Cancelled);
+    std::fs::remove_dir_all(dir).ok();
+}
