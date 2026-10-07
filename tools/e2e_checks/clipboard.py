@@ -245,7 +245,7 @@ def clipboard_consumer_discovery_transforms_and_handoff(s):
             _action("box:arcade.image.convert#png", ["file/image"], {"outputs": [image]}, steps=3, stepMs=40),
             _action("box:arcade.image.compress#web-200kb", ["file/image"], {"outputs": [image]}),
             _action("box:arcade.text.structured#format-json", ["text/plain"],
-                    {"outputs": [{"type": "text/plain", "text": '{\n  "synthetic": true\n}'}]}),
+                    {"outputs": [{"type": "structured/json", "text": '{\n  "synthetic": true\n}', "data": {"synthetic": True}}]}),
             _action("box:arcade.text.clean#clean", ["text/plain"], {"outputs": [{"type": "text/plain", "text": "Clean synthetic text"}]}),
         ])
         # Wait for the watcher, without asking discovery to read the filesystem.
@@ -269,7 +269,7 @@ def clipboard_consumer_discovery_transforms_and_handoff(s):
             assert "result" in done, done
         history = c.request("history")
         rows = history if isinstance(history, list) else history["items"]
-        assert {"Synthetic OCR result", "Clean synthetic text"} <= {r["text"] for r in rows}, rows
+        assert {"Synthetic OCR result", "Clean synthetic text", '{\n  "synthetic": true\n}'} <= {r["text"] for r in rows}, rows
         photo = next(r for r in rows if r["kind"] == "image")
         done = c.invoke("arcade.look", "look.preview", item_id=photo["id"])
         assert "result" in done, done
@@ -448,6 +448,11 @@ def clipboard_photo_flagship_with_real_look_lens_and_box(s):
         for action in ("box:arcade.text.structured#format-json", "box:arcade.text.clean#clean"):
             done = c.invoke("arcade.box", action, input={"type": "text/plain", "text": '{"clipboard":true}'})
             assert "result" in done, done
+            assert any(o["type"] == "text/plain" and "clipboard" in o.get("text", "")
+                       for o in done["result"].get("outputs", [])), done
+        history = c.request("history")
+        rows = history if isinstance(history, list) else history["items"]
+        assert any(r["kind"] == "text" and '"clipboard"' in r["text"] and "\n" in r["text"] for r in rows), rows
         return "real photo arrival -> Quick Look -> OCR text clip -> PNG clip -> Lens pin; Lens one-shot; real Box JSON/clean text"
     finally:
         c.close()
@@ -462,7 +467,8 @@ def _ui_words(s, win):
     current = s.root / "clipboard-ui-current.png"
     subprocess.run(["import", "-window", win, str(current)], env=s.env,
                    capture_output=True, check=True, timeout=10)
-    result = subprocess.run(["tesseract", str(current), "stdout", "tsv"], env=s.env,
+    result = subprocess.run(["tesseract", str(current), "stdout", "--psm", "11", "tsv"],
+                            env={**s.env, "OMP_THREAD_LIMIT": "1"},
                             capture_output=True, text=True, check=True, timeout=10)
     return [row for row in csv.DictReader(io.StringIO(result.stdout), delimiter="\t", quoting=csv.QUOTE_NONE)
             if row["text"].strip()]
@@ -471,13 +477,19 @@ def _ui_words(s, win):
 def _ui_matches(words, phrase):
     def normalized(text):
         return re.sub(r"[^a-z0-9]", "", text.lower())
-    wanted = [normalized(t) for t in phrase.split()]
+    wanted = normalized(phrase)
     tokens = [normalized(row["text"]) for row in words]
     matches = []
-    for index in range(len(tokens) - len(wanted) + 1):
-        if tokens[index:index + len(wanted)] != wanted:
+    for index in range(len(tokens)):
+        combined = ""
+        end = index
+        for end in range(index, len(tokens)):
+            combined += tokens[end]
+            if combined == wanted or not wanted.startswith(combined):
+                break
+        if combined != wanted:
             continue
-        rows = words[index:index + len(wanted)]
+        rows = words[index:end + 1]
         left = min(int(r["left"]) for r in rows)
         right = max(int(r["left"]) + int(r["width"]) for r in rows)
         top = min(int(r["top"]) for r in rows)
@@ -504,30 +516,51 @@ def _ui_click(s, win, phrase, after=None):
         matches = [m for m in matches if m[1] > y]
     assert matches, f"no {phrase!r} below {after!r}"
     x, y = matches[0]
+    s.xdotool("windowfocus", "--sync", win)
     s.xdotool("mousemove", "--window", win, str(x), str(y), "click", "1")
-    time.sleep(0.3)
+    time.sleep(0.5)
+
+
+def _ui_navigate(s, win, label, destination):
+    # Window restoration after a picker completes can briefly consume the
+    # first focus/click. Retry navigation only; never retry a settings toggle.
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        _ui_click(s, win, label)
+        words = _ui_words(s, win)
+        if _ui_matches(words, destination):
+            return
+        time.sleep(0.2)
+    raise AssertionError(f"navigation to {destination!r} failed")
 
 
 def _menu_shot(s, win, kind, peers):
     y = {"file": 259, "text": 337, "image": 418}[kind]
-    s.xdotool("mousemove", "--window", win, "1118", str(y), "click", "1")
-    words = _ui_wait(s, win, "Inspect clip")
-    text = " ".join(r["text"] for r in words)
-    if peers:
-        required = {"file": ["Quick Look"], "text": ["Format JSON", "Clean text"],
-                    "image": ["Quick Look", "Analyze with Lens", "Extract text", "Pin", "Convert to PNG", "Compress"]}[kind]
-        for label in required:
-            _ui_wait(s, win, label)
-    else:
+    required = {"file": ["Quick Look"], "text": ["Format JSON", "Clean text"],
+                "image": ["Quick Look", "Analyze with Lens", "Extract text", "Pin", "Convert to PNG", "Compress"]}[kind] if peers else []
+    deadline = time.monotonic() + 25
+    while True:
+        s.xdotool("mousemove", "--window", win, "1118", str(y), "click", "1")
+        words = _ui_wait(s, win, "Inspect clip")
+        if all(_ui_matches(words, label) for label in required):
+            break
+        s.xdotool("key", "Escape")
+        assert time.monotonic() < deadline, "menu entries missing: " + " ".join(r["text"] for r in words)
+        # A menu snapshots cached offers at open. Reopen after a real Box
+        # provider finishes initialization and publishes late availability.
+        time.sleep(0.3)
+    if not peers:
+        text = " ".join(r["text"] for r in words)
         assert not any(label in text for label in ("Quick Look", "Format JSON", "Extract text", "Convert to PNG")), text
     s.screenshot(f"clipboard-menu-{kind}-{'peers' if peers else 'alone'}", win)
     s.xdotool("key", "Escape")
     time.sleep(0.2)
 
 
-def _publish_file_clipboard(s, path):
-    # Publish a URI with the installed GTK library; no xclip package or global
-    # clipboard is needed. The helper owns the selection only in this Xvfb.
+def _publish_clipboard(s, kind, value):
+    # Copy through GTK's normal text/image/URI clipboard APIs. The helper
+    # owns the selection only in this Xvfb; no global clipboard is touched.
+    s.kill("clipboard-owner")
     program = r'''
 import ctypes as c
 import sys
@@ -544,7 +577,7 @@ gtk.gtk_clipboard_get.restype = c.c_void_p
 gtk.gtk_selection_data_set.argtypes = [c.c_void_p, c.c_void_p, c.c_int, c.c_void_p, c.c_int]
 gtk.gtk_clipboard_set_with_data.argtypes = [c.c_void_p, c.POINTER(Entry), c.c_uint, get_type, clear_type, c.c_void_p]
 assert gtk.gtk_init_check(None, None)
-payload = sys.argv[1].encode() + b"\r\n"
+payload = sys.argv[2].encode() + b"\r\n"
 buffer = c.create_string_buffer(payload)
 uri_atom = gdk.gdk_atom_intern_static_string(b"text/uri-list")
 @get_type
@@ -554,17 +587,34 @@ def get_data(clipboard, selection, info, data):
 def clear_data(clipboard, data):
     pass
 clipboard = gtk.gtk_clipboard_get(gdk.gdk_atom_intern_static_string(b"CLIPBOARD"))
-entry = Entry(b"text/uri-list", 0, 0)
-assert gtk.gtk_clipboard_set_with_data(clipboard, c.byref(entry), 1, get_data, clear_data, None)
+if sys.argv[1] == "text":
+    gtk.gtk_clipboard_set_text.argtypes = [c.c_void_p, c.c_char_p, c.c_int]
+    text = sys.argv[2].encode()
+    gtk.gtk_clipboard_set_text(clipboard, text, len(text))
+elif sys.argv[1] == "image":
+    pixbuf = c.CDLL("libgdk_pixbuf-2.0.so.0")
+    pixbuf.gdk_pixbuf_new_from_file.argtypes = [c.c_char_p, c.c_void_p]
+    pixbuf.gdk_pixbuf_new_from_file.restype = c.c_void_p
+    image = pixbuf.gdk_pixbuf_new_from_file(sys.argv[2].encode(), None)
+    assert image, "image could not be decoded"
+    gtk.gtk_clipboard_set_image.argtypes = [c.c_void_p, c.c_void_p]
+    gtk.gtk_clipboard_set_image(clipboard, image)
+else:
+    entry = Entry(b"text/uri-list", 0, 0)
+    assert gtk.gtk_clipboard_set_with_data(clipboard, c.byref(entry), 1, get_data, clear_data, None)
 print("ready", flush=True)
 gtk.gtk_main()
 '''
-    p = subprocess.Popen([sys.executable, "-c", program, path.as_uri()], env=s.env,
+    p = subprocess.Popen([sys.executable, "-c", program, kind, str(value)], env=s.env,
                          stdout=subprocess.PIPE, stderr=open(s.root / "clipboard-owner.log", "w"),
                          text=True, start_new_session=True)
     s.procs["clipboard-owner"] = p
     assert select.select([p.stdout], [], [], 10)[0], "GTK clipboard owner did not start"
     assert p.stdout.readline().strip() == "ready", "GTK clipboard owner failed"
+
+
+def _publish_file_clipboard(s, path):
+    _publish_clipboard(s, "uri", path.as_uri())
 
 
 @check("clipboard_ui")
@@ -598,8 +648,8 @@ def clipboard_ui_surfaces(s):
     _ui_wait(s, win, "3 clips")
     for kind in ("file", "text", "image"):
         _menu_shot(s, win, kind, peers=False)
-    _ui_click(s, win, "Settings")
-    _ui_click(s, win, "Connected apps")
+    _ui_navigate(s, win, "Settings", "Private mode")
+    _ui_navigate(s, win, "Connected apps", "Connect with other Arcade apps")
     s.xdotool("windowsize", "--sync", win, "1180", "1040")
     _ui_wait(s, win, "Not installed")
     s.screenshot("clipboard-connected-alone", win)
@@ -614,6 +664,7 @@ def clipboard_ui_surfaces(s):
         _menu_shot(s, win, kind, peers=True)
     picker = _picker(s)
     win = s.wait_window("Arcade Clipboard")
+    _ui_wait(s, win, "Choose")
     s.xdotool("key", "End")
     _ui_wait(s, win, "Convert to PNG")
     s.screenshot("clipboard-picker-image-shortcuts", win)
@@ -629,8 +680,8 @@ def clipboard_ui_surfaces(s):
     win = s.wait_window("Arcade Clipboard")
     s.xdotool("windowsize", "--sync", win, "1180", "1040")
     s.xdotool("windowfocus", "--sync", win)
-    _ui_click(s, win, "Settings")
-    _ui_click(s, win, "Connected apps")
+    _ui_navigate(s, win, "Settings", "Private mode")
+    _ui_navigate(s, win, "Connected apps", "Connect with other Arcade apps")
     _ui_wait(s, win, "Running")
     _ui_click(s, win, "Diagnostics")
     _ui_wait(s, win, "Listening")
@@ -650,14 +701,28 @@ def clipboard_ui_surfaces(s):
     s.wait_running("arcade.clipboard")
     _ui_click(s, win, "Use with Arcade Clipboard", after="Arcade Box")
     s.xdotool("mousemove", "--window", win, "28", "28", "click", "1")
-    _ui_click(s, win, "F9")
-    # Deliver directly to the recorder, avoiding the real Box global grab.
-    s.xdotool("key", "--window", win, "ctrl+alt+space")
+    # Box's native global grab would intercept the recorder's XTest chord.
+    # Its persisted manifest still claims the shortcut when it is installed
+    # but stopped, exactly what the registry-backed warning must inspect.
+    s.kill("arcade.box", signal.SIGTERM)
+    _ui_click(s, win, "CTRL+ALT+F9")
+    s.xdotool("key", "ctrl+alt+space")
     _ui_wait(s, win, "Used by Arcade Box")
     s.screenshot("clipboard-shortcut-clash", win)
     _ui_click(s, win, "Cancel")
     _ui_click(s, win, "Clipboard")
     s.xdotool("windowsize", "--sync", win, "1180", "820")
+    s.start("arcade.box")
+    deadline = time.monotonic() + 25
+    while time.monotonic() < deadline:
+        actions = json.loads(s.cli("describe", "box", "--json", check=True).stdout)
+        if any(a["id"] == "box:arcade.image.compress#web-200kb" and a.get("available", True)
+               for a in actions):
+            break
+        time.sleep(0.2)
+    else:
+        raise AssertionError("Real Box compressor did not become available")
+    time.sleep(0.3)  # let the OS directory-watch notification reach Dart
     big = s.root / "clipboard-ui-large-photo.jpg"
     shutil.copy2(photo, big)
     with big.open("ab") as f:
