@@ -537,3 +537,141 @@ def lens_models(s):
                     part.write_bytes(response.read(200 * 1024 * 1024))
                     part.replace(cached)
             shutil.copyfile(cached, path)
+
+
+def store_pipeline(s, pipeline):
+    resident(s)
+    s.kill("arcade.box", signal.SIGTERM)
+    db = Path(s.env["XDG_DATA_HOME"]) / "dev.arcadebox.app/arcade.sqlite3"
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT OR REPLACE INTO pipelines(id,version,definition_json) VALUES(?,?,?)", (pipeline["id"],pipeline["version"],json.dumps(pipeline)))
+    resident(s)
+
+
+def optimized_screenshot_pipeline():
+    return {"id":"optimized-screenshot","name":"Send optimized screenshot","version":1,"nodes":[
+        {"id":"capture","link":{"app":"arcade.lens","action":"lens.capture","version":1},"inputs":[],"options":{}},
+        {"id":"resize","toolId":"arcade.image.resize","inputs":[{"kind":"node","nodeId":"capture","outputIndex":0}],"options":{"mode":"percentage","percentage":50}},
+        {"id":"convert","toolId":"arcade.image.convert","inputs":[{"kind":"node","nodeId":"resize","outputIndex":0}],"options":{"format":"webp"}},
+        {"id":"send","link":{"app":"arcade.clipboard","action":"clipboard.add","version":1},"inputs":[{"kind":"node","nodeId":"convert","outputIndex":0}],"options":{}}
+    ],"outputNodes":["send"]}
+
+
+@check("box")
+@check("box-pipeline")
+def cross_app_pipeline_real_lens_and_clipboard(s):
+    resident(s)
+    clipboard_mesh(s)
+    for app in ("arcade.lens", "arcade.look", "arcade.wheel"):
+        if app not in s.procs or s.procs[app].poll() is not None:
+            s.start(app)
+    definition = optimized_screenshot_pipeline()
+    store_pipeline(s, definition)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        code, listing = s.invoke("box", "box.pipelines")
+        offers = listing["outputs"][0]["data"] if code == 0 else []
+        offer = next((p for p in offers if p["id"] == definition["id"]), None)
+        if offer:
+            break
+        time.sleep(.1)
+    assert offer and offer["interactive"] and offer["accepts"] == [] and offer["produces"] == [], listing
+    assert "sends-to-device" in offer["effects"] and "opens-ui" in offer["effects"], offer
+    wire = Wire(s)
+    try:
+        response = wire.invoke("box.pipeline.run", options={"pipeline":definition["id"]})
+        assert "result" in response, response
+        try:
+            confirm = s.wait_window("Confirm pipeline effects", timeout=15)
+        except AssertionError:
+            s.screenshot("box-pipeline-debug")
+            names = [(w, s.xdotool("getwindowname", w)) for w in s.xdotool("search", "--onlyvisible", "--name", ".").splitlines()]
+            raise AssertionError(f"no effects dialog; windows={names}; job={wire.done(response['result']['job'])}")
+        s.screenshot("box-pipeline-effects", confirm)
+        s.xdotool("windowfocus", "--sync", confirm, "key", "Return")
+        lens_select(s)
+        done = wire.done(response["result"]["job"])
+        assert done["status"] == "success", done
+        # Approval is remembered; a second run reaches Lens without a prompt.
+        second = wire.invoke("box.pipeline.run", options={"pipeline":definition["id"]})
+        lens_select(s)
+        again = wire.done(second["result"]["job"])
+        assert again["status"] == "success", again
+        third = wire.invoke("box.pipeline.run", options={"pipeline":definition["id"]})
+        s.wait_window("^Arcade Lens$", timeout=15)
+        cancelled = wire.call("job.cancel", {"job":third["result"]["job"]})
+        assert cancelled["result"]["cancelled"], cancelled
+        stopped = wire.done(third["result"]["job"])
+        assert stopped["status"] == "cancelled" and not stopped.get("outputs"), stopped
+        # Lens currently leaves a cancelled capture's selector open; dismiss it.
+        for win in s.xdotool("search", "--onlyvisible", "--name", "^Arcade Lens$").splitlines():
+            s.xdotool("windowfocus", "--sync", win, "key", "Escape")
+        time.sleep(.3)
+        fourth = wire.invoke("box.pipeline.run", options={"pipeline":definition["id"]})
+        s.wait_window("^Arcade Lens$", timeout=15)
+        s.kill("arcade.lens", signal.SIGKILL)
+        crashed = wire.done(fourth["result"]["job"])
+        assert crashed["status"] == "error" and not crashed.get("outputs"), crashed
+        s.start("arcade.lens")
+    finally:
+        wire.close()
+    db = Path(s.env["XDG_DATA_HOME"]) / "dev.arcadebox.app/arcade.sqlite3"
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT value FROM settings WHERE key=?", ("pipeline_effect_approval."+definition["id"],)).fetchone()
+    clipboard_stop(s)
+    history = clipboard_driver(s, clipboard_initialize(s), {"op":"history"}, {"op":"shutdown"})[1]
+    clips = history if isinstance(history, list) else history["items"]
+    assert clips and any(
+        representation.get("name", "").endswith(".webp") and representation.get("size", 0) > 0
+        for clip in clips for representation in clip.get("representations", [])
+    ), history
+    root = Path(s.env["XDG_DATA_HOME"]) / "dev.arcadebox.app/job-artifacts"
+    assert not list(root.glob("pipeline-job-*")), "intermediate job dir survived"
+    s.start("arcade.clipboard")
+    return "real Lens capture → resize 50% → WebP → Clipboard history; effects confirmed once; cancel/crash clean up intermediates"
+
+
+@check("box")
+@check("box-pipeline")
+def peer_pipeline_editor_and_version_repair(s):
+    resident(s)
+    for app in ("arcade.lens", "arcade.clipboard"):
+        if app not in s.procs or s.procs[app].poll() is not None:
+            s.start(app)
+    pipeline = optimized_screenshot_pipeline()
+    pipeline["nodes"][0]["link"]["version"] = 99
+    store_pipeline(s, pipeline)
+    code, listing = s.invoke("box", "box.pipelines")
+    assert code == 0 and not any(p["id"] == pipeline["id"] for p in listing["outputs"][0]["data"]), listing
+    wire = Wire(s)
+    try:
+        denied = wire.invoke("box.pipeline.run", options={"pipeline":pipeline["id"]})
+        assert "error" in denied and "Needs repair" in str(denied), denied
+    finally:
+        wire.close()
+    exe = APPS["arcade.box"]["dir"] / APPS["arcade.box"]["bin"]
+    subprocess.run([str(exe), "--settings"], env=s.env, capture_output=True, text=True, check=True, timeout=20)
+    win = s.wait_window("Arcade Box")
+    s.xdotool("windowraise", win, "windowfocus", "--sync", win)
+    ui_wait(s, "Pipelines")
+    # Wait for the Settings first frame to settle before changing dashboard mode.
+    time.sleep(.5)
+    ui_click(s, "Pipelines")
+    time.sleep(.3)
+    ui_click(s, "Pipelines")
+    ui_wait(s, "Needs repair")
+    s.screenshot("box-pipeline-needs-repair", win)
+    ui_click(s, "Edit", last=True)
+    ui_wait(s, "Starting input")
+    s.screenshot("box-pipeline-editor-peer", win)
+    geometry = dict(line.split("=", 1) for line in s.xdotool("getwindowgeometry", "--shell", win).splitlines() if "=" in line)
+    s.xdotool("mousemove", str(int(geometry["X"]) + int(geometry["WIDTH"]) - 80), str(int(geometry["Y"]) + int(geometry["HEIGHT"]) - 80), "click", "5", "click", "5", "click", "5")
+    ui_wait(s, "Use current action version")
+    s.screenshot("box-pipeline-editor-version", win)
+    ui_click(s, "Use current action version")
+    s.xdotool("click", "5", "click", "5", "click", "5", "click", "5", "click", "5", "click", "5", "click", "5", "click", "5")
+    ui_click(s, "Save pipeline")
+    with sqlite3.connect(Path(s.env["XDG_DATA_HOME"]) / "dev.arcadebox.app/arcade.sqlite3") as conn:
+        saved = json.loads(conn.execute("SELECT definition_json FROM pipelines WHERE id=?", (pipeline["id"],)).fetchone()[0])
+    assert saved["nodes"][0]["link"]["version"] == 1, saved
+    return "changed action version hidden from consumers; Needs repair editor updates the pinned version and saves all four stages"
