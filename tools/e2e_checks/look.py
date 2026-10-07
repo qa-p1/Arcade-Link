@@ -490,8 +490,9 @@ def real_box_image_video_pdf_flagship_flows(s):
     # Settings with the file pre-filled and waits for the user. Cancelling from
     # Look's chip must end that pending request in Wheel.
     wheel = s.wait_window('Arcade Wheel.*Settings', timeout=20)
-    s.xdotool('windowraise', wheel)
-    time.sleep(0.4)
+    # No window manager: size, raise and focus Wheel, then let it paint.
+    s.xdotool('windowsize', wheel, '1240', '820', 'windowraise', wheel, 'windowfocus', wheel)
+    time.sleep(1.0)
     shot(s, 'look-file-in-wheel', wheel)
     wait_ui(s, "document.querySelector('.arcade-job')?.hidden === false")
     ui(s, "document.querySelector('button[aria-label=\"Cancel action\"]').click()")
