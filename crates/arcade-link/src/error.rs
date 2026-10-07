@@ -129,6 +129,12 @@ impl From<std::io::Error> for LinkError {
     fn from(e: std::io::Error) -> Self {
         match e.kind() {
             std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => LinkError::new(ErrorCode::Timeout, e.to_string()),
+            // The peer went away (crashed or was killed mid-connection). The
+            // client maps a closed connection during `hello` to not_running.
+            std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::UnexpectedEof => LinkError::internal(format!("the connection closed ({e})")),
             _ => LinkError::internal(e.to_string()),
         }
     }
@@ -198,6 +204,15 @@ pub fn standard_message(code: ErrorCode, app: &str, reason: Option<&str>, limit:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_peer_that_went_away_reads_as_a_closed_connection() {
+        for kind in [std::io::ErrorKind::ConnectionReset, std::io::ErrorKind::BrokenPipe, std::io::ErrorKind::UnexpectedEof] {
+            let e = LinkError::from(std::io::Error::from(kind));
+            assert_eq!(e.code, ErrorCode::Internal);
+            assert!(e.message.contains("closed"), "{e}");
+        }
+    }
 
     #[test]
     fn unknown_codes_become_internal() {
