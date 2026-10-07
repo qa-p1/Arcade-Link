@@ -286,7 +286,13 @@ def outputs(result) -> list:
 def box_runs_a_tool_preset_headless(s: Session) -> str:
     ensure_running(s, "arcade.box")
     png = write_png(s.root / "in.png", 64, 48)
-    code, r = s.invoke("box", "box:arcade.image.convert#webp", "--file", str(png), timeout=120)
+    # A fresh Box answers "still checking its engines" until its first probe ends.
+    deadline = time.monotonic() + 60
+    while True:
+        code, r = s.invoke("box", "box:arcade.image.convert#webp", "--file", str(png), timeout=120)
+        if code == 0 or "still checking its engines" not in str(r) or time.monotonic() > deadline:
+            break
+        time.sleep(1)
     assert code == 0, r
     out = outputs(r)[0]
     assert out["type"] == "file/image" and out["path"].endswith(".webp"), out
@@ -300,10 +306,16 @@ def box_one_shot_without_a_running_box(s: Session) -> str:
     png = write_png(s.root / "oneshot.png", 64, 48)
     req = {"action": "box:arcade.image.convert", "preset": "png", "inputs": [{"type": "file/image", "path": str(png)}],
            "options": {}, "context": {"source": "e2e", "interactive": False, "reason": "test"}}
-    r = subprocess.run([str(spec["dir"] / "target/release/arcadebox"), "--arcade-invoke"], input=json.dumps(req),
+    # One-shot stdin carries one ordinary `invoke` request message (SPEC §4.4).
+    msg = {"v": 1, "id": 1, "method": "invoke", "params": req}
+    r = subprocess.run([str(spec["dir"] / "target/release/arcadebox"), "--arcade-invoke"], input=json.dumps(msg) + "\n",
                        env=s.env, capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
-    return r.stdout.strip()[:200]
+    final = json.loads(r.stdout.strip().splitlines()[-1])
+    assert "result" in final, final
+    out = final["result"]["outputs"][0]
+    assert out["type"] == "file/image" and Path(out["path"]).read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", final
+    return out["path"]
 
 
 @check("actions")
@@ -343,8 +355,11 @@ def lens_recognizes_pins_and_analyzes(s: Session) -> str:
 def lens_capture_returns_the_selected_region(s: Session) -> str:
     ensure_running(s, "arcade.lens")
     p = s.invoke("lens", "lens.capture", background=True)
-    time.sleep(1.5)
-    s.xdotool("mousemove", "100", "100", "mousedown", "1", "mousemove", "300", "250", "mouseup", "1")
+    overlay = s.wait_window("^Arcade Lens$")
+    s.xdotool("windowraise", overlay, "windowfocus", overlay)
+    # egui needs a frame between pointer events to see a drag.
+    s.xdotool("mousemove", "100", "100", "sleep", "0.2", "mousedown", "1", "sleep", "0.2",
+              "mousemove", "300", "250", "sleep", "0.2", "mouseup", "1")
     code, r = finish(p)
     assert code == 0, r
     kinds = [o["type"] for o in outputs(r)]
@@ -360,11 +375,12 @@ def wheel_shows_and_offers_add_action(s: Session) -> str:
     assert code == 0, r
     s.xdotool("key", "Escape")
     p = s.invoke("wheel", "wheel.add_action", "--url", "https://example.com", background=True)
-    win = s.wait_window("Arcade Wheel")
+    # The request waits in Wheel's Settings; closing that window cancels it.
+    win = s.wait_window("Arcade Wheel.*Settings")
     time.sleep(0.5)
-    s.xdotool("windowclose", win)
+    s.xdotool("windowfocus", win, "key", "ctrl+w")
     code, r = finish(p)
-    assert code != 0 and "user_cancelled" in r, r
+    assert code != 0 and "Cancelled." in r and "[denied:" in r, r
     return r
 
 
@@ -436,21 +452,34 @@ def main() -> int:
                 return 2
         if not CLI.exists():
             subprocess.check_call(["cargo", "build", "-p", "arcade-link-cli"], cwd=LINK)
-        # The private bus starts inside the isolated environment too, so
-        # services it activates (portals, gvfs) never see the real profile.
-        root = Path(tempfile.mkdtemp(prefix="arcade-e2e-"))
-        env = isolated_env(root)
-        env["ARCADE_E2E_INNER"] = "1"
-        env["ARCADE_E2E_ROOT"] = str(root)
-        try:
-            return subprocess.call(["dbus-run-session", "--", sys.executable, *sys.argv], env=env)
-        finally:
-            if not os.environ.get("E2E_KEEP"):
-                shutil.rmtree(root, ignore_errors=True)
+        if not args.only and not args.command:
+            # A full run gives every group its own fresh session: groups leave
+            # apps running in states (open pickers, toggled settings, held
+            # profiles) that the next group must not inherit.
+            load_check_modules()
+            failed = [g for g in CHECKS if isolated(sys.argv[:1] + ["--only", g]) != 0]
+            print(f"groups failed: {', '.join(failed)}" if failed else "all groups passed")
+            return 1 if failed else 0
+        return isolated(sys.argv)
     root = Path(os.environ["ARCADE_E2E_ROOT"])
     if args.command and args.command[0] == "run":
         return run_command(root, args.command[1:])
     return run_checks(root, args.only)
+
+
+def isolated(argv: list[str]) -> int:
+    """Runs this script with `argv` inside a new isolated session."""
+    # The private bus starts inside the isolated environment too, so
+    # services it activates (portals, gvfs) never see the real profile.
+    root = Path(tempfile.mkdtemp(prefix="arcade-e2e-"))
+    env = isolated_env(root)
+    env["ARCADE_E2E_INNER"] = "1"
+    env["ARCADE_E2E_ROOT"] = str(root)
+    try:
+        return subprocess.call(["dbus-run-session", "--", sys.executable, *argv], env=env)
+    finally:
+        if not os.environ.get("E2E_KEEP"):
+            shutil.rmtree(root, ignore_errors=True)
 
 
 if __name__ == "__main__":
