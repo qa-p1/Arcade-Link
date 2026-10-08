@@ -1,6 +1,7 @@
 """Real Lens server checks and consumer flows, always under the e2e runner."""
 
 import csv
+import difflib
 import io
 import json
 import select
@@ -287,7 +288,7 @@ def _filter(s, text, rendered=True):
     if not rendered:
         time.sleep(0.5)
         return
-    shown = lambda: any(_has(line["text"], text) for line in _ui_lines(s))
+    shown = lambda: any(_near(line["text"], text) for line in _ui_lines(s))
     try:
         _wait(shown, f"Lens did not render filter {text!r}", timeout=5)
     except AssertionError:
@@ -305,6 +306,14 @@ OCR_SCALE = 3
 def _has(line, text):
     """OCR sometimes drops the spaces between short words."""
     return "".join(text.lower().split()) in "".join(line.lower().split())
+
+
+def _near(line, text):
+    """Like _has, but tolerates a misread character or two (the filter's text
+    cursor reads as a letter; the row icon splits words)."""
+    want, got = "".join(text.lower().split()), "".join(line.lower().split())
+    return any(difflib.SequenceMatcher(None, want, got[i:i + len(want)]).ratio() >= 0.85
+               for i in range(max(1, len(got) - len(want) + 2)))
 
 
 def _ui_lines(s, win="root"):
@@ -548,6 +557,9 @@ def command_finding_opens_real_wheel_settings(s):
     s.xdotool("windowfocus", "--sync", win)
     time.sleep(1.0)  # let Settings paint before the screenshot
     s.screenshot("lens-wheel-command-prefilled", win)
+    # Lens hands the job off and closes its overlay, so Wheel's window is
+    # reachable (a full-screen overlay used to cover it).
+    s.screenshot("lens-wheel-command-root")
     configs = [p for p in (s.root / "config").rglob("config.json") if "Arcade Wheel" in str(p)]
     assert len(configs) == 1, configs
     before = configs[0].read_bytes()
