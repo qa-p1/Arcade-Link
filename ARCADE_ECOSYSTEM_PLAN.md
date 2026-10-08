@@ -47,7 +47,7 @@ Do **not** touch anything else: not other folders under `Coding/`, `Rust/`, `C++
   - unset `WAYLAND_DISPLAY` and `HYPRLAND_INSTANCE_SIGNATURE`;
   - run under Xvfb (`xvfb-run` or `Xvfb :99` + `DISPLAY=:99`);
   - set `ARCADE_HOME`, `ARCADE_LENS_HOME`, `ARCADE_DATA_DIR`, `ARCADE_WHEEL_INSTANCE`, `ARCADE_WHEEL_DISABLE_GLOBAL_SHORTCUT=1` and a temporary `XDG_CONFIG_HOME`/`XDG_DATA_HOME` so nothing is written to the real profile.
-  
+
   If Xvfb isn't installed, run only the headless and non-GUI tests, mark the GUI end-to-end checks "not run (no Xvfb)" in §16, and continue.
 
 ### 0.3 Non-negotiables
