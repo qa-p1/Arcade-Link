@@ -412,6 +412,12 @@ impl Server {
         }
         endpoint::remove_if_ours(&self.inner.config.locations, &self.inner.config.app.id, &self.inner.token);
         self.inner.jobs.cancel_all();
+        // Close live connections too: switched off means no longer served,
+        // and on Windows their pipe instances would block the next listener.
+        #[cfg(windows)]
+        for conn in self.inner.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter_map(Weak::upgrade) {
+            transport::disconnect(&conn.stream);
+        }
         // Wake the accept thread so it sees `stopping` and drops the listener,
         // and wait (briefly) until it has: a Windows pipe name can't be served
         // again while the old listener still holds it.

@@ -22,5 +22,6 @@ notify = { version = "8", optional = true, default-features = false, features = 
 
 [target.'cfg(windows)'.dependencies]
 widestring = "1"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Pipes"] }
 
 [dev-dependencies]

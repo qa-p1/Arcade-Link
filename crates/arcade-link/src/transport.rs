@@ -83,6 +83,19 @@ pub(crate) fn listen(address: &str) -> io::Result<Listener> {
     Ok(listener)
 }
 
+/// Ends a served connection from the server side: its pending read fails and
+/// its thread exits, which frees the pipe instance. While any instance is
+/// open, a new listener can't claim the pipe name.
+#[cfg(windows)]
+pub(crate) fn disconnect(stream: &Stream) {
+    use std::os::windows::io::{AsHandle, AsRawHandle};
+    #[allow(irrefutable_let_patterns)]
+    if let Stream::NamedPipe(s) = stream {
+        // SAFETY: the handle is a live server end of this named pipe.
+        unsafe { windows_sys::Win32::System::Pipes::DisconnectNamedPipe(s.inner().as_handle().as_raw_handle()) };
+    }
+}
+
 pub fn connect(address: &str, timeout: Duration) -> io::Result<Stream> {
     let name = address.to_fs_name::<GenericFilePath>()?;
     let opts = ConnectOptions::new().name(name);
