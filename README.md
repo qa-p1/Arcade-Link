@@ -83,9 +83,10 @@ ARCADE_LINK_CLI=$PWD/target/debug/arcade-link ctest --test-dir qt/build   # + Ru
 | Windows | build only: compiled and tested in CI, never run by hand | build only |
 | macOS | build only: compiled and tested in CI, never run by hand | build only |
 
-Before the apps depend on a published version, this repository needs a
-GitHub home and a tag; until then the apps use a relative path dependency
-(see the plan's §5.9).
+The apps use the published `v0.1.0` git tag; Wheel vendors the matching Qt
+module. See the [completed ecosystem plan](ARCADE_ECOSYSTEM_PLAN.md) and
+[completion report](COMPLETION_REPORT.md) for verification results, performance
+measurements and remaining platform limitations.
 
 ## Release manifests
 

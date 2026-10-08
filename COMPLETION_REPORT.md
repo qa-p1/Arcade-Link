@@ -118,6 +118,7 @@ pass, and the benchmark was kept unchanged for baseline comparability.
   workflow may release packages. The tagged Link dependency is already in place;
   no dependency migration or LibreOffice installation is required.
 
-The final report and fresh benchmark are local documentation artifacts. No new
-push, tag, release, system configuration or startup-file change was made in this
-final pass.
+The final report, completed plan and fresh benchmark are versioned in the
+Arcade Link repository. The five apps retain their `arcade/link` branches;
+merging them to `main` and publishing application releases is a separate step.
+No system configuration or startup-file changes were needed for final verification.
