@@ -260,7 +260,7 @@ fn subscribers_hear_app_changed_and_presence_follows_the_switch() {
     assert_eq!(Client::connect(&loc, "arcade.echo", &me()).err().unwrap().code, ErrorCode::NotRunning);
     m.settings.link_enabled = true;
     p.update(m);
-    assert!(p.listening());
+    assert!(p.listening(), "{:?}", p.last_error());
     std::fs::remove_dir_all(dir).ok();
 }
 
