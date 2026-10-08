@@ -328,6 +328,7 @@ struct Inner {
 /// A running Link server. Dropping it stops listening and removes the endpoint file.
 pub struct Server {
     inner: Arc<Inner>,
+    accept: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl Server {
@@ -368,7 +369,7 @@ impl Server {
             stopping: AtomicBool::new(false),
         });
         let accept = inner.clone();
-        std::thread::Builder::new().name("arcade-link-accept".into()).spawn(move || {
+        let handle = std::thread::Builder::new().name("arcade-link-accept".into()).spawn(move || {
             for conn in listener.incoming() {
                 if accept.stopping.load(Ordering::SeqCst) {
                     break;
@@ -378,7 +379,7 @@ impl Server {
                 let _ = std::thread::Builder::new().name("arcade-link-conn".into()).spawn(move || serve(inner, stream));
             }
         })?;
-        Ok(Server { inner })
+        Ok(Server { inner, accept: Mutex::new(Some(handle)) })
     }
 
     /// Tells subscribers that this app's actions or availability changed.
@@ -411,8 +412,21 @@ impl Server {
         }
         endpoint::remove_if_ours(&self.inner.config.locations, &self.inner.config.app.id, &self.inner.token);
         self.inner.jobs.cancel_all();
-        // Wake the accept thread so it sees `stopping` and drops the listener.
-        let _ = transport::connect(&self.inner.address, Duration::from_millis(100));
+        // Wake the accept thread so it sees `stopping` and drops the listener,
+        // and wait (briefly) until it has: a Windows pipe name can't be served
+        // again while the old listener still holds it.
+        let handle = self.accept.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while let Some(h) = &handle {
+            if h.is_finished() || std::time::Instant::now() >= deadline {
+                break;
+            }
+            let _ = transport::connect(&self.inner.address, Duration::from_millis(100));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if let Some(h) = handle.filter(|h| h.is_finished()) {
+            let _ = h.join();
+        }
     }
 }
 
