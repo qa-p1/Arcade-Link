@@ -948,6 +948,28 @@ zero wakeups. The whole-process measurements also do not isolate Link's
 separate ≤1 MiB allocation budget. No application polling was added in this
 pass, and the benchmark was kept unchanged for baseline comparability.
 
+### Stress test
+
+Run in the isolated session (`python3 tools/e2e.py run -- python3 tools/stress.py`,
+then `tools/leak.py` for ten-round memory), on the shipped builds:
+
+| Load | Result |
+|---|---|
+| Box: 900 text-tool calls over the Link, 16 concurrent | 0 failures, p50 12 ms, p95 17 ms |
+| Box: built-in PDF convert (51-page ODT), searchable PDF, images to PDF, system speech; 32 calls, 4 concurrent | 0 failures, p50 0.4 s, max 1.0 s |
+| Lens: 180 `lens.recognize` OCR calls, 6 concurrent | 0 failures, p50 0.19 s |
+| Box OCR through Lens: 10 calls, 3 concurrent | 0 failures |
+| Box SIGKILLed 0.5 s into a 1500-call burst | 1 in-flight call failed cleanly ("closed the connection"); the Link client relaunched Box and the other 1499 succeeded; no stray processes |
+| Clean quit after the load | Box 0.03 s, Lens 0.2 s, exit 0 |
+| Ten rounds of 300 Box calls + 60 Lens OCR calls | Box plateaus at about 433 MiB; Lens was creeping 115 → 143 MiB |
+
+The Lens creep was glibc malloc-arena fragmentation (rayon workers plus a
+thread per Link connection), not a leak: with two arenas it stayed flat. Lens
+now caps arenas at two on Linux (`cd2eebd`) and holds at 122–126 MiB under the
+same load. On a brand-new profile Box's first engine check takes about 6 s;
+until it finishes, tools that need an engine report "still checking" to other
+apps. Box's idle CPU is about one 10 ms scheduler tick every few seconds.
+
 ### Remaining limits and owner actions
 
 - **Chromium removal is blocked by administrator authentication.** The system

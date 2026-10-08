@@ -49,6 +49,16 @@ The runtime and handoff directories are created with mode 0700 and must be
 owned by the current user; an implementation refuses a runtime directory that
 is a symlink or belongs to someone else.
 
+**Engines.** Helper programs the apps use but never ship (today only
+Tesseract) live beside the registry, in `engines/` under the registry's parent
+(`${XDG_DATA_HOME:-~/.local/share}/arcade/engines/`,
+`~/Library/Application Support/Arcade/engines/`, `%LOCALAPPDATA%\Arcade\engines\`,
+or `$ARCADE_HOME/engines`). Launchers go in `engines/bin/`, which every app
+searches after `PATH` and the platform's usual install folders, so a copy one
+app downloads serves all of them. A download is per user, pinned and
+SHA-256-checked before it runs; the user's own install always wins. The Rust
+crate implements this behind the `engines` feature.
+
 ## 3. Manifests
 
 One file per app: `<registry>/<arcade-id>.json`. Canonical IDs:
@@ -357,7 +367,21 @@ Every app has the same page:
   Promotion appears only on this page, never in palettes, menus or results.
 - A diagnostics expander: registry path, endpoint state, last error.
 
-### 8.3 Naming
+### 8.3 Tray menu
+
+Every app that stays resident has the same tray (menu bar) icon. A click opens
+Settings (on macOS the click opens the menu). The menu is:
+
+**Open <App>** · **Open Settings** · **Restart Arcade <App>** · separator ·
+**Quit Arcade <App>**
+
+"Open <App>" does the app's main thing (Lens: a capture; Wheel: the wheel;
+Look, Box, Clipboard: their window). Restart starts a successor that waits for
+the old instance to exit. Start at login is a Settings switch, not a tray
+item. If no tray host exists (yet), the app must stay reachable and show the
+icon when a host appears.
+
+### 8.4 Naming
 
 - Entries are named as the verb ("Quick Look", "Compress for sharing", "Send
   to my devices") with the owning app's monochrome glyph
@@ -366,7 +390,7 @@ Every app has the same page:
 - Integration surfaces use `assets/tokens.json` (per-app accent, neutrals,
   radius, motion). Existing UIs are not reskinned.
 
-### 8.4 Shortcuts
+### 8.5 Shortcuts
 
 Defaults change for new installs only; a saved shortcut is never changed.
 
@@ -425,6 +449,7 @@ clipboard contents without the user acting in the owner's UI.
 | `clipboard.devices` | Clipboard | — | `structured/devices` | — | no | no |
 | `wheel.add_action` | Wheel | `text/url`, `text/plain;hint=command`, `file/*`, `structured/arcade-action` | — | persists, opens-ui | yes | no |
 | `wheel.show` | Wheel | — | — | opens-ui | yes | no |
+| `tools.install` | Tools | `text/plain` (an app ID), or `options.app` | — | opens-ui (the user confirms in Tools) | yes | no |
 
 Each app documents its exposed actions in its own repository.
 

@@ -23,7 +23,7 @@ and a small library, not a process.
   run.
 - [`fixtures/`](fixtures): mock-peer fixtures for each app.
 - [`assets/`](assets): app glyphs and `tokens.json` for integration surfaces.
-- [`tools/e2e.py`](tools/e2e.py): the ecosystem end-to-end run.
+- [`tools/e2e.py`](tools/e2e.py): the ecosystem end-to-end run; [`tools/stress.py`](tools/stress.py) and [`tools/leak.py`](tools/leak.py), the stress and memory runs.
 - [`benchmarks/`](benchmarks): the Phase 0 baseline and the regression runner.
 
 ## The debug CLI
@@ -73,6 +73,17 @@ let result = arcade_link::invoke_action(&locations, &me, box_app, &request, Defa
 cargo test --workspace                       # unit, vectors, server/client, CLI + mock
 cmake -S qt -B qt/build -G Ninja && cmake --build qt/build
 ARCADE_LINK_CLI=$PWD/target/debug/arcade-link ctest --test-dir qt/build   # + Rust interop
+```
+
+Across the apps, everything runs in a disposable desktop session (private
+D-Bus, Xvfb, temporary HOME/XDG/`ARCADE_HOME`), never on the real desktop:
+
+```sh
+python3 tools/e2e.py                          # every app's checks (74 on 2026-10-08)
+python3 tools/e2e.py --only lens,box          # some groups
+python3 tools/e2e.py run -- python3 tools/stress.py   # concurrency, kill mid-burst, memory
+python3 tools/e2e.py run -- python3 tools/leak.py     # ten rounds of load, RSS per round
+python3 benchmarks/bench.py --json now.json --compare benchmarks/baseline.json
 ```
 
 ## Status
