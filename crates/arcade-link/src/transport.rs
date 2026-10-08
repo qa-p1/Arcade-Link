@@ -1,6 +1,7 @@
 //! Local sockets: Unix domain sockets, Windows named pipes (SPEC §4.1).
 
 use std::io;
+#[cfg(not(windows))]
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -92,7 +93,7 @@ pub fn connect(address: &str, timeout: Duration) -> io::Result<Stream> {
     opts.connect_sync()
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
