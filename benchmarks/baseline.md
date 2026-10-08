@@ -39,3 +39,23 @@ setup excluded).
 - Idle CPU: CPU time of the whole tree during the following 5 s.
 - Lens's startup ends early by design: its IPC listener is bound before the
   GUI starts.
+
+## Phase 9 run (2026-10-08)
+
+Same method, quiet host, final `arcade/link` builds. Raw numbers:
+[`phase9.json`](phase9.json).
+
+| App | Startup (ms) | Warm invoke (ms) | Idle RSS (MiB) | Idle CPU (ms / 5 s) |
+|---|---:|---:|---:|---:|
+| Box | 106.8 (+13 %) | 9.7 | 426.9 | 0 |
+| Lens | 3.3 | 1.6 | 81.8 | 0 |
+| Look | 84.2 | 43.6 | 74.8 | 0 |
+| Wheel | 149.7 | 40.1 | 117.5 | 0 |
+| Clipboard | 211.5 (+13 %) | — | 265.5 | 0 |
+
+The first Phase 9 run showed Box at 775 MiB idle with negative idle CPU:
+the UI's provider listing re-probed every optional provider (rembg and
+OCRmyPDF start Python) on each launch. Fixed in Box `1a1cf28`. Box and
+Clipboard startup stay over the 5 % budget; their Link work runs off the
+critical path, and the cause is not isolated (Wheel, unchanged at startup,
+is 2 % slower than in Phase 0 too).
