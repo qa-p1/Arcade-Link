@@ -523,8 +523,15 @@ def _menu_shot(s, win, kind, peers):
     while True:
         s.xdotool("mousemove", "--window", win, "1118", str(y), "click", "1")
         words = _ui_wait(s, win, "Inspect clip")
+        # The menu grows open: re-read it for a moment before reopening.
+        settle = time.monotonic() + 2
+        while not all(_ui_matches(words, label) for label in required) and time.monotonic() < settle:
+            time.sleep(0.3)
+            words = _ui_words(s, win)
         if all(_ui_matches(words, label) for label in required):
             break
+        if time.monotonic() >= deadline:
+            s.screenshot(f"clipboard-menu-{kind}-failed", win)
         s.xdotool("key", "Escape")
         assert time.monotonic() < deadline, "menu entries missing: " + " ".join(r["text"] for r in words)
         # A menu snapshots cached offers at open. Reopen after a real Box
