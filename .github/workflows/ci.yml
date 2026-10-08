@@ -27,11 +27,11 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       # Permissions, the stale-endpoint case and the macOS socket path length
       # are covered by the crate's own tests on each OS.
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --all-features --locked
       - name: Release manifest tool
         run: python3 -m unittest discover -s tools -p "test_*.py"
 

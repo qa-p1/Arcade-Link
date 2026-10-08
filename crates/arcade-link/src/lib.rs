@@ -10,6 +10,8 @@
 //! - [`content`]: the shared content types;
 //! - [`handoff`]: private files for in-memory content;
 //! - [`server`] / [`client`] / [`oneshot`]: serving and calling actions;
+//! - [`engines`] (feature `engines`): helper programs found or downloaded
+//!   once for every app (Tesseract);
 //! - [`presence`]: an app's manifest and server, kept in step with its
 //!   "Connect with other Arcade apps" switch.
 //!
@@ -19,6 +21,8 @@
 pub mod client;
 pub mod content;
 pub mod endpoint;
+#[cfg(feature = "engines")]
+pub mod engines;
 pub mod error;
 pub mod handoff;
 pub mod manifest;

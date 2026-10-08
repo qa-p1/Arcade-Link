@@ -12,7 +12,9 @@ and a small library, not a process.
   endpoint, client, server, content, handoff, one-shot). Used by Box, Lens,
   Look, Clipboard's core and Arcade Tools. MSRV 1.88; dependencies: `serde`,
   `serde_json`, `interprocess`, `getrandom` (+ `notify` with the `watch`
-  feature).
+  feature, `sha2` with `engines`). The `engines` feature finds helper programs
+  the apps use but never ship (Tesseract) and downloads a checksummed per-user
+  copy into `<data>/arcade/engines`, which every app searches.
 - [`crates/arcade-link-cli`](crates/arcade-link-cli): `arcade-link`, the debug
   CLI and mock peer.
 - [`qt/`](qt): `ArcadeLink.{h,cpp}` for Arcade Wheel (vendored into Wheel's
