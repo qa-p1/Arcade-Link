@@ -5,6 +5,7 @@ manager, Tools) recognize each other and work together: a file-based
 registry, one local socket per running app, one shared vocabulary. A protocol
 and a small library, not a process.
 
+- [`NEW_APP_SPEC.md`](NEW_APP_SPEC.md): how to build a new Arcade app; give it to an agent with your idea.
 - [`SPEC.md`](SPEC.md): the protocol (version 1, frozen), manifests, content
   types, errors and standard messages, lifecycle, the shared CLI flags and
   the Connected apps page.
