@@ -19,8 +19,9 @@ conformance vectors in `spec/vectors/`.
 2. **Never show a broken entry.** An entry is shown only if the peer is
    installed, its Link is enabled, the action supports this input and this
    OS, and the manifest reports it `available`.
-3. **Zero idle cost.** No polling and no timers. An idle app has at most one
-   thread blocked in `accept`.
+3. **No idle discovery polling.** Link targets no idle timers or polling and
+   at most one thread blocked in `accept`. Whole-app idle cost includes the
+   UI toolkit and other features; measure it separately from Link overhead.
 4. **Never block a UI thread** on discovery, IPC or launching a peer.
 5. **Each app keeps its safety model.** A request arriving over the Link goes
    through the same checks as the app's own UI (Lens's secret guard, Box's
@@ -327,7 +328,9 @@ caller wants action A from app P
 Connections are cheap enough to open per call. A caller may keep one open
 while subscribed (a settings page, an open preview window).
 
-Budgets (enforced by `benchmarks/`):
+Link overhead targets (the whole-app regression runner in `benchmarks/`
+checks only part of these; it does not isolate Link allocations or prove
+zero wakeups):
 
 | Measure | Budget |
 |---|---|
@@ -433,12 +436,12 @@ clipboard contents without the user acting in the owner's UI.
 | Action | App | Accepts | Produces | Effects | Interactive | One-shot |
 |---|---|---|---|---|---|---|
 | `look.preview` | Look | `file/*`, `file/*[]`, `folder/reference`, `text/url` | — | opens-ui | yes | no |
-| `look.inspect` | Look | `file/*` | `structured/file-info` | — | no | yes |
+| `look.inspect` | Look | `file/*`, `folder/reference` | `structured/file-info` | — | no | yes |
 | `look.preview_selection` | Look | — | `file/*[]` with `options.resolveOnly` (the selection, no UI) | opens-ui | yes | no |
 | `lens.capture` | Lens | — | `file/image`, `screen/region` | opens-ui | yes | no |
 | `lens.capture_and_act` | Lens | — | — | opens-ui | yes | no |
 | `lens.analyze` | Lens | `file/image` | — | opens-ui | yes | no |
-| `lens.recognize` | Lens | `file/image`, `text/plain` | `structured/findings` | — | no | yes |
+| `lens.recognize` | Lens | `file/image`, `text/plain` | `structured/findings`, `text/plain` | — | no | yes |
 | `lens.pin` | Lens | `file/image` | — | opens-ui | yes | no |
 | `box:<tool-id>` (`#preset`) | Box | per catalog | per catalog | per catalog | no | yes |
 | `box.open` | Box | `*` | — | opens-ui | yes | no |

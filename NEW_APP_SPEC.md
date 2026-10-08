@@ -1,345 +1,331 @@
-# Building a new Arcade app
+# Arcade new-app implementation brief
 
-**Give this file to an implementing agent together with your idea.** Fill in
-the [idea template](#12-the-idea-template-fill-this-in) at the end; everything
-else here is fixed. The agent builds a complete Arcade app: it works on its
-own, joins the other Arcade apps through Arcade Link, ships for Linux,
-Windows and macOS, and is tested, documented and released the same way as the
-existing apps.
+Attach this file to your app idea. The implementing agent should carry the
+idea through working software, tests, packaging, documentation and a completion
+report. A short idea is enough: infer routine choices, state assumptions and
+ask only for missing information that would materially change the product.
+Use the optional template at the end if you want more control.
 
-This file is distilled from the five apps that exist (Box, Lens, Look, Wheel,
-Clipboard), the manager (Tools) and the protocol ([SPEC.md](SPEC.md)). Where it
-says *must*, the existing apps do it and a new app may not differ. Where a
-choice is open, it says so and gives the default.
+This is a reusable brief, not a claim that every existing app meets every
+quality target below. The user's current instructions take precedence. A
+complete implementation and a published release are separate milestones.
 
----
+## 1. Start with the idea and the current ecosystem
 
-## 1. Read first
+Before coding, inspect the destination repository, its instructions and existing
+changes. For a new repository, choose a stable name, scope and primary user
+flow. Write a short implementation plan, then carry it through; do not stop at
+scaffolding, a mockup, a proposal or a list of things the user could do later.
 
-The implementing agent reads, in this order, before writing code:
+Read these sources (links work when this file is copied on its own):
 
-1. This file and the filled-in idea.
-2. [SPEC.md](SPEC.md): the protocol, locations, content types, errors,
-   lifecycle, Connected apps page, tray menu, shortcuts, action catalog.
-3. The README and `docs/ARCADE_LINK.md` (or `docs/arcade-link.md`) of the two
-   existing apps closest to the idea. Lens (egui, overlay utility) and Look
-   (Tauri, preview window) are the cleanest references; Wheel for Qt.
-4. `tools/e2e.py` and one `tools/e2e_checks/<app>.py` in this repository.
+- [Arcade Link specification](https://github.com/qa-p1/Arcade-Link/blob/main/SPEC.md):
+  protocol, manifests, content, lifecycle, settings and action contracts.
+- [Link source and integration assets](https://github.com/qa-p1/Arcade-Link):
+  Rust crate, Qt module, glyphs, tokens and conformance vectors.
+- [Verification and limitations](https://github.com/qa-p1/Arcade-Link/blob/main/COMPLETION_REPORT.md):
+  measured behavior and known gaps; historical plans are not implementation proof.
+- The current README, status and Link integration docs of the closest existing
+  apps. Inspect the actual manifests and code before copying an example.
 
-## 2. What an Arcade app is
-
-A small, fast desktop utility that **owns one verb** and does it well. The
-family divides the verbs; a new app takes a verb nobody owns and uses the
-owners for everything else:
-
-| App | Owns | Use it for |
+| Repository | Responsibility | Relevant actions |
 |---|---|---|
-| Box | transforming content; pipelines | conversions, compression, text/data tools, multi-step jobs (`box:<tool>`, `box.pipeline.run`) |
-| Lens | understanding the screen | region selection, OCR, codes, colors (`lens.capture`, `lens.recognize`) |
-| Look | previewing files | showing any file (`look.preview`, `look.inspect`) |
-| Wheel | invoking actions | putting an action on the radial launcher (`wheel.add_action`) |
-| Clipboard | carrying content across devices | send to my devices, history (`clipboard.add`, `clipboard.pick`) |
-| Tools | installing the apps | "Get" buttons (`tools.install`) |
+| [Box](https://github.com/qa-p1/Arcade-box/tree/arcade/link) | Content transformations and saved workflows | `box:<tool-id>`, `box.pipelines`, `box.pipeline.run` |
+| [Lens](https://github.com/qa-p1/Arcade-lens/tree/arcade/link) | Screen selection, recognition, pins | `lens.capture`, `lens.recognize`, `lens.pin` |
+| [Look](https://github.com/qa-p1/Arcade-look/tree/arcade/link) | File previews and inspection | `look.preview`, `look.inspect` |
+| [Wheel](https://github.com/qa-p1/Arcade-wheel/tree/arcade/link) | Invoking actions from a radial launcher | `wheel.add_action`, `wheel.show` |
+| [Clipboard](https://github.com/qa-p1/Arcade-clipboard/tree/arcade/link) | History and sending content to paired devices | `clipboard.add`, `clipboard.pick` |
+| [Tools](https://github.com/qa-p1/Arcade-tools) | Per-user app installation and updates | `tools.install` |
 
-If the idea overlaps an owned verb, the new app calls the owner when it is
-present and keeps a minimal fallback of its own for when it is not.
+These are reference branches as of 2026-10-08. Check their current state and
+release tags when starting a new app. Lens has window recording internally but
+no recorder action over Link. Clipboard sends to the mesh, not one named device.
+New integrations must use capabilities that actually exist.
 
-## 3. Principles (non-negotiable)
+## 2. Product requirements
 
-1. **Standalone first.** The app is complete with no other Arcade app
-   installed. Every integration is additive and invisible when the peer is
-   missing, disabled or unavailable; never show a broken entry.
-2. **Light.**
-   - Nothing heavy is bundled. A capability needing a large engine finds the
-     user's installation first and, if missing, offers a per-user download
-     the user starts (see Link's `engines` feature and SPEC §2). Never
-     install silently; never ship a browser, an office suite, an ML model or
-     a language runtime inside the app.
-   - Use what the OS already has before anything else: native OCR, the
-     system voice, the system webview, the user's own browser, portals.
-   - No Python, Node or JVM at runtime. Python is fine for tests and build
-     scripts only.
-   - An engine used by only one or two features must justify its size; prefer
-     a small built-in implementation (Box's built-in images-to-PDF and
-     document-to-PDF replaced img2pdf and LibreOffice).
-3. **Zero idle cost.** No polling, no timers, no periodic wakeups while idle.
-   Watch the registry and files through OS notifications. An idle app has at
-   most one thread blocked in `accept`.
-4. **Never block the UI thread** on disk, network, IPC, process launches or
-   engine checks. Startup work that isn't needed for the first frame happens
-   after it, on a worker.
-5. **Local and private.** No account, no telemetry, no analytics. Network
-   only where the feature inherently needs it, labelled in the UI before
-   anything leaves the machine. Secrets found in content are never sent.
-6. **Safe by default.** Never overwrite a user's file (write a new one). Never
-   run shell strings (program + argument array). Persistence and outbound
-   actions are confirmed in the owner's UI or marked ↗ with a payload preview.
-   Requests arriving over the Link pass the same checks as the app's own UI.
-7. **Honest.** No claim in UI or docs without evidence. A capability that
-   doesn't work on a platform is hidden or explained, never a dead button.
+- Give the app a clear primary job. Implement the whole path from input to a
+  useful result, including empty states, loading, errors, cancellation and recovery.
+- Work independently when no other Arcade app is installed. Peer integrations
+  add convenience; a missing peer must not break the core flow. If a fallback
+  needs an optional engine, explain that dependency and how to obtain it.
+- Prefer the existing owner of an adjacent capability when present. Avoid
+  duplicating an entire editor, launcher or conversion suite for one small feature.
+- Keep the interface focused, keyboard accessible and usable at different DPI
+  scales. Provide clear focus, contrast, light/dark/system themes, useful error
+  messages and a working primary action. Do not ship placeholder buttons.
+- Local processing is the default. No account, analytics or telemetry unless
+  the idea explicitly requires them. Explain network processing before sending
+  user content; preserve the existing apps' secret and private-mode guards.
+- Do not add cloud services, mobile clients, a plugin system or a workflow
+  language merely because another Arcade app has one.
 
-## 4. Platforms and stack
+## 3. Stack and dependency budget
 
-Targets: **Linux** (X11 and Wayland; Hyprland is the owner's desktop and is
-first-class), **Windows 10/11 x64**, **macOS** (Apple Silicon and Intel).
-Install per user, without administrator rights.
+Use a Rust core by default, or C++20 for a Qt app. Prefer a native or low-level
+UI suitable for the idea: egui/eframe for a compact utility, Qt Quick for an
+animated overlay or layer-shell surface. Use Tauri with the system webview when
+rich document rendering justifies it. Flutter is appropriate when mobile is an
+actual requirement. Do not default every app to Box's stack or use Electron.
+Record the choice and its tradeoffs briefly.
 
-The core is always **Rust** (or C++20 if the UI is Qt). Pick the UI by what
-the app is; measured idle memory of the existing apps is the guide:
+For perspective, the 2026-10-08 Linux benchmark measured roughly 81 MiB for
+Lens, 75 MiB for Look, 115 MiB for Wheel, 427 MiB for Box and 265 MiB for
+Clipboard at its three-second sample. These are whole-app measurements from
+one machine, not framework overheads or guaranteed budgets for a new app.
 
-| UI | Use when | Example (idle RSS) |
-|---|---|---|
-| **egui/eframe** (Rust) | overlays, palettes, small settings windows, anything summoned by a shortcut | Lens (~80 MiB) |
-| **Qt 6 Quick** (C++) | animated launcher-style overlays, Wayland layer-shell | Wheel (~115 MiB) |
-| **Tauri 2 + vanilla TypeScript**, lazy-loaded chunks, no framework runtime | document-like windows that render rich content | Look (~75 MiB) |
-| Tauri 2 + a UI framework | only for a large dashboard; it costs memory | Box (~430 MiB) |
-| Flutter | only if phones are a target | Clipboard (~265 MiB) |
+Choose capabilities in this order:
 
-Default: **egui** unless the idea clearly needs rich document rendering
-(Tauri + vanilla TS) or a layer-shell overlay (Qt). Never Electron. On Linux
-with glibc, cap malloc arenas at two (`mallopt(M_ARENA_MAX, 2)`) at the top
-of `main` if the app runs work on thread pools.
+1. Suitable OS functionality: native OCR, system speech, portals, file dialogs.
+2. A small implementation or library in the app's own language.
+3. A user-installed engine, detected off the UI thread and checked for identity,
+   version and required capabilities.
+4. An optional, pinned, checksum-verified per-user download started by the user.
 
-## 5. The standard app surface
+Never bundle a browser, office suite, Python/Node/JVM runtime, OCR engine or large
+model for a minor feature. Prefer native code for app runtime logic. Existing
+optional engines that happen to use Python do not justify making Python an app
+requirement. Python and Node remain valid development/build tools.
 
-Every item below is required. File names in parentheses are where the
-existing apps implement them.
+For OCR, use the platform engine where suitable or Tesseract: detect the global
+installation first; when absent, offer an explicit download using Link's shared
+`engines` support where available. Do not bundle it or revive the removed ocrs
+models. Use native OS voices for speech (SAPI, `say`, installed eSpeak/eSpeak NG
+on Linux), not a bundled Piper stack. Do not reintroduce img2pdf, OCRmyPDF or
+LibreOffice as default dependencies for tasks a small implementation handles.
+Box's built-in document-to-PDF conversion has layout limits; document comparable
+tradeoffs rather than promising exact fidelity.
 
-### 5.1 Process and command line
+Run helpers as executable plus argument array, with timeouts, bounded output,
+cancellation and private working directories. Cache availability and refresh on
+relevant changes or explicit requests. A missing engine should produce an
+honest unavailable state and installation guidance, never a silent download.
 
-- One resident instance. A second launch hands its command to the running
-  instance over a private channel (loopback socket plus a random token in a
-  0600 file, or a local socket) and exits.
-- Flags (SPEC §8.1): `--version`, `--background` (resident, no window; what
-  login uses), `--settings`, `--quit`, `--restart`, `--arcade-manifest`
-  (print the manifest, no side effects), `--arcade-invoke` (one-shot Link
-  request on stdin) if the app has headless actions. No argument opens the
-  main window or Settings.
-- `app.status` reports `status.mode`: `background` or `foreground`, as
-  started.
-- A test override for every data location (`ARCADE_<APP>_HOME`, like
-  `ARCADE_LENS_HOME`), honoured alongside `ARCADE_HOME`. Instances started
-  with it, or from a cargo `target` directory, never touch login items or
-  the applications menu.
+## 4. Process, platform and settings behavior
 
-### 5.2 Tray
+Target Linux, Windows and macOS unless the idea narrows the scope. Cover X11
+and Wayland explicitly, including Hyprland where relevant. Specify supported
+architectures and minimum OS versions based on dependencies and actual builds.
 
-SPEC §8.3, exactly: a click opens Settings; the menu is **Open <App>**,
-**Open Settings**, **Restart Arcade <App>**, separator, **Quit Arcade <App>**.
-StatusNotifierItem on Linux (show the icon when a tray host appears later;
-at login the app often starts before the panel), notification area on
-Windows, menu bar on macOS.
+- Keep one resident instance per profile. A second launch routes its command
+  to the existing instance and exits. A feature should stay resident only when
+  its shortcut, tray, service or Link behavior requires it.
+- Implement `--version`, `--background`, `--settings`, `--quit` and
+  `--arcade-manifest`. Add `--arcade-invoke` for headless actions. The manifest
+  command prints JSON without creating windows, registrations or login items.
+  One-shot calls must terminate and clean up. Add a restart command if useful;
+  restarting from the tray must safely hand over to a successor.
+- Resident apps follow the shared tray menu: Open <App>, Open Settings,
+  Restart Arcade <App>, separator, Quit Arcade <App>. Clicking opens Settings;
+  macOS may open the menu. Handle a tray host appearing after startup.
+- Expose a Start at login setting. Use stable installed executable paths and
+  per-user OS mechanisms. Follow the user's preference; any first-run default
+  must be visible and reversible. Development/test builds must not register
+  themselves in the real desktop, applications menu or login items.
+- Provide General, Shortcut where relevant, Connected apps, and About settings.
+  About includes version, data/config paths and licenses. Persist settings
+  atomically with schema versions, migration and recovery from malformed files.
+- Choose a shortcut without an existing default collision. Warn about clashes
+  using cached registry shortcut metadata. Use native hooks or portals; on
+  Hyprland prefer runtime bindings and handle reloads. Document a manual command
+  binding when an automatic shortcut is unavailable.
+- Honor `ARCADE_HOME` for Link and a documented per-app profile override.
+  Isolate all app data, locks and registrations in tests; one override alone
+  may not isolate the OS keyring or clipboard.
 
-### 5.3 Login and installation
+Do not block UI events on disk access, IPC, networking, helper probes or process
+launches. Use workers and dispatch UI work back to the UI thread. Debounce active
+work when useful; avoid periodic idle polling. Measure actual idle behavior.
 
-- Start at login is a Settings switch, on by default after the first run of
-  an installed build: XDG autostart on Linux, the Run key on Windows, a
-  LaunchAgent or `SMAppService` on macOS. Reject temporary executable
-  locations (an AppImage mount, a download folder).
-- On Linux, a desktop entry in the applications menu, kept pointing at the
-  current executable.
+## 5. Arcade Link integration
 
-### 5.4 Settings
+Use canonical ID `arcade.<lowercase-name>` and stable platform bundle IDs. New
+actions normally use `<name>.<verb>`; keep the frozen v1 wire contract compatible.
+Depend on a published immutable Link tag or exact commit and lock it. At the time
+of writing the existing apps use `v0.1.0`:
 
-One window with these pages (add the app's own where they belong):
+```toml
+arcade-link = { git = "https://github.com/qa-p1/Arcade-Link", tag = "v0.1.0", features = ["watch"] }
+```
 
-- **General**: the app's options, start at login, theme (system/light/dark).
-- **Shortcut**: a recorder with a reset to default, and the clash warning
-  "Used by <app>" from the registry's cached `shortcuts` (no IPC).
-- **Connected apps** (SPEC §8.2), exactly: master switch "Connect with other
-  Arcade apps", one row per Arcade app with glyph, name, state and "Use with
-  Arcade <App>", Get for missing apps (through `tools.install`, else the
-  releases page), and a diagnostics expander.
-- **About**: version, config and data paths, open-folder buttons, licenses.
+Add `engines` only if needed. There is no `tokio` feature in this version.
+Qt apps vendor the matching module with provenance and a drift check. Other
+stacks must implement the specification and pass its conformance vectors.
+Never leave a sibling-directory dependency as the distributable configuration.
 
-Settings save atomically (write a temp file, rename), carry a schema
-version, migrate older files, and back up an unreadable file before
-falling back to defaults.
+Publish the manifest and listener off the first-frame path using the library's
+presence mechanism. Keep it alive for the app lifetime. With connections off,
+retain a disabled installed manifest, expose no actions and stop listening.
 
-### 5.5 Global shortcut
+Each exposed action needs truthful accepts/produces, effects, privacy, platforms,
+availability/reason, version and size limits. Interactive actions run in the
+owner's UI, not one-shot. Headless actions should support both resident and
+one-shot execution when the app advertises that capability. Apply the same
+permissions and confirmations to Link requests as to local UI requests.
 
-Choose a default not in SPEC §8.5's table and record it there. Per platform:
-X11 key grab, Windows `RegisterHotKey`, macOS Carbon hot key, Wayland through
-the GlobalShortcuts portal, and on Hyprland a runtime binding added with
-`hyprctl` (`hl.bind` in Lua configs, `keyword bind` in legacy ones) that is
-never written to the user's config and is re-added after a config reload.
-Where no global shortcut is possible, document the command to bind.
+Consume peers from a cached registry refreshed by OS notifications. Never scan
+disk or query peers when opening a menu. Respect the master switch, per-peer
+switches, accepted content types, availability and platform support. Use a
+verb and the owner's glyph for actions; put missing-app Get buttons in Connected
+apps. They call Tools when available and otherwise open the releases page.
 
-### 5.6 Look and feel
+Use file references/handoff files for bulk content. The current wire limit is
+1 MiB per JSON line and the inline text limit is 256 KiB. Respect ownership:
+consume or copy input handoffs before their creator cleans them up, and arrange
+output lifetimes so callers can consume them. Do not assume a peer result is
+permanent or becomes your app's property without copying it.
 
-Calm and native-feeling; keyboard-first (every action has a key, `?` lists
-them); light and dark themes; no flash of the wrong theme. Integration
-surfaces (badges, Connected apps) use `assets/tokens.json` and the app's
-glyph in `assets/glyphs/`. Peer entries are named as verbs ("Quick Look",
-"Send to my devices ↗") with the owner's monochrome glyph, never "Powered by".
+Implement progress, cancellation, deadlines and clear peer-crash errors. Bound
+concurrency and memory. The local token authenticates the same OS user, not a
+genuine Arcade application; do not grant elevated trust based on an app ID.
 
-## 6. Arcade Link
+## 6. Registering a new app with the family
 
-- Canonical ID `arcade.<name>`; actions are `<name>.<verb>`.
-- Depend on the protocol by tag. Rust:
-  `arcade-link = { git = "https://github.com/qa-p1/Arcade-Link", tag = "<latest tag>", features = ["watch"] }`
-  (add `"engines"` if the app needs helper programs). Qt: vendor `qt/` with a
-  `VENDORED.json` pin and a vendor check in CI. Any other stack implements
-  SPEC.md and passes `spec/vectors/`.
-- Publish the manifest and start the listener **after the first frame**, on a
-  background thread, through `Presence`. With the master switch off: no
-  listener, no actions in the manifest.
-- **Expose** the app's verb as actions with accurate `accepts`, `produces`,
-  `effects`, `interactive`, `maxBytes`, platform list and `available`. Headless
-  actions also work one-shot so callers needn't start the app.
-- **Consume** peers from a registry cache refreshed by the directory watcher
-  and `app.changed`; opening a menu never does disk access or IPC. Offer the
-  owners' verbs (section 2) where the app's content fits them: Quick Look for
-  files, Box presets and pipelines, Send to my devices, Add to Wheel, Lens
-  selection or OCR.
-- Content moves by reference (paths, handoff files), never inline bulk data.
-  Results from peers are new files the app owns.
-- Jobs report progress, can be cancelled (a caller disconnecting cancels),
-  have a deadline, and clean up partial outputs.
+A valid manifest alone does not add a new app to every existing UI or installer.
+Shared metadata and several consumers use explicit lists. Inspect and update
+these where the user's repository scope permits:
 
-Adding a sixth app also changes the shared repositories; the agent makes these
-changes and releases a new Link tag:
-
-| Repository | Change |
+| Repository | Required audit and integration work |
 |---|---|
-| Arcade-link | `ids` constant and `APPS`, `app_name`, `app_pitch`, `releases_url` (Rust) and the Qt `Ids`; `assets/glyphs/arcade.<name>.svg`; an accent in `assets/tokens.json`; `fixtures/<name>.json`; `tools/e2e.py` `APPS` and `tools/e2e_checks/<name>.py`; `benchmarks/bench.py` `APPS`; the SPEC §8.5 shortcut row and §11 action rows; a new tag |
-| Arcade-tools | install locations and data folders (`src/paths.rs`); the app list itself comes from Link's `ids::APPS` |
-| The other apps | bump the Link tag; Rust apps list peers from `ids::APPS`, while code that names the apps by hand (Wheel's Qt module, any frontend list: search for `arcade.clipboard`) gains the new app. Add any connected action that uses the new app's verb |
+| Link | Rust and Qt IDs, `ids::APPS`, display names/pitches/release URLs, glyph and accent tokens, fixtures, action/shortcut catalog, conformance tests, e2e and benchmark app lists |
+| Tools | The pinned Link app list/allowlist, per-platform install/executable/data/autostart mappings and release-source behavior; test installation, update and removal of the new app |
+| Existing consumers | Explicit peer lists in Rust/C++/frontends, policy defaults, meaningful new actions and tests; bump pinned shared code when needed |
+| New app | Exposed and consumed actions, Connected apps, isolated e2e group, packaging metadata and documentation |
 
-## 7. Engines and heavy capabilities
+Do not silently change protocol v1 or move an existing tag. Prepare shared
+changes on branches and validate consumers against the exact candidate commit.
+Publish a new tag, bump consumers, merge or release only when the user has
+already authorized those operations. If shared repositories or credentials
+are unavailable, complete the standalone app and reviewable integration changes,
+then report the precise remaining dependency. Do not claim ecosystem onboarding
+is finished while those changes remain unshipped.
 
-For each capability the idea needs, choose in this order and write the
-choice in `docs/STATUS.md`:
+## 7. Data and system safety
 
-1. Built into the OS (native OCR, system voice, webview, portal, file
-   manager integration).
-2. A small built-in implementation in the app's own language.
-3. The user's installed program, found on `PATH` and the platform's usual
-   install folders (and `<data>/arcade/engines/bin`), identity- and
-   version-checked before use, run with an argument array, a timeout,
-   cancellation and an output limit.
-4. A per-user download the user starts, pinned and SHA-256-checked, into the
-   shared engines folder (extend Link's `engines` module).
+Keep content local unless the selected feature sends it. Store only the history
+needed by the idea; document retention and deletion. Use scoped file access,
+private temporary directories and atomic writes. Avoid overwriting source files;
+explicit replacement needs a deliberate user choice. Use OS credential stores
+where available and disclose any plaintext fallback. Never log secrets or content.
 
-Engine checks run off the UI thread and are cached; at launch only engines
-last seen missing are checked again, and the Settings page that lists them
-re-checks all. A feature whose engine is missing says so and how to get it.
+Keep temporary environments process-scoped. Never write `/tmp`, `/run/user`,
+temporary toolchain homes, build sandboxes or generated environment paths into
+shell profiles, compositor startup files, persistent environment files or user
+services. Before an authorized change to a login-critical/persistent environment
+file: read it, back it up, verify every path survives reboot, make a minimal
+change, inspect the diff and validate that it loads. Prefer avoiding these edits.
 
-## 8. Testing
+Do not alter unrelated apps, remove user data or install system packages merely
+to get a test green. Preserve existing user changes. Stop only processes the
+current test started; never kill applications by a broad name pattern.
 
-Nothing is tested on the owner's real desktop. Everything runs in Arcade
-Link's disposable session (private D-Bus, Xvfb, temporary HOME, XDG
-directories and `ARCADE_HOME`).
+## 8. Verification and performance
 
-- **Unit tests** for all logic, including the platform-independent parts of
-  platform code (path candidates, shortcut parsing, config migration).
-- **Link tests** against `arcade-link mock` peers: absent and late peers,
-  toggles, size limits, progress, cancellation, timeout, a peer crash,
-  Private-mode and secret refusals.
-- **An e2e group** (`tools/e2e_checks/<name>.py`) that drives the real binary:
-  standalone behavior, every exposed action resident and one-shot, the
-  Connected apps page, shortcut clash warning, the tray-less start, and each
-  cross-app flow with the real peers. Screenshots go to `ARCADE_E2E_SHOTS`.
-  The full run (`python3 tools/e2e.py`) must stay green for every app.
-- **Benchmark** entry with a readiness signal: startup, warm invoke, idle RSS
-  after 3 s, idle CPU over 5 s. Budgets: idle CPU 0, no idle wakeups,
-  startup and memory in line with the comparable app in section 4.
-- **Stress** (`tools/stress.py`): concurrent invocations, killing the app
-  mid-burst, ten rounds of load with RSS that plateaus.
-- **CI** on Linux, Windows and macOS: format check, lint with warnings as
-  errors, tests, package build (and a package smoke test). Linux runs the
-  isolated-session tests.
+Use meaningful tests for the behavior and risks introduced, including malformed
+input, migration, limits and failure recovery. Do not substitute tests that only
+repeat implementation details for exercising the real user flow.
 
-## 9. Packaging and release
+- Run relevant formatting, linting, unit and integration checks.
+- Exercise standalone operation and each exposed action, including one-shot
+  where supported. Test missing/late peers, toggles, unsupported input,
+  progress, cancellation, timeout, peer crashes and outbound confirmation.
+- Extend [the isolated ecosystem runner](https://github.com/qa-p1/Arcade-Link/blob/main/tools/e2e.py)
+  when working on the family. It uses private D-Bus, Xvfb and temporary profile
+  roots. Keep automation away from the owner's live desktop. A deliberate
+  interactive platform test is separate and explicitly scoped.
+- Run the full affected cross-app suite after integration changes. Record
+  commands, results, commit IDs and which flows used real peers versus mocks.
+- Add Linux, Windows and macOS CI builds and tests for supported targets, plus
+  package creation and relevant package smoke checks. CI compilation, CI tests,
+  installer creation and interactive validation are distinct evidence.
+- Measure startup/readiness, warm invocation, idle RSS, idle CPU and repeated
+  load. Use a comparable baseline, state process/child accounting and startup
+  timing boundaries, and inspect outliers or negative counters. A zero CPU
+  median does not prove zero wakeups. Whole-app RSS does not isolate Link cost.
+- Aim for no idle polling, responsive startup and memory that plateaus under
+  stress. Treat SPEC's Link overhead budgets as targets requiring dedicated
+  measurement, not guarantees inherited from using the crate. Optimize measured
+  bottlenecks; do not copy allocator tuning from Lens without evidence.
 
-- GitHub repository `qa-p1/Arcade-<name>`, MIT license, default branch
-  `main`.
-- Packages: Linux AppImage (or a tarball with an install script), Windows
-  per-user installer (NSIS or Inno, silent flags documented), macOS dmg.
-  Builds are unsigned until signing exists; say so in the README.
-- Every release carries `arcade-release.json` and `SHA256SUMS.txt` made with
-  the vendored `tools/arcade-release.py` (schema
-  `spec/arcade-release.schema.json`), so Arcade Tools can install it.
-- Pushes to `main` that pass CI publish: a new `v<version>` when the version
-  hasn't been released yet, otherwise the rolling `nightly` prerelease.
-  Feature work happens on branches; merging to `main` releases.
+Do not mark unsupported or untested platform behavior as passed. When hardware,
+credentials or a service prevent validation, finish independent work and record
+the exact unverified scope and reproducible next step.
 
-## 10. Documentation
+## 9. Packaging and delivery
 
-Plain, short sentences; present tense; no marketing. Every status claim is
-dated and backed by a check. Use the same words as the other apps: *tested*
-(ran here), *CI-built and tested* (CI ran it), *not run interactively*,
-*build only* (compiled, never executed).
+Use a repository name consistent with `Arcade-<name>`. Respect an existing
+license; for a new app select a compatible license and include its full text
+and third-party notices. Do not infer that every Arcade app is MIT licensed.
+Check redistribution requirements before bundling dependencies.
 
-| File | Contents |
+Provide reproducible per-user packages appropriate to the stack: AppImage or a
+self-contained Linux bundle, Windows per-user installer, macOS app/DMG. Keep
+runtime assets complete and optional engines separate. Verify versions, icons,
+uninstall behavior and stable executable paths.
+
+For Tools compatibility, generate `arcade-release.json` and `SHA256SUMS.txt`
+with the versioned [release manifest tool](https://github.com/qa-p1/Arcade-Link/blob/main/tools/arcade-release.py)
+and validate the schema and platform install mappings. SHA-256 checks integrity;
+it is not publisher authentication. State signing/notarization status accurately.
+
+Inspect workflow triggers before pushing. Several existing apps publish on
+`main`; do not merge there as a routine verification step. Build artifacts and
+prepare release notes first. Follow the user's existing authorization for
+commits/pushes; publishing releases or tags requires authorization for that action.
+Do not add automatic publishing merely because another repository uses it.
+
+## 10. Documentation and completion report
+
+Write concise docs that match the final implementation:
+
+| File | Required content |
 |---|---|
-| `README.md` | What it does (one line, then a paragraph); install per platform; using it (keys table); works with other Arcade apps; platform table; building; known limits |
-| `docs/ARCHITECTURE.md` | Crates or modules, process model, data flow, threading, platform layer |
-| `docs/ARCADE_LINK.md` | Exposed actions table, consumed actions, settings keys, command line, verification commands, platform table |
-| `docs/STATUS.md` | Implemented, verification table (checks and results, with the CI commit), limits, document index; dated |
-| `CHANGELOG.md` | Changes by version |
-| `VENDORED` | Anything copied from another repository, with its pin |
+| `README.md` | Purpose, installation, primary flow, shortcuts, platform support, build commands and limits |
+| `docs/ARCHITECTURE.md` | Modules, process/thread model, data flow, platform boundaries and dependency choices |
+| `docs/ARCADE_LINK.md` | Actions, content/effects, consumed peers, settings, lifecycle and verification |
+| `docs/STATUS.md` | Dated implementation/evidence table, tested commits, real limitations and document index |
+| `CHANGELOG.md` | User-visible changes |
+| License and provenance files | License text, third-party notices and pins for vendored code |
 
-## 11. Definition of done
+Check local documentation links and command examples. Label historical plans
+as historical. Keep the repository clean, review diffs and verify local/remote
+commit equality after an authorized push.
 
-- [ ] Every item in section 5 works on Linux X11 and Hyprland, and is built
-      and tested in CI on Windows and macOS.
-- [ ] The app's verb works with no other Arcade app installed.
-- [ ] Exposed actions pass resident and one-shot e2e checks; every consumed
-      peer action is hidden when the peer is missing, disabled or
-      unavailable.
-- [ ] No bundled heavy engine; every engine follows section 7.
-- [ ] Idle CPU 0 and no idle wakeups in the benchmark; memory plateaus under
-      the stress run.
-- [ ] Full `tools/e2e.py` run green for all apps; CI green on all three OSes.
-- [ ] Shared-repository changes from section 6 made, a new Link tag
-      published, the other apps bumped to it.
-- [ ] README, ARCHITECTURE, ARCADE_LINK, STATUS and CHANGELOG written and
-      accurate; limits stated plainly.
-- [ ] A final report: what was built, how it was verified (commands and
-      results), what is not done and why.
+The completion report states what was built, where the code and packages are,
+which checks passed, what remains incomplete and why. Separate implementation
+completion from release readiness and unverified platforms. Do not call the work
+finished while an authorized, feasible part of the agreed scope remains undone.
 
-### How the agent works
+## 11. Suggested implementation order
 
-Work in phases and commit each: (1) the standalone core and its tests; (2) the
-UI; (3) platform integration (tray, login, shortcut, single instance);
-(4) Arcade Link, exposed then consumed; (5) the e2e group, benchmark and
-stress; (6) packaging and CI; (7) documentation and STATUS; (8) the report.
-Verify every claim by running it. If something can't be done on this
-machine (an interactive Windows run, a signing key), say so in STATUS
-instead of claiming it. Never kill processes by name pattern; stop only the
-PIDs you started.
+1. Confirm scope from the idea, inspect references and choose the stack.
+2. Build the standalone core and real primary flow.
+3. Finish UI, settings, persistence and platform lifecycle.
+4. Add Link actions, peer consumption and family registration changes.
+5. Verify failures, cross-app behavior, performance and platform builds.
+6. Finish packages, licenses, CI and documentation.
+7. Review, commit/synchronize where authorized, and deliver the completion report.
 
----
+Proceed through these phases autonomously. Ask early only when a consequential
+choice cannot be inferred, and continue independent work while awaiting it.
 
-## 12. The idea template (fill this in)
+## 12. Optional idea template
 
 ```markdown
 # Idea: Arcade <Name>
 
-**One line:** <the verb this app owns, e.g. "Record any window as a GIF">
-
-**Problem:** <what is slow or annoying today, for whom>
-
-**How it's summoned:** <global shortcut / tray / file-manager action / another app / CLI>
-
-**Main flow:** <3–6 steps from summon to result>
-
-**Inputs and outputs:** <content types it takes and produces, e.g. file/image → file/video>
-
-**Exposes to other apps:** <actions, e.g. <name>.record (interactive), <name>.inspect (headless)>
-
-**Uses from other apps:** <e.g. Lens selection to pick a window, Look to preview the result, Clipboard to send it>
-
-**Heavy capabilities:** <anything that needs an engine; say if an OS feature or the user's install will do>
-
-**Data it keeps:** <settings, history, caches; how long>
-
-**Network:** <none / what and when, and how it's labelled>
-
-**Platforms that matter most:** <e.g. Hyprland first, then Windows>
-
-**UI style:** <overlay / small window / document window; any reference>
-
-**Out of scope:** <what it should not do>
+One line: <what the app does>
+Problem and audience: <what is annoying today, and for whom>
+Main flow: <how the user opens it, acts and gets a result>
+Inputs and outputs: <text, files, screen selection, audio, etc.>
+Must have: <the essential capabilities>
+Nice to have: <optional extras>
+Out of scope: <what it must not become>
+Platforms: <defaults are Linux/X11/Wayland, Windows and macOS>
+UI preference: <overlay, small native window, document window, or infer>
+Arcade connections: <which existing apps would help, or infer>
+Data and network: <what it retains or sends, or local/minimal by default>
+Constraints: <performance, engine, license or distribution requirements>
+Repository scope: <new app path and any existing repos allowed to change>
+Delivery authorization: <local work, commit/push, PR, release as applicable>
 ```

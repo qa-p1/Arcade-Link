@@ -144,3 +144,20 @@ The final report, completed plan and fresh benchmark are versioned in the
 Arcade Link repository. The five apps retain their `arcade/link` branches;
 merging them to `main` and publishing application releases is a separate step.
 No system configuration or startup-file changes were needed for final verification.
+
+## Documentation follow-up (2026-10-08)
+
+All seven repositories now have a current status page and documentation links.
+Historical plans are identified separately from current implementation evidence.
+The reusable [new-app brief](NEW_APP_SPEC.md) can be attached to an app idea;
+it covers standalone behavior, dependencies, Link onboarding, platform tests,
+packaging and delivery without assuming release authorization.
+
+The documentation audit also makes product boundaries explicit: Box pipelines
+execute sequentially in topological order; generic condition/retry/variable
+features are not implemented. Box reads Groq keys from the environment or a
+plaintext `.env`, not an OS credential-store adapter. Its main license text and
+signing/plugin-registry work remain release gates in
+[Box's release notes](https://github.com/qa-p1/Arcade-box/blob/arcade/link/docs/release.md).
+The ecosystem completion statement does not certify every feature envisioned
+in the original app product plans or imply that application releases were published.

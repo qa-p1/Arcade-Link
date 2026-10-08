@@ -92,8 +92,11 @@ python3 benchmarks/bench.py --json now.json --compare benchmarks/baseline.json
 | Platform | Rust crate | Qt module |
 |---|---|---|
 | Linux | tested (this repository's tests) | tested |
-| Windows | build only: compiled and tested in CI, never run by hand | build only |
-| macOS | build only: compiled and tested in CI, never run by hand | build only |
+| Windows | native CI build and tests passed | native CI build and tests passed |
+| macOS | native CI build and tests passed | native CI build and tests passed |
+
+Interactive Windows/macOS app flows remain unverified. See [current status](docs/STATUS.md)
+for evidence and the documentation index.
 
 The apps use the published `v0.1.0` git tag; Wheel vendors the matching Qt
 module. See the [completed ecosystem plan](ARCADE_ECOSYSTEM_PLAN.md) and
