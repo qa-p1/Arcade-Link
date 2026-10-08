@@ -414,9 +414,22 @@ impl Server {
         self.inner.jobs.cancel_all();
         // Close live connections too: switched off means no longer served,
         // and on Windows their pipe instances would block the next listener.
+        // Aborting a connection's pending read ends its thread, which closes
+        // the pipe; repeat until all are gone, as one may be between reads.
         #[cfg(windows)]
-        for conn in self.inner.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter_map(Weak::upgrade) {
-            transport::disconnect(&conn.stream);
+        {
+            let deadline = std::time::Instant::now() + Duration::from_secs(1);
+            loop {
+                let live: Vec<Arc<Conn>> = self.inner.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter_map(Weak::upgrade).collect();
+                if live.is_empty() || std::time::Instant::now() >= deadline {
+                    break;
+                }
+                for conn in &live {
+                    transport::cancel_io(&conn.stream);
+                }
+                drop(live);
+                std::thread::sleep(Duration::from_millis(5));
+            }
         }
         // Wake the accept thread so it sees `stopping` and drops the listener,
         // and wait (briefly) until it has: a Windows pipe name can't be served

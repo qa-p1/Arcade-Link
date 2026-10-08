@@ -87,12 +87,14 @@ pub(crate) fn listen(address: &str) -> io::Result<Listener> {
 /// its thread exits, which frees the pipe instance. While any instance is
 /// open, a new listener can't claim the pipe name.
 #[cfg(windows)]
-pub(crate) fn disconnect(stream: &Stream) {
+pub(crate) fn cancel_io(stream: &Stream) {
     use std::os::windows::io::{AsHandle, AsRawHandle};
     #[allow(irrefutable_let_patterns)]
     if let Stream::NamedPipe(s) = stream {
-        // SAFETY: the handle is a live server end of this named pipe.
-        unsafe { windows_sys::Win32::System::Pipes::DisconnectNamedPipe(s.inner().as_handle().as_raw_handle()) };
+        // SAFETY: the handle is a live server end of this named pipe; a null
+        // OVERLAPPED cancels every pending operation on it, synchronous reads
+        // included (DisconnectNamedPipe would queue behind such a read).
+        unsafe { windows_sys::Win32::System::IO::CancelIoEx(s.inner().as_handle().as_raw_handle(), std::ptr::null()) };
     }
 }
 
