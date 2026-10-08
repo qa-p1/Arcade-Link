@@ -462,7 +462,6 @@ def connected_apps_real_peers_and_per_peer_toggle(s):
 @check("box")
 @check("box-overlap")
 def real_lens_ocr_provider_records_provenance(s):
-    lens_models(s)
     if "arcade.lens" in s.procs:
         s.kill("arcade.lens", signal.SIGTERM)
     resident(s)
@@ -521,25 +520,6 @@ def screen_ocr_uses_real_lens_selection(s):
     s.screenshot("box-screen-ocr-result", win)
     s.kill("box-ocr-fixture", signal.SIGTERM)
     return "Box OCR screen opens real Lens region selector; selected image OCR result returned to Box"
-
-
-def lens_models(s):
-    import urllib.request
-    import shutil
-    models = Path(s.env["ARCADE_LENS_HOME"]) / "data/models"
-    models.mkdir(parents=True, exist_ok=True)
-    for name in ("text-detection.onnx", "text-recognition.onnx"):
-        path = models / name
-        if not path.exists():
-            cache = APPS["arcade.box"]["dir"] / "target/e2e-ocr-models"
-            cache.mkdir(parents=True, exist_ok=True)
-            cached = cache / name
-            if not cached.exists():
-                with urllib.request.urlopen("https://ocrs-models.s3-accelerate.amazonaws.com/" + name, timeout=30) as response:
-                    part = cache / (name + ".part")
-                    part.write_bytes(response.read(200 * 1024 * 1024))
-                    part.replace(cached)
-            shutil.copyfile(cached, path)
 
 
 def store_pipeline(s, pipeline):

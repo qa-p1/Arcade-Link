@@ -674,6 +674,9 @@ def connected_apps_real_toggles_and_shortcut_clash(s):
         _ui_click(s, "Save", win, occurrence=-1)  # the button, not "Save to apply changes"
         s.wait_running("arcade.lens")
         assert json.loads(manifest.read_text())["actions"], "master on did not republish Lens actions"
+        # A running Box holds ctrl+alt+space as an X11 key grab, so the key would
+        # never reach the recorder. Stop it: the clash comes from its cached manifest.
+        s.kill("arcade.box", signal.SIGTERM)
         _ui_click(s, "Shortcut", win)
         _ui_click(s, "Change", win)
         s.xdotool("key", "ctrl+alt+space")

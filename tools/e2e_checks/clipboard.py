@@ -6,7 +6,6 @@ import json
 import re
 import shutil
 import sys
-import urllib.request
 import select
 import signal
 import subprocess
@@ -365,23 +364,6 @@ def clipboard_foreground_launch_mode(s):
         spec["args"] = original
 
 
-def _ocr_models(s):
-    # Lens release bundles include these official portable models. Test raw
-    # checkout binaries with the same models in the isolated Lens profile.
-    cache = APPS["arcade.clipboard"]["dir"] / ".verification/ocr-models"
-    cache.mkdir(parents=True, exist_ok=True)
-    dest = Path(s.env["ARCADE_LENS_HOME"]) / "data/models"
-    dest.mkdir(parents=True, exist_ok=True)
-    for name in ("text-detection.onnx", "text-recognition.onnx"):
-        local = cache / name
-        if not local.exists():
-            url = "https://ocrs-models.s3-accelerate.amazonaws.com/" + name
-            with urllib.request.urlopen(url, timeout=45) as source, local.with_suffix(".part").open("wb") as target:
-                shutil.copyfileobj(source, target)
-            local.with_suffix(".part").rename(local)
-        shutil.copy2(local, dest / name)
-
-
 @check("clipboard")
 def clipboard_photo_flagship_with_real_look_lens_and_box(s):
     _start(s)
@@ -394,7 +376,6 @@ def clipboard_photo_flagship_with_real_look_lens_and_box(s):
     _stop(s)
     s.env["ALOOK_E2E_MAP_EARLY"] = "1"
     s.env["ALOOK_DEBUG"] = "1"
-    _ocr_models(s)
     for peer in ("arcade.look", "arcade.lens", "arcade.box"):
         s.start(peer)
     c = _Core(s)
@@ -657,7 +638,6 @@ def clipboard_ui_surfaces(s):
     _ui_click(s, win, "Clipboard")
     s.xdotool("windowsize", "--sync", win, "1180", "820")
     s.env["ALOOK_E2E_MAP_EARLY"] = "1"
-    _ocr_models(s)
     for peer in ("arcade.look", "arcade.lens", "arcade.box"):
         s.start(peer)
     for kind in ("file", "text", "image"):
