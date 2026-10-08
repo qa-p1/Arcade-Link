@@ -428,14 +428,17 @@ QString nowRfc3339() { return QDateTime::currentDateTimeUtc().toString(Qt::ISODa
 bool writeManifest(const Locations &locations, QJsonObject manifest, QString *error)
 {
     const QString path = locations.manifestPath(manifest.value(QStringLiteral("id")).toString());
-    QFile existing(path);
-    if (existing.open(QIODevice::ReadOnly)) {
-        QJsonObject old;
-        if (parseManifest(existing.readAll(), &old)) {
-            old.remove(QStringLiteral("writtenAt"));
-            QJsonObject cmp = manifest;
-            cmp.remove(QStringLiteral("writtenAt"));
-            if (old == cmp) return false;
+    {
+        // Closed before QSaveFile replaces it: Windows can't rename over an open file.
+        QFile existing(path);
+        if (existing.open(QIODevice::ReadOnly)) {
+            QJsonObject old;
+            if (parseManifest(existing.readAll(), &old)) {
+                old.remove(QStringLiteral("writtenAt"));
+                QJsonObject cmp = manifest;
+                cmp.remove(QStringLiteral("writtenAt"));
+                if (old == cmp) return false;
+            }
         }
     }
     manifest.insert(QStringLiteral("writtenAt"), nowRfc3339());
