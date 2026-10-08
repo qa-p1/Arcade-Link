@@ -1,0 +1,140 @@
+{
+  "date": "2026-10-08 17:24",
+  "runs": 5,
+  "apps": {
+    "box": {
+      "startup_ms": [
+        84.2,
+        68.9,
+        67.7,
+        68.7,
+        68.5
+      ],
+      "idle_rss_kib": [
+        646064,
+        437028,
+        436244,
+        441448,
+        436160
+      ],
+      "idle_cpu_ms_5s": [
+        -2040.0,
+        10.0,
+        0.0,
+        20.0,
+        10.0
+      ],
+      "warm_invoke_ms": 7.7,
+      "startup_ms_median": 68.7,
+      "idle_rss_kib_median": 437028,
+      "idle_cpu_ms_5s_median": 10.0
+    },
+    "lens": {
+      "startup_ms": [
+        3.0,
+        2.9,
+        3.0,
+        2.9,
+        3.0
+      ],
+      "idle_rss_kib": [
+        83732,
+        83320,
+        83260,
+        83360,
+        83884
+      ],
+      "idle_cpu_ms_5s": [
+        0.0,
+        10.0,
+        10.0,
+        0.0,
+        0.0
+      ],
+      "warm_invoke_ms": 1.5,
+      "startup_ms_median": 3.0,
+      "idle_rss_kib_median": 83360,
+      "idle_cpu_ms_5s_median": 0.0
+    },
+    "look": {
+      "startup_ms": [
+        76.3,
+        75.9,
+        74.4,
+        74.4,
+        74.7
+      ],
+      "idle_rss_kib": [
+        76520,
+        76308,
+        76276,
+        76348,
+        76248
+      ],
+      "idle_cpu_ms_5s": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "warm_invoke_ms": 37.7,
+      "startup_ms_median": 74.7,
+      "idle_rss_kib_median": 76308,
+      "idle_cpu_ms_5s_median": 0.0
+    },
+    "wheel": {
+      "startup_ms": [
+        145.2,
+        136.1,
+        136.7,
+        136.6,
+        136.2
+      ],
+      "idle_rss_kib": [
+        118192,
+        117884,
+        118136,
+        117984,
+        118032
+      ],
+      "idle_cpu_ms_5s": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "warm_invoke_ms": 35.2,
+      "startup_ms_median": 136.6,
+      "idle_rss_kib_median": 118032,
+      "idle_cpu_ms_5s_median": 0.0
+    },
+    "clipboard": {
+      "startup_ms": [
+        200.7,
+        192.6,
+        190.6,
+        208.8,
+        193.3
+      ],
+      "idle_rss_kib": [
+        271324,
+        272800,
+        271244,
+        269216,
+        271288
+      ],
+      "idle_cpu_ms_5s": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "startup_ms_median": 193.3,
+      "idle_rss_kib_median": 271288,
+      "idle_cpu_ms_5s_median": 0.0
+    }
+  }
+}

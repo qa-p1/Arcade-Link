@@ -59,3 +59,15 @@ OCRmyPDF start Python) on each launch. Fixed in Box `1a1cf28`. Box and
 Clipboard startup stay over the 5 % budget; their Link work runs off the
 critical path, and the cause is not isolated (Wheel, unchanged at startup,
 is 2 % slower than in Phase 0 too).
+
+## Final dependency-cleanup run (2026-10-08)
+
+The fresh five-app comparison passed: startup, warm-invoke and RSS medians
+are within 5% of baseline or better. Box startup is 68.7 ms and Clipboard
+startup is 193.3 ms; the earlier startup regressions above did not recur.
+
+See [raw final samples](final-2026-10-08.json) and the
+[completion report](../COMPLETION_REPORT.md#final-performance-pass) for all
+figures and the CPU-counter limitation. Box has a nonzero 10 ms / 5 s CPU
+median, and one negative sample is invalid due to exiting child processes;
+passing the timing/RSS comparison does not establish zero idle CPU.
