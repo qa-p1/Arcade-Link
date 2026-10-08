@@ -330,6 +330,18 @@ pub fn spawn_detached(executable: &str, args: &[String]) -> std::io::Result<()> 
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        // Windows passes every inheritable handle to the child, our own stdio
+        // included: a launched app would hold the caller's output pipe open
+        // (e.g. `arcade-link invoke … | x` would wait until the app quits).
+        // The child's stdio is set explicitly above, so ours needn't be.
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT};
+        for handle in [std::io::stdin().as_raw_handle(), std::io::stdout().as_raw_handle(), std::io::stderr().as_raw_handle()] {
+            if !handle.is_null() {
+                // SAFETY: a std handle of this process (or an invalid one, which fails harmlessly).
+                unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) };
+            }
+        }
     }
     let mut child = cmd.spawn()?;
     // Reap it in the background so it never lingers as a zombie.
