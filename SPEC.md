@@ -64,7 +64,7 @@ crate implements this behind the `engines` feature.
 
 One file per app: `<registry>/<arcade-id>.json`. Canonical IDs:
 `arcade.box`, `arcade.lens`, `arcade.look`, `arcade.wheel`,
-`arcade.clipboard`, `arcade.tools`. They are separate from platform bundle
+`arcade.clipboard`, `arcade.tools`, `arcade.shelf`, `arcade.find`. They are separate from platform bundle
 IDs, which never change.
 
 ```jsonc
@@ -404,6 +404,8 @@ Defaults change for new installs only; a saved shortcut is never changed.
 | Lens | Ctrl+Alt+Shift+L | Ctrl+Alt+Shift+L | Ctrl+Alt+Shift+L |
 | Clipboard | Ctrl+Shift+Space | Ctrl+Alt+V | Cmd+Shift+V |
 | Wheel | F8 | F8 | F8 |
+| Shelf | Ctrl+Alt+S | Ctrl+Alt+S | Ctrl+Alt+S |
+| Find (designed) | Ctrl+Alt+F | Ctrl+Alt+F | Ctrl+Alt+F |
 
 Apps publish their effective shortcuts in `shortcuts`. A shortcut recorder
 warns "Used by <app>" when another app already uses the accelerator,
@@ -452,9 +454,16 @@ clipboard contents without the user acting in the owner's UI.
 | `clipboard.devices` | Clipboard | — | `structured/devices` | — | no | no |
 | `wheel.add_action` | Wheel | `text/url`, `text/plain;hint=command`, `file/*`, `structured/arcade-action` | — | persists, opens-ui | yes | no |
 | `wheel.show` | Wheel | — | — | opens-ui | yes | no |
+| `shelf.add` | Shelf | `file/*`, `file/*[]`, `folder/reference`, `text/plain`, `text/url`, `text/rich` | — | persists | no | no |
+| `shelf.show` | Shelf | — | — | opens-ui | yes | no |
+| `shelf.pick` | Shelf | — | `file/*[]`, `folder/reference`, `text/plain`, `text/url` | opens-ui | yes | no |
 | `tools.install` | Tools | `text/plain` (an app ID), or `options.app` | — | opens-ui (the user confirms in Tools) | yes | no |
 
-Each app documents its exposed actions in its own repository.
+Each app documents its exposed actions in its own repository. Shelf omits
+`launch.invoke`: stopped noninteractive additions use `launch.background` and
+are persisted by the resident process. Find IDs/design fixtures register the
+app only; `find.show` and `find.search` are DESIGNED and must not be advertised
+as implemented until Find publishes those actions.
 
 ## 12. Conformance
 

@@ -59,6 +59,12 @@ APPS = {
         "args": ["--background"],
         "build": ["cmake", "--build", "build"],
     },
+    "arcade.shelf": {
+        "dir": Path(os.environ.get("ARCADE_SHELF_REPO", str(LINK.parent / "Arcade-Shelf"))),
+        "bin": "build/arcade-shelf",
+        "args": ["--background"],
+        "build": ["cmake", "--build", "build"],
+    },
     "arcade.clipboard": {
         "dir": CODING / "App dev/Arcade-clipboard",
         "bin": "apps/flutter_app/build/linux/x64/release/bundle/clipboard",
@@ -74,7 +80,7 @@ STRIP = ("WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE", "XDG_CURRENT_DESKTOP"
 
 def isolated_env(root: Path) -> dict:
     env = {k: v for k, v in os.environ.items() if k not in STRIP}
-    for d in ("home", "config", "data", "cache", "runtime", "lens", "clipdata", "arcade", "wheel"):
+    for d in ("home", "config", "data", "cache", "runtime", "lens", "clipdata", "arcade", "wheel", "shelf"):
         (root / d).mkdir(parents=True, exist_ok=True)
     os.chmod(root / "runtime", 0o700)
     env.update({
@@ -88,6 +94,7 @@ def isolated_env(root: Path) -> dict:
         "ARCADE_LENS_HOME": str(root / "lens"),
         "ARCADE_DATA_DIR": str(root / "clipdata"),
         "ARCADE_WHEEL_INSTANCE": str(root / "wheel"),
+        "ARCADE_SHELF_HOME": str(root / "shelf"),
         "ARCADE_WHEEL_DISABLE_GLOBAL_SHORTCUT": "1",
         "QT_QPA_PLATFORM": "xcb",
         "GDK_BACKEND": "x11",

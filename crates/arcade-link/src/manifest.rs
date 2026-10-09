@@ -17,8 +17,10 @@ pub mod ids {
     pub const WHEEL: &str = "arcade.wheel";
     pub const CLIPBOARD: &str = "arcade.clipboard";
     pub const TOOLS: &str = "arcade.tools";
-    /// The five apps, in the order the Connected apps page lists them.
-    pub const APPS: [&str; 5] = [BOX, LENS, LOOK, WHEEL, CLIPBOARD];
+    pub const SHELF: &str = "arcade.shelf";
+    pub const FIND: &str = "arcade.find";
+    /// The apps, in the order the Connected apps page lists them.
+    pub const APPS: [&str; 7] = [BOX, LENS, LOOK, WHEEL, CLIPBOARD, SHELF, FIND];
 }
 
 /// The display name for a canonical ID.
@@ -30,6 +32,8 @@ pub fn app_name(id: &str) -> &str {
         ids::WHEEL => "Arcade Wheel",
         ids::CLIPBOARD => "Arcade Clipboard",
         ids::TOOLS => "Arcade Tools",
+        ids::SHELF => "Arcade Shelf",
+        ids::FIND => "Arcade Find",
         other => other,
     }
 }
@@ -43,6 +47,8 @@ pub fn app_pitch(id: &str) -> &'static str {
         ids::WHEEL => "Put any action on a one-gesture radial launcher.",
         ids::CLIPBOARD => "Send content to all your devices, end-to-end encrypted.",
         ids::TOOLS => "Install and update the Arcade apps.",
+        ids::SHELF => "Collect, organize and transfer desktop content.",
+        ids::FIND => "Find files and folders instantly.",
         _ => "",
     }
 }
@@ -55,6 +61,8 @@ pub fn releases_url(id: &str) -> &'static str {
         ids::LOOK => "https://github.com/qa-p1/arcade-look/releases",
         ids::WHEEL => "https://github.com/qa-p1/Arcade-wheel/releases",
         ids::CLIPBOARD => "https://github.com/qa-p1/Arcade-clipboard/releases",
+        ids::SHELF => "https://github.com/qa-p1/Arcade-Shelf/releases",
+        ids::FIND => "https://github.com/qa-p1/Arcade-Find/releases",
         _ => "https://github.com/qa-p1/Arcade-tools/releases",
     }
 }
@@ -394,5 +402,23 @@ mod tests {
         m.version = "1.0.1".into();
         assert!(write_manifest(&loc, &m).unwrap());
         std::fs::remove_dir_all(dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod onboarding_tests {
+    use super::*;
+    #[test]
+    fn shelf_and_find_have_distinct_metadata_and_stable_ids() {
+        for (id, name, repository) in [
+            (ids::SHELF, "Arcade Shelf", "Arcade-Shelf"),
+            (ids::FIND, "Arcade Find", "Arcade-Find"),
+        ] {
+            assert!(ids::APPS.contains(&id));
+            assert_eq!(app_name(id), name);
+            assert!(!app_pitch(id).is_empty());
+            assert_eq!(releases_url(id), format!("https://github.com/qa-p1/{repository}/releases"));
+        }
+        assert_eq!(ids::APPS.len(), 7);
     }
 }

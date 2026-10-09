@@ -1,0 +1,31 @@
+{
+  "comment": "DESIGNED contract fixture only; Find Link actions are not implemented at inspected feature/find-v0.1 commit 5700d0d948decbe47d9365d98851d6991ef7e33d.",
+  "id": "arcade.find",
+  "name": "Arcade Find",
+  "version": "0.1.0-mock",
+  "shortcuts": [
+    {
+      "id": "show",
+      "accelerator": "Ctrl+Alt+F"
+    }
+  ],
+  "actions": [
+    {
+      "id": "find.show",
+      "version": 1,
+      "title": "Find files",
+      "verb": "show",
+      "accepts": [
+        "text/plain",
+        "folder/reference",
+        "file/*"
+      ],
+      "produces": [],
+      "effects": [
+        "opens-ui"
+      ],
+      "interactive": true,
+      "privacy": "local"
+    }
+  ]
+}
