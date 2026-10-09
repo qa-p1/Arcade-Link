@@ -410,10 +410,7 @@ mod onboarding_tests {
     use super::*;
     #[test]
     fn shelf_and_find_have_distinct_metadata_and_stable_ids() {
-        for (id, name, repository) in [
-            (ids::SHELF, "Arcade Shelf", "Arcade-Shelf"),
-            (ids::FIND, "Arcade Find", "Arcade-Find"),
-        ] {
+        for (id, name, repository) in [(ids::SHELF, "Arcade Shelf", "Arcade-Shelf"), (ids::FIND, "Arcade Find", "Arcade-Find")] {
             assert!(ids::APPS.contains(&id));
             assert_eq!(app_name(id), name);
             assert!(!app_pitch(id).is_empty());
