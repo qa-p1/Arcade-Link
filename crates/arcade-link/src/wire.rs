@@ -28,6 +28,15 @@ pub mod method {
     pub const JOB_PROGRESS: &str = "job.progress";
     pub const JOB_DONE: &str = "job.done";
     pub const APP_CHANGED: &str = "app.changed";
+    pub const APP_SETTINGS: &str = "app.settings";
+    pub const APP_RESTART: &str = "app.restart";
+    pub const APP_MENU: &str = "app.menu";
+    pub const APP_MENU_INVOKE: &str = "app.menu.invoke";
+    pub const APP_SHORTCUTS_SET: &str = "app.shortcuts.set";
+    pub const APP_SETTINGS_EXPORT: &str = "app.settings.export";
+    pub const APP_SETTINGS_IMPORT: &str = "app.settings.import";
+    pub const TRAY_HOST: &str = "tray.host";
+    pub const OPTIONAL: &[&str] = &[APP_SETTINGS, APP_RESTART, APP_MENU, APP_MENU_INVOKE, APP_SHORTCUTS_SET, APP_SETTINGS_EXPORT, APP_SETTINGS_IMPORT];
 }
 
 /// Any message on the wire.

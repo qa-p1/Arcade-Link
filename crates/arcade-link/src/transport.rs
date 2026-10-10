@@ -108,6 +108,18 @@ pub fn connect(address: &str, timeout: Duration) -> io::Result<Stream> {
     opts.connect_sync()
 }
 
+pub(crate) fn close(stream: &Stream) {
+    #[cfg(unix)]
+    {
+        #[allow(irrefutable_let_patterns)]
+        if let Stream::UdSocket(s) = stream {
+            let _ = s.inner().shutdown(std::net::Shutdown::Both);
+        }
+    }
+    #[cfg(windows)]
+    cancel_io(stream);
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;

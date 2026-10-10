@@ -53,6 +53,7 @@ pub mod reason {
 
 /// A Link error as it travels on the wire: `{"code", "message", "reason"?, "limit"?}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "ErrorWire", into = "ErrorWire")]
 pub struct LinkError {
     pub code: ErrorCode,
     #[serde(default)]
@@ -64,6 +65,18 @@ pub struct LinkError {
 }
 
 impl LinkError {
+    /// Method availability is distinct from unsupported *input*. Keeping
+    /// the existing ErrorCode enum closed preserves exhaustive app matches.
+    /// On the wire this is {code:"unsupported"}; use is_unsupported().
+    pub fn unsupported_method(method: &str) -> Self {
+        Self::internal(format!("unsupported method {method}")).with_reason("unsupported_method")
+    }
+
+    pub fn is_unsupported(&self) -> bool {
+        self.reason.as_deref() == Some("unsupported_method")
+            // The v0.2 server used internal for unknown method names.
+            || (self.code == ErrorCode::Internal && self.message.starts_with("unknown method "))
+    }
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
         LinkError { code, message: message.into(), reason: None, limit: None }
     }
@@ -110,6 +123,29 @@ impl LinkError {
     /// The message to show the user, naming the app that failed.
     pub fn user_message(&self, app_name: &str) -> String {
         standard_message(self.code, app_name, self.reason.as_deref(), self.limit)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ErrorWire {
+    code: String,
+    #[serde(default)]
+    message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<u64>,
+}
+impl From<LinkError> for ErrorWire {
+    fn from(e: LinkError) -> Self {
+        let code = if e.reason.as_deref() == Some("unsupported_method") { "unsupported" } else { e.code.as_str() };
+        Self { code: code.into(), message: e.message, reason: e.reason, limit: e.limit }
+    }
+}
+impl From<ErrorWire> for LinkError {
+    fn from(e: ErrorWire) -> Self {
+        let code = serde_json::from_value(serde_json::Value::String(e.code.clone())).unwrap_or(ErrorCode::Internal);
+        Self { code, message: e.message, reason: if e.code == "unsupported" { Some("unsupported_method".into()) } else { e.reason }, limit: e.limit }
     }
 }
 

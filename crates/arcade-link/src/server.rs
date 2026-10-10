@@ -24,6 +24,38 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// What an app implements to serve the Link.
 pub trait Handler: Send + Sync + 'static {
+    /// Advertise only implemented optional methods. All callbacks execute on
+    /// a connection worker; marshal UI work onto the app's UI thread.
+    fn methods(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn settings(&self) -> Result<(), LinkError> {
+        Err(LinkError::unsupported_method(method::APP_SETTINGS))
+    }
+    /// Called after the response. Apps launch a successor that waits for the
+    /// old process. Mode is "normal" (default) or "force".
+    fn restart(&self, _mode: &str) -> Result<(), LinkError> {
+        Err(LinkError::unsupported_method(method::APP_RESTART))
+    }
+    /// Validate app-specific busy state before acknowledging restart.
+    fn restart_ready(&self, _mode: &str) -> Result<(), LinkError> {
+        Ok(())
+    }
+    fn menu(&self) -> Result<Vec<manifest::MenuItem>, LinkError> {
+        Err(LinkError::unsupported_method(method::APP_MENU))
+    }
+    fn menu_invoke(&self, _id: &str) -> Result<(), LinkError> {
+        Err(LinkError::unsupported_method(method::APP_MENU_INVOKE))
+    }
+    fn shortcuts_set(&self, _id: &str, _accelerator: &str) -> Result<crate::app::ShortcutSetResult, LinkError> {
+        Err(LinkError::unsupported_method(method::APP_SHORTCUTS_SET))
+    }
+    fn settings_export(&self) -> Result<Vec<crate::Content>, LinkError> {
+        Err(LinkError::unsupported_method(method::APP_SETTINGS_EXPORT))
+    }
+    fn settings_import(&self, _inputs: &[crate::Content]) -> Result<crate::app::ImportResult, LinkError> {
+        Err(LinkError::unsupported_method(method::APP_SETTINGS_IMPORT))
+    }
     /// The live action list (same shape as the manifest's `actions`).
     fn describe(&self) -> Vec<Action>;
 
@@ -75,6 +107,7 @@ impl JobTicket {
 pub(crate) trait Sink: Send + Sync {
     /// Returns false once the receiver is gone.
     fn send(&self, m: &Message) -> bool;
+    fn close(&self) {}
 }
 
 /// Job messages wait here until the `{"job": id}` response is on the wire,
@@ -287,6 +320,10 @@ struct Conn {
 }
 
 impl Sink for Conn {
+    fn close(&self) {
+        self.alive.store(false, Ordering::SeqCst);
+        transport::close(&self.stream);
+    }
     fn send(&self, m: &Message) -> bool {
         if !self.alive.load(Ordering::SeqCst) {
             return false;
@@ -323,6 +360,8 @@ struct Inner {
     jobs: Arc<Jobs>,
     conns: Mutex<Vec<Weak<Conn>>>,
     stopping: AtomicBool,
+    #[cfg(feature = "trayhost")]
+    tray_host: Mutex<Option<crate::trayhost::TrayHostServer>>,
 }
 
 /// A running Link server. Dropping it stops listening and removes the endpoint file.
@@ -367,6 +406,8 @@ impl Server {
             jobs: Arc::new(Jobs::default()),
             conns: Mutex::new(Vec::new()),
             stopping: AtomicBool::new(false),
+            #[cfg(feature = "trayhost")]
+            tray_host: Mutex::new(None),
         });
         let accept = inner.clone();
         let handle = std::thread::Builder::new().name("arcade-link-accept".into()).spawn(move || {
@@ -388,6 +429,20 @@ impl Server {
         for c in self.subscribers(method::APP_CHANGED) {
             c.send(&m);
         }
+    }
+
+    pub fn notify_menu_changed(&self) {
+        let m = Message::notification(method::APP_CHANGED, json!({"app": self.inner.config.app.id, "menu": true}));
+        for c in self.subscribers(method::APP_CHANGED) {
+            c.send(&m);
+        }
+    }
+
+    /// Attach before publishing Tools' trayHost.enabled manifest. No app
+    /// needs this unless it is serving the tray.host topic.
+    #[cfg(feature = "trayhost")]
+    pub fn attach_tray_host(&self, host: crate::trayhost::TrayHostServer) {
+        *self.inner.tray_host.lock().unwrap_or_else(|e| e.into_inner()) = Some(host);
     }
 
     fn subscribers(&self, topic: &str) -> Vec<Arc<Conn>> {
@@ -412,6 +467,9 @@ impl Server {
         }
         endpoint::remove_if_ours(&self.inner.config.locations, &self.inner.config.app.id, &self.inner.token);
         self.inner.jobs.cancel_all();
+        for conn in self.inner.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter_map(Weak::upgrade) {
+            conn.close();
+        }
         // Close live connections too: switched off means no longer served,
         // and on Windows their pipe instances would block the next listener.
         // Aborting a connection's pending read ends its thread, which closes
@@ -461,6 +519,7 @@ fn topic_matches(subscribed: &str, topic: &str) -> bool {
 
 fn serve(inner: Arc<Inner>, stream: Stream) {
     let stream = Arc::new(stream);
+    let _ = stream.set_send_timeout(Some(Duration::from_millis(150)));
     let conn = Arc::new(Conn { stream: stream.clone(), write: Mutex::new(()), alive: AtomicBool::new(true), topics: Mutex::new(Vec::new()) });
     let mut reader = LineReader::new(ArcRead(stream.clone()));
     let _ = stream.set_recv_timeout(Some(HELLO_TIMEOUT));
@@ -480,7 +539,7 @@ fn serve(inner: Arc<Inner>, stream: Stream) {
         let Some(id) = m.id else { continue };
         let method = m.method.clone().unwrap_or_default();
         let reply = match method.as_str() {
-            method::DESCRIBE => Ok(json!({ "actions": inner.handler.describe() })),
+            method::DESCRIBE => Ok(json!({ "actions": inner.handler.describe(), "methods": inner.handler.methods() })),
             method::INVOKE => {
                 mine.extend(invoke(&inner, &conn, &peer, &m, id));
                 continue;
@@ -499,6 +558,13 @@ fn serve(inner: Arc<Inner>, stream: Stream) {
                 if let Ok(mut t) = conn.topics.lock() {
                     t.clone_from(&topics);
                 }
+                #[cfg(feature = "trayhost")]
+                if let Some(host) = inner.tray_host.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                    host.unsubscribe(conn.clone());
+                    if topics.iter().any(|t| topic_matches(t, method::TRAY_HOST)) {
+                        host.subscribe(&peer, conn.clone());
+                    }
+                }
                 Ok(json!({ "topics": topics }))
             }
             method::APP_STATUS => Ok(json!({
@@ -511,6 +577,13 @@ fn serve(inner: Arc<Inner>, stream: Stream) {
                 "status": inner.handler.status(),
             })),
             method::APP_ACTIVATE => inner.handler.activate().map(|_| json!({ "activated": true })),
+            optional if method::OPTIONAL.contains(&optional) => {
+                if !inner.handler.methods().iter().any(|m| m == optional) {
+                    Err(LinkError::unsupported_method(optional))
+                } else {
+                    optional_call(&inner, &conn, id, optional, m.params())
+                }
+            }
             method::APP_QUIT => {
                 let force = m.params().get("force").and_then(Value::as_bool).unwrap_or(false);
                 if inner.jobs.count() > 0 && !force {
@@ -522,14 +595,66 @@ fn serve(inner: Arc<Inner>, stream: Stream) {
                 }
             }
             method::HELLO => Err(LinkError::internal("hello was already sent")),
-            other => Err(LinkError::internal(format!("unknown method {other:?}"))),
+            other => Err(LinkError::unsupported_method(other)),
         };
+        if method == method::APP_RESTART && reply == Ok(Value::Null) {
+            continue;
+        }
         conn.send(&Message::response(id, reply));
     }
     conn.alive.store(false, Ordering::SeqCst);
     // Nobody is left to receive these jobs' results.
     for job in mine {
         inner.jobs.cancel(&job);
+    }
+}
+
+fn optional_call(inner: &Inner, conn: &Conn, id: u64, name: &str, params: &Value) -> Result<Value, LinkError> {
+    let field = |key| params.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or_else(|| LinkError::denied("invalid_params"));
+    match name {
+        method::APP_SETTINGS => inner.handler.settings().map(|_| json!({"opened": true})),
+        method::APP_RESTART => {
+            let mode = match params.get("mode") {
+                None => "normal",
+                Some(v) => v.as_str().ok_or_else(|| LinkError::denied("invalid_mode"))?,
+            };
+            if !["normal", "force"].contains(&mode) {
+                return Err(LinkError::denied("invalid_mode"));
+            }
+            if inner.jobs.count() > 0 && mode != "force" {
+                return Err(LinkError::busy());
+            }
+            inner.handler.restart_ready(mode)?;
+            // A restart can end the process, just like quit; acknowledge first.
+            conn.send(&Message::response(id, Ok(json!({"restarting": true}))));
+            let _ = inner.handler.restart(mode);
+            // The caller must not send a second response (handled by serve).
+            Ok(Value::Null)
+        }
+        method::APP_MENU => inner.handler.menu().map(|items| json!({"items": items})),
+        method::APP_MENU_INVOKE => inner.handler.menu_invoke(field("id")?).map(|_| {
+            let message = Message::notification(method::APP_CHANGED, json!({"app": inner.config.app.id, "menu": true}));
+            for conn in inner.conns.lock().unwrap_or_else(|e| e.into_inner()).iter().filter_map(Weak::upgrade) {
+                if conn.topics.lock().is_ok_and(|t| t.iter().any(|t| topic_matches(t, method::APP_CHANGED))) {
+                    conn.send(&message);
+                }
+            }
+            json!({"done": true})
+        }),
+        method::APP_SHORTCUTS_SET => {
+            let key = crate::accelerator::normalize(field("accelerator")?).map_err(|_| LinkError::denied("invalid_accelerator"))?;
+            inner.handler.shortcuts_set(field("id")?, &key).map(|r| json!(r))
+        }
+        method::APP_SETTINGS_EXPORT => inner.handler.settings_export().map(|outputs| json!({"outputs": outputs})),
+        method::APP_SETTINGS_IMPORT => {
+            let inputs: Vec<crate::Content> =
+                serde_json::from_value(params.get("inputs").cloned().unwrap_or(Value::Null)).map_err(|_| LinkError::denied("invalid_inputs"))?;
+            if inputs.is_empty() || inputs.iter().any(|c| c.kind != "file/any" || c.path.is_none()) {
+                return Err(LinkError::denied("invalid_inputs"));
+            }
+            inner.handler.settings_import(&inputs).map(|r| json!(r))
+        }
+        _ => Err(LinkError::unsupported_method(name)),
     }
 }
 

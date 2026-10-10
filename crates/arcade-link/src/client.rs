@@ -16,6 +16,7 @@ use crate::manifest::{Action, Manifest};
 use crate::paths::Locations;
 use crate::transport;
 use crate::wire::{self, method, InvokeRequest, InvokeResult, JobDone, JobProgress, LineReader, Message, PeerInfo};
+use crate::Content;
 
 /// An endpoint is dead if connecting or `hello` takes longer than this.
 pub const HELLO_TIMEOUT: Duration = Duration::from_millis(150);
@@ -46,11 +47,32 @@ pub struct Client {
     notifications: std::collections::VecDeque<Message>,
 }
 
+/// A cancellation handle for a blocking subscription. Closing is idempotent
+/// on Unix; Windows cancels pending pipe I/O. The Client must be dropped after
+/// cancellation. This never kills a process.
+#[derive(Clone)]
+pub struct ConnectionControl {
+    stream: Arc<Stream>,
+}
+impl ConnectionControl {
+    pub fn close(&self) {
+        transport::close(&self.stream);
+    }
+}
+
 fn not_running(app_id: &str) -> LinkError {
     LinkError::new(ErrorCode::NotRunning, format!("{app_id} is not running"))
 }
 
 impl Client {
+    pub fn connection_control(&self) -> ConnectionControl {
+        ConnectionControl { stream: self.stream.clone() }
+    }
+    pub fn set_timeout(&self, timeout: Duration) -> Result<(), LinkError> {
+        self.stream.set_recv_timeout(Some(timeout))?;
+        self.stream.set_send_timeout(Some(timeout))?;
+        Ok(())
+    }
     /// Connects to `app_id`'s endpoint and authenticates.
     pub fn connect(locations: &Locations, app_id: &str, me: &PeerInfo) -> Result<Client, LinkError> {
         Client::connect_with(locations, app_id, me, HELLO_TIMEOUT)
@@ -127,6 +149,39 @@ impl Client {
     pub fn describe(&mut self) -> Result<Vec<Action>, LinkError> {
         let r = self.call(method::DESCRIBE, json!({}))?;
         serde_json::from_value(r.get("actions").cloned().unwrap_or(Value::Array(vec![]))).map_err(|e| LinkError::internal(e.to_string()))
+    }
+
+    pub fn describe_full(&mut self) -> Result<crate::app::Description, LinkError> {
+        self.typed(method::DESCRIBE, json!({}))
+    }
+    fn typed<T: serde::de::DeserializeOwned>(&mut self, method: &str, params: Value) -> Result<T, LinkError> {
+        serde_json::from_value(self.call(method, params)?).map_err(|e| LinkError::internal(format!("invalid {method} result: {e}")))
+    }
+    pub fn settings(&mut self) -> Result<(), LinkError> {
+        self.call(method::APP_SETTINGS, json!({})).map(|_| ())
+    }
+    pub fn restart(&mut self, mode: Option<&str>) -> Result<(), LinkError> {
+        let params = mode.map_or_else(|| json!({}), |mode| json!({"mode": mode}));
+        self.call(method::APP_RESTART, params).map(|_| ())
+    }
+    pub fn menu(&mut self) -> Result<Vec<crate::manifest::MenuItem>, LinkError> {
+        let value = self.call(method::APP_MENU, json!({}))?;
+        serde_json::from_value(value.get("items").cloned().ok_or_else(|| LinkError::internal("menu has no items"))?)
+            .map_err(|e| LinkError::internal(e.to_string()))
+    }
+    pub fn menu_invoke(&mut self, id: &str) -> Result<(), LinkError> {
+        self.call(method::APP_MENU_INVOKE, json!({"id": id})).map(|_| ())
+    }
+    pub fn shortcuts_set(&mut self, id: &str, accelerator: &str) -> Result<crate::app::ShortcutSetResult, LinkError> {
+        self.typed(method::APP_SHORTCUTS_SET, json!({"id": id, "accelerator": accelerator}))
+    }
+    pub fn settings_export(&mut self) -> Result<Vec<Content>, LinkError> {
+        let value = self.call(method::APP_SETTINGS_EXPORT, json!({}))?;
+        serde_json::from_value(value.get("outputs").cloned().ok_or_else(|| LinkError::internal("export has no outputs"))?)
+            .map_err(|e| LinkError::internal(e.to_string()))
+    }
+    pub fn settings_import(&mut self, inputs: &[Content]) -> Result<crate::app::ImportResult, LinkError> {
+        self.typed(method::APP_SETTINGS_IMPORT, json!({"inputs": inputs}))
     }
 
     pub fn status(&mut self) -> Result<Value, LinkError> {
