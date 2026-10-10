@@ -314,6 +314,7 @@ impl Drop for Job {
 /// Serializes writes to one connection.
 struct Conn {
     stream: Arc<Stream>,
+    io: transport::IoControl,
     write: Mutex<()>,
     alive: AtomicBool,
     topics: Mutex<Vec<String>>,
@@ -322,14 +323,14 @@ struct Conn {
 impl Sink for Conn {
     fn close(&self) {
         self.alive.store(false, Ordering::SeqCst);
-        transport::close(&self.stream);
+        self.io.close(&self.stream);
     }
     fn send(&self, m: &Message) -> bool {
         if !self.alive.load(Ordering::SeqCst) {
             return false;
         }
         let _g = self.write.lock().unwrap_or_else(|e| e.into_inner());
-        let ok = wire::write_message(&mut &*self.stream, m).is_ok();
+        let ok = wire::write_message(&mut ArcWrite(&self.stream, &self.io), m).is_ok();
         if !ok {
             self.alive.store(false, Ordering::SeqCst);
         }
@@ -337,11 +338,20 @@ impl Sink for Conn {
     }
 }
 
-struct ArcRead(Arc<Stream>);
+struct ArcRead(Arc<Stream>, transport::IoControl);
 
 impl std::io::Read for ArcRead {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        (&*self.0).read(buf)
+        self.1.read(&self.0, buf)
+    }
+}
+struct ArcWrite<'a>(&'a Stream, &'a transport::IoControl);
+impl std::io::Write for ArcWrite<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.1.write(self.0, buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.1.flush(self.0)
     }
 }
 
@@ -519,15 +529,16 @@ fn topic_matches(subscribed: &str, topic: &str) -> bool {
 
 fn serve(inner: Arc<Inner>, stream: Stream) {
     let stream = Arc::new(stream);
-    let _ = stream.set_send_timeout(Some(Duration::from_millis(150)));
-    let conn = Arc::new(Conn { stream: stream.clone(), write: Mutex::new(()), alive: AtomicBool::new(true), topics: Mutex::new(Vec::new()) });
-    let mut reader = LineReader::new(ArcRead(stream.clone()));
-    let _ = stream.set_recv_timeout(Some(HELLO_TIMEOUT));
+    let Ok(io) = transport::IoControl::new() else { return };
+    let _ = io.send_timeout(&stream, Some(Duration::from_millis(150)));
+    let conn = Arc::new(Conn { stream: stream.clone(), io: io.clone(), write: Mutex::new(()), alive: AtomicBool::new(true), topics: Mutex::new(Vec::new()) });
+    let mut reader = LineReader::new(ArcRead(stream.clone(), io.clone()));
+    let _ = io.recv_timeout(&stream, Some(HELLO_TIMEOUT));
     let peer = match handshake(&inner, &conn, &mut reader) {
         Some(p) => p,
         None => return,
     };
-    let _ = stream.set_recv_timeout(None);
+    let _ = io.recv_timeout(&stream, None);
     if let Ok(mut conns) = inner.conns.lock() {
         conns.push(Arc::downgrade(&conn));
     }

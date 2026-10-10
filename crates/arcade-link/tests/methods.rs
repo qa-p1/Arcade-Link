@@ -147,3 +147,35 @@ fn method_vector_messages_round_trip() {
         }
     }
 }
+
+#[test]
+fn subscription_deadlines_and_close_before_or_during_read_are_bounded() {
+    let root = std::env::temp_dir().join(format!("al-read-control-{}", arcade_link::endpoint::new_token().unwrap()));
+    let loc = Locations::under(&root);
+    let server =
+        Server::start(ServerConfig { locations: loc.clone(), app: PeerInfo { id: "arcade.test".into(), version: "0.3".into() } }, Arc::new(App::default()))
+            .unwrap();
+    let mut c = Client::connect(&loc, "arcade.test", &PeerInfo::default()).unwrap();
+    c.set_timeout(Duration::from_millis(50)).unwrap();
+    assert_eq!(c.next_notification(Some(Duration::from_millis(20))).unwrap_err().code, ErrorCode::Timeout);
+    assert!(c.describe().unwrap().is_empty(), "a timeout leaves the connection usable");
+    c.connection_control().close();
+    let before = std::time::Instant::now();
+    assert!(c.next_notification(None).is_err(), "close before read must persist");
+    assert!(before.elapsed() < Duration::from_secs(1));
+    drop(c);
+    let mut c = Client::connect(&loc, "arcade.test", &PeerInfo::default()).unwrap();
+    let control = c.connection_control();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        tx.send(false).unwrap();
+        tx.send(c.next_notification(None).is_err()).unwrap();
+    });
+    assert!(!rx.recv_timeout(Duration::from_secs(1)).unwrap());
+    control.close();
+    assert!(rx.recv_timeout(Duration::from_secs(1)).unwrap());
+    reader.join().unwrap();
+    drop(control);
+    drop(server);
+    let _ = std::fs::remove_dir_all(root);
+}

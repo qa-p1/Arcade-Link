@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use interprocess::local_socket::{prelude::*, Stream};
+use interprocess::local_socket::Stream;
 use serde_json::{json, Value};
 
 use crate::endpoint;
@@ -27,17 +27,27 @@ pub const SPINNER_DELAY: Duration = Duration::from_millis(150);
 /// Default answer time for ordinary (non-job) calls.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
-struct ArcRead(Arc<Stream>);
+struct ArcRead(Arc<Stream>, transport::IoControl);
 
 impl std::io::Read for ArcRead {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        (&*self.0).read(buf)
+        self.1.read(&self.0, buf)
+    }
+}
+struct ArcWrite<'a>(&'a Stream, &'a transport::IoControl);
+impl std::io::Write for ArcWrite<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.1.write(self.0, buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.1.flush(self.0)
     }
 }
 
 /// A connection to one running app.
 pub struct Client {
     stream: Arc<Stream>,
+    io: transport::IoControl,
     reader: LineReader<ArcRead>,
     next_id: u64,
     /// The app on the other end.
@@ -48,15 +58,17 @@ pub struct Client {
 }
 
 /// A cancellation handle for a blocking subscription. Closing is idempotent
-/// on Unix; Windows cancels pending pipe I/O. The Client must be dropped after
+/// on Unix; Windows signals a cancellation event and cancels pending pipe I/O.
+/// Closing before a read starts also cancels that read. The Client is dropped after
 /// cancellation. This never kills a process.
 #[derive(Clone)]
 pub struct ConnectionControl {
     stream: Arc<Stream>,
+    io: transport::IoControl,
 }
 impl ConnectionControl {
     pub fn close(&self) {
-        transport::close(&self.stream);
+        self.io.close(&self.stream);
     }
 }
 
@@ -66,11 +78,11 @@ fn not_running(app_id: &str) -> LinkError {
 
 impl Client {
     pub fn connection_control(&self) -> ConnectionControl {
-        ConnectionControl { stream: self.stream.clone() }
+        ConnectionControl { stream: self.stream.clone(), io: self.io.clone() }
     }
     pub fn set_timeout(&self, timeout: Duration) -> Result<(), LinkError> {
-        self.stream.set_recv_timeout(Some(timeout))?;
-        self.stream.set_send_timeout(Some(timeout))?;
+        self.io.recv_timeout(&self.stream, Some(timeout))?;
+        self.io.send_timeout(&self.stream, Some(timeout))?;
         Ok(())
     }
     /// Connects to `app_id`'s endpoint and authenticates.
@@ -82,10 +94,13 @@ impl Client {
         let ep = endpoint::read(locations, app_id).map_err(|_| not_running(app_id))?;
         let stream = transport::connect(&ep.address, timeout).map_err(|_| not_running(app_id))?;
         let stream = Arc::new(stream);
-        let _ = stream.set_recv_timeout(Some(timeout));
+        let io = transport::IoControl::new()?;
+        io.recv_timeout(&stream, Some(timeout))?;
+        io.send_timeout(&stream, Some(timeout))?;
         let mut c = Client {
-            reader: LineReader::new(ArcRead(stream.clone())),
+            reader: LineReader::new(ArcRead(stream.clone(), io.clone())),
             stream,
+            io,
             next_id: 0,
             server: PeerInfo::default(),
             protocol: 0,
@@ -102,14 +117,15 @@ impl Client {
         if !wire::SUPPORTED_PROTOCOLS.contains(&c.protocol) {
             return Err(wire::version_mismatch(&[c.protocol]));
         }
-        let _ = c.stream.set_recv_timeout(Some(CALL_TIMEOUT));
+        let _ = c.io.recv_timeout(&c.stream, Some(CALL_TIMEOUT));
+        let _ = c.io.send_timeout(&c.stream, Some(CALL_TIMEOUT));
         Ok(c)
     }
 
     fn send(&mut self, method: &str, params: Value) -> Result<u64, LinkError> {
         self.next_id += 1;
         let id = self.next_id;
-        wire::write_message(&mut &*self.stream, &Message::request(id, method, params)).map_err(LinkError::from)?;
+        wire::write_message(&mut ArcWrite(&self.stream, &self.io), &Message::request(id, method, params)).map_err(LinkError::from)?;
         Ok(id)
     }
 
@@ -210,7 +226,7 @@ impl Client {
     fn wait_job(&mut self, job: &str, on_progress: &mut dyn FnMut(&JobProgress), cancel: Option<&AtomicBool>) -> Result<InvokeResult, LinkError> {
         // While a cancel flag is supplied, wake up every 100 ms to check it;
         // this only happens during an active job, never while idle.
-        let _ = self.stream.set_recv_timeout(cancel.map(|_| Duration::from_millis(100)));
+        let _ = self.io.recv_timeout(&self.stream, cancel.map(|_| Duration::from_millis(100)));
         let mut cancel_sent = false;
         let result = loop {
             if let Some(flag) = cancel {
@@ -246,7 +262,7 @@ impl Client {
                 _ => {}
             }
         };
-        let _ = self.stream.set_recv_timeout(Some(CALL_TIMEOUT));
+        let _ = self.io.recv_timeout(&self.stream, Some(CALL_TIMEOUT));
         result
     }
 
@@ -255,7 +271,7 @@ impl Client {
         if let Some(m) = self.notifications.pop_front() {
             return Ok(m);
         }
-        let _ = self.stream.set_recv_timeout(timeout);
+        let _ = self.io.recv_timeout(&self.stream, timeout);
         let r = loop {
             match self.next_message() {
                 Ok(m) if m.kind() == wire::Kind::Notification => break Ok(m),
@@ -263,7 +279,7 @@ impl Client {
                 Err(e) => break Err(e),
             }
         };
-        let _ = self.stream.set_recv_timeout(Some(CALL_TIMEOUT));
+        let _ = self.io.recv_timeout(&self.stream, Some(CALL_TIMEOUT));
         r
     }
 }
