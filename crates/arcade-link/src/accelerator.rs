@@ -76,6 +76,7 @@ const KEYS: &[&str] = &[
     "VolumeUp",
     "VolumeDown",
     "VolumeMute",
+    "MicMute",
     "MediaPlayPause",
     "MediaNext",
     "MediaPrevious",
@@ -89,14 +90,16 @@ const KEYS: &[&str] = &[
     "MouseForward",
     "WheelUp",
     "WheelDown",
+    "WheelLeft",
+    "WheelRight",
 ];
 
 fn modifier(s: &str) -> Option<usize> {
     match s.to_ascii_lowercase().as_str() {
-        "ctrl" | "control" | "ctl" => Some(0),
-        "alt" | "option" | "opt" => Some(1),
-        "shift" => Some(2),
-        "super" | "cmd" | "command" | "win" | "windows" | "meta" | "logo" | "mod4" | "super_l" => Some(3),
+        "ctrl" | "control" | "ctl" | "control_l" | "control_r" => Some(0),
+        "alt" | "option" | "opt" | "alt_l" | "alt_r" => Some(1),
+        "shift" | "shift_l" | "shift_r" => Some(2),
+        "super" | "cmd" | "command" | "win" | "windows" | "meta" | "logo" | "mod4" | "super_l" | "super_r" => Some(3),
         _ => None,
     }
 }
@@ -119,8 +122,15 @@ fn key(s: &str) -> Option<String> {
         "esc" => "Escape",
         "del" => "Delete",
         "ins" => "Insert",
-        "pgup" | "prior" => "PageUp",
-        "pgdn" | "next" => "PageDown",
+        "pgup" | "prior" | "page_up" => "PageUp",
+        "pgdn" | "next" | "page_down" => "PageDown",
+        "iso_left_tab" => "Tab",
+        "kp_add" => "NumpadAdd",
+        "kp_subtract" => "NumpadSubtract",
+        "kp_multiply" => "NumpadMultiply",
+        "kp_divide" => "NumpadDivide",
+        "kp_decimal" => "NumpadDecimal",
+        "kp_enter" => "NumpadEnter",
         "arrowup" => "Up",
         "arrowdown" => "Down",
         "arrowleft" => "Left",
@@ -128,6 +138,7 @@ fn key(s: &str) -> Option<String> {
         "xf86audioraisevolume" => "VolumeUp",
         "xf86audiolowervolume" => "VolumeDown",
         "xf86audiomute" => "VolumeMute",
+        "xf86audiomicmute" => "MicMute",
         "xf86audioplay" => "MediaPlayPause",
         "xf86audionext" => "MediaNext",
         "xf86audioprev" => "MediaPrevious",
@@ -141,6 +152,8 @@ fn key(s: &str) -> Option<String> {
         "mouse:276" => "MouseForward",
         "mouse_up" => "WheelUp",
         "mouse_down" => "WheelDown",
+        "mouse_left" => "WheelLeft",
+        "mouse_right" => "WheelRight",
         _ => "",
     };
     if !alias.is_empty() {
@@ -158,6 +171,9 @@ fn key(s: &str) -> Option<String> {
     if let Some(n) = lower.strip_prefix("numpad").filter(|n| n.len() == 1 && n.as_bytes()[0].is_ascii_digit()) {
         return Some(format!("Numpad{n}"));
     }
+    if let Some(n) = lower.strip_prefix("kp_").filter(|n| n.len() == 1 && n.as_bytes()[0].is_ascii_digit()) {
+        return Some(format!("Numpad{n}"));
+    }
     let raw = lower.strip_prefix("code:").or_else(|| lower.strip_prefix("code"))?;
     if raw.is_empty() || !raw.bytes().all(|b| b.is_ascii_digit()) {
         return None;
@@ -170,6 +186,8 @@ fn key(s: &str) -> Option<String> {
 /// Lenient input to canonical `Ctrl+Alt+Shift+Super+Key` chords, separated
 /// by a single space. A single modifier is a valid tap chord. Empty input,
 /// repeated modifiers, ambiguous `++`, and unknown keys are errors.
+/// A final XKB modifier keysym may repeat its modifier for a tap bind:
+/// `SUPER + SUPER_L` becomes `Super`, without an extra Shift for `ISO_Left_Tab`.
 pub fn normalize(input: &str) -> Result<String, AcceleratorError> {
     let input = input.trim();
     if input.is_empty() {
@@ -181,10 +199,15 @@ pub fn normalize(input: &str) -> Result<String, AcceleratorError> {
     for chord in compact.split_whitespace() {
         let mut mods = [false; 4];
         let mut main = None;
-        for part in chord.split('+') {
+        let parts: Vec<_> = chord.split('+').collect();
+        for (index, part) in parts.iter().enumerate() {
             if let Some(i) = modifier(part) {
                 if mods[i] {
-                    return Err(AcceleratorError(format!("repeated modifier in {chord:?}")));
+                    let lower = part.to_ascii_lowercase();
+                    let tap_key = index + 1 == parts.len() && main.is_none() && (lower.ends_with("_l") || lower.ends_with("_r"));
+                    if !tap_key {
+                        return Err(AcceleratorError(format!("repeated modifier in {chord:?}")));
+                    }
                 }
                 mods[i] = true;
             } else {

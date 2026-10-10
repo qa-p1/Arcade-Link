@@ -179,6 +179,44 @@
         ]
       },
       "markdown": "## Browser\n\n| Action | Linux | Windows | macOS |\n| --- | --- | --- | --- |\n| Search | Ctrl+K | Ctrl+K | ⌘K |\n\n"
+    },
+    {
+      "name": "microphone and horizontal scroll",
+      "document": {
+        "schema": 1,
+        "app": "arcade.find",
+        "version": "0.3.0",
+        "groups": [
+          {
+            "title": "Hardware",
+            "context": "global",
+            "shortcuts": [
+              {
+                "id": "micmute",
+                "title": "MicMute",
+                "keys": {
+                  "default": "MicMute"
+                }
+              },
+              {
+                "id": "wheelleft",
+                "title": "WheelLeft",
+                "keys": {
+                  "default": "WheelLeft"
+                }
+              },
+              {
+                "id": "wheelright",
+                "title": "WheelRight",
+                "keys": {
+                  "default": "WheelRight"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "markdown": "## Hardware\n\n| Action | Linux | Windows | macOS |\n| --- | --- | --- | --- |\n| MicMute | MicMute | MicMute | MicMute |\n| WheelLeft | WheelLeft | WheelLeft | WheelLeft |\n| WheelRight | WheelRight | WheelRight | WheelRight |\n\n"
     }
   ],
   "invalid": [
