@@ -32,6 +32,13 @@ jobs:
       # are covered by the crate's own tests on each OS.
       - name: Test
         run: cargo test --workspace --all-features --locked
+      - name: Feature hygiene
+        shell: bash
+        run: |
+          cargo test -p arcade-link --no-default-features --locked
+          for feature in install trayhost watch engines; do
+            cargo test -p arcade-link --no-default-features --features "$feature" --locked
+          done
       - name: Release manifest tool
         run: python3 -m unittest discover -s tools -p "test_*.py"
 
@@ -64,3 +71,32 @@ jobs:
           cli="$PWD/target/debug/arcade-link"
           [ -f "$cli.exe" ] && cli="$cli.exe"
           ARCADE_LINK_CLI="$cli" ctest --test-dir qt/build -C Release --output-on-failure
+
+  windows-installers:
+    name: Shared Windows installers (CI account only)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install compilers
+        shell: pwsh
+        run: |
+          choco install innosetup nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compiler setup failed' }
+      - name: Build both samples
+        shell: pwsh
+        working-directory: packaging/windows/samples
+        run: |
+          Copy-Item "$env:WINDIR\System32\whoami.exe" sample.exe
+          $inno = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $inno)) { $inno = (Get-Command ISCC.exe).Source }
+          & $inno sample.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Inno compilation failed' }
+          $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path $nsis)) { $nsis = (Get-Command makensis.exe).Source }
+          & $nsis /V4 sample.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed' }
+      - name: Verify silent install and uninstall
+        # Use Windows PowerShell 5.1, the same host invoked by the installers.
+        shell: powershell
+        working-directory: packaging/windows/samples
+        run: .\verify.ps1
