@@ -1,7 +1,7 @@
 """Shelf's real resident persistence, input encoding and picker cancellation.
 
-Find's consumer is not implemented at the inspected handoff commit, so this
-group sends its documented inputs directly and makes no real-Find assertion.
+These checks send Find's selection encoding directly; the `find` group runs
+the real Find against the real Shelf.
 """
 import json
 import time
@@ -34,7 +34,7 @@ def shelf_resident_adds_mixed_references_and_reports_skips(s):
     code, reply = s.invoke("shelf", "shelf.add", "--input-json",
                            json.dumps({"type": "folder/reference", "path": str(s.root / "missing")}))
     assert code != 0, reply
-    return "Real Shelf; documented Find payload, duplicates and missing references"
+    return "Real Shelf; Find's selection encoding, duplicates and missing references"
 
 
 @check("shelf")
@@ -59,6 +59,11 @@ def shelf_relaunch_uses_background_resident_and_recovers_references(s):
         # invoke_action owns this detached launch; Session's Popen table does
         # not. Shut down precisely this private-profile Link endpoint.
         s.cli("quit", "shelf", "--force")
+        # Quitting is asynchronous: a Shelf started before this one has
+        # released its endpoint and instance lock would hand off to it and exit.
+        deadline = time.monotonic() + 5
+        while s.endpoint("arcade.shelf").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
     return "Stopped Shelf launched through launch.background; SQLite state recovered"
 
 

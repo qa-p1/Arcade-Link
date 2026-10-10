@@ -405,7 +405,7 @@ Defaults change for new installs only; a saved shortcut is never changed.
 | Clipboard | Ctrl+Shift+Space | Ctrl+Alt+V | Cmd+Shift+V |
 | Wheel | F8 | F8 | F8 |
 | Shelf | Ctrl+Alt+S | Ctrl+Alt+S | Ctrl+Alt+S |
-| Find (designed) | Ctrl+Alt+F | Ctrl+Alt+F | Ctrl+Alt+F |
+| Find | Ctrl+Alt+F | Ctrl+Alt+F | Ctrl+Alt+F |
 
 Apps publish their effective shortcuts in `shortcuts`. A shortcut recorder
 warns "Used by <app>" when another app already uses the accelerator,
@@ -457,13 +457,15 @@ clipboard contents without the user acting in the owner's UI.
 | `shelf.add` | Shelf | `file/*`, `file/*[]`, `folder/reference`, `text/plain`, `text/url`, `text/rich` | — | persists | no | no |
 | `shelf.show` | Shelf | — | — | opens-ui | yes | no |
 | `shelf.pick` | Shelf | — | `file/*[]`, `folder/reference`, `text/plain`, `text/url` | opens-ui | yes | no |
+| `find.search` | Find | `text/plain` (the query), or `options.query` | `file/*[]`, `folder/reference` | — | no | yes |
+| `find.show` | Find | —, `text/plain`, `file/*`, `folder/reference` | — | opens-ui | yes | no |
 | `tools.install` | Tools | `text/plain` (an app ID), or `options.app` | — | opens-ui (the user confirms in Tools) | yes | no |
 
 Each app documents its exposed actions in its own repository. Shelf omits
 `launch.invoke`: stopped noninteractive additions use `launch.background` and
-are persisted by the resident process. Find IDs/design fixtures register the
-app only; `find.show` and `find.search` are DESIGNED and must not be advertised
-as implemented until Find publishes those actions.
+are persisted by the resident process. Find's `find.search` answers one-shot
+from its saved index (no frecency, no content search); `find.show` opens Find
+with a query, a folder scope (`in:`), or one file selected ("Reveal in Find").
 
 ## 12. Conformance
 
