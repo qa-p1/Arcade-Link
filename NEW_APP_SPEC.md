@@ -142,10 +142,10 @@ work when useful; avoid periodic idle polling. Measure actual idle behavior.
 Use canonical ID `arcade.<lowercase-name>` and stable platform bundle IDs. New
 actions normally use `<name>.<verb>`; keep the frozen v1 wire contract compatible.
 Depend on a published immutable Link tag or exact commit and lock it. At the time
-of writing the existing apps use `v0.1.0`:
+of writing the existing apps use `v0.2.0`:
 
 ```toml
-arcade-link = { git = "https://github.com/qa-p1/Arcade-Link", tag = "v0.1.0", features = ["watch"] }
+arcade-link = { git = "https://github.com/qa-p1/Arcade-Link", tag = "v0.2.0", features = ["watch"] }
 ```
 
 Add `engines` only if needed. There is no `tokio` feature in this version.

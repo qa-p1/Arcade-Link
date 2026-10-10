@@ -38,6 +38,8 @@ LENS = CODING / "Rust/Arcade-lens"
 LOOK = CODING / "Rust/arcade-look"
 WHEEL = CODING / "C++/Arcade wheel"
 CLIP = CODING / "App dev/Arcade-clipboard"
+SHELF = Path(os.environ.get("ARCADE_SHELF_REPO", str(Path(__file__).resolve().parents[2] / "Arcade-Shelf")))
+FIND = Path(os.environ.get("ARCADE_FIND_REPO", str(Path(__file__).resolve().parents[2] / "Arcade-Find")))
 
 APPS = {
     "box": {
@@ -59,6 +61,16 @@ APPS = {
         "start": [str(WHEEL / "build/arcade-wheel"), "--background"],
         "ready": "wheel",
         "warm": [str(WHEEL / "build/arcade-wheel"), "--status"],
+    },
+    "shelf": {
+        "start": [str(SHELF / "build/arcade-shelf"), "--background"],
+        "ready": "shelf",
+        "warm": [str(SHELF / "build/arcade-shelf"), "--status"],
+    },
+    "find": {
+        "start": [str(FIND / "target/release/arcade-find"), "--background"],
+        "ready": "find",
+        "warm": [str(FIND / "target/release/arcade-find"), "--status"],
     },
     "clipboard": {
         "start": [str(CLIP / "apps/flutter_app/build/linux/x64/release/bundle/clipboard"), "--background"],
@@ -178,6 +190,19 @@ def is_ready(kind: str, pid: int, root: Path, env: dict) -> bool:
         return name_has_owner("org.gnome.NautilusPreviewer", env)
     if kind == "wheel":
         return wheel_status(root / "runtime")
+    if kind in ("shelf", "find"):
+        endpoint = root / f"arcade/run/arcade.{kind}.endpoint"
+        try:
+            entry = json.loads(endpoint.read_text())
+            with socket.socket(socket.AF_UNIX) as channel:
+                channel.settimeout(0.15)
+                channel.connect(entry["address"])
+                request = {"v": 1, "id": 1, "method": "hello", "params": {
+                    "token": entry["token"], "client": {"id": "arcade.tools", "version": "benchmark"}, "protocol": [1]}}
+                channel.sendall((json.dumps(request) + "\n").encode())
+                return "result" in json.loads(channel.recv(4096))
+        except (OSError, ValueError, KeyError):
+            return False
     if kind == "clipboard":
         return profile_locked(root / "clipdata/profile.lock")
     raise ValueError(kind)
@@ -187,7 +212,7 @@ def isolated_env(root: Path) -> dict:
     env = {k: v for k, v in os.environ.items() if k not in (
         "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP",
         "DESKTOP_SESSION", "SWAYSOCK", "XDG_SESSION_TYPE", "APPIMAGE", "APPDIR", "OWD", "ARGV0")}
-    for d in ("home", "config", "data", "cache", "runtime", "lens", "clipdata", "arcade", "wheel"):
+    for d in ("home", "config", "data", "cache", "runtime", "lens", "clipdata", "arcade", "wheel", "shelf", "find"):
         (root / d).mkdir(parents=True, exist_ok=True)
     os.chmod(root / "runtime", 0o700)
     env.update({
@@ -201,6 +226,8 @@ def isolated_env(root: Path) -> dict:
         "ARCADE_LENS_HOME": str(root / "lens"),
         "ARCADE_DATA_DIR": str(root / "clipdata"),
         "ARCADE_WHEEL_INSTANCE": str(root / "wheel"),
+        "ARCADE_SHELF_HOME": str(root / "shelf"),
+        "ARCADE_FIND_HOME": str(root / "find"),
         "ARCADE_WHEEL_DISABLE_GLOBAL_SHORTCUT": "1",
         "QT_QPA_PLATFORM": "xcb",
         "GDK_BACKEND": "x11",

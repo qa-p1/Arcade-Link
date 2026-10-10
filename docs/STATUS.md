@@ -1,8 +1,9 @@
 # Arcade Link: status
 
 Documentation review: 2026-10-08. Protocol v1 and manifest schema 1 remain
-compatible. The existing apps pin published tag `v0.1.0`; changes to docs on
-`main` do not move that tag.
+compatible. The existing apps pin published tag `v0.2.0` (2026-10-10, adds
+Shelf and Find; see the [changelog](../CHANGELOG.md)); changes on `main` do
+not move a tag.
 
 ## Implemented and verified
 
