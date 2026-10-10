@@ -98,8 +98,8 @@ python3 benchmarks/bench.py --json now.json --compare benchmarks/baseline.json
 Interactive Windows/macOS app flows remain unverified. See [current status](docs/STATUS.md)
 for evidence and the documentation index.
 
-The apps use the published `v0.1.0` git tag; Wheel vendors the matching Qt
-module. See the [completed ecosystem plan](ARCADE_ECOSYSTEM_PLAN.md) and
+The apps use the published `v0.2.0` git tag (see the [changelog](CHANGELOG.md));
+Wheel and Shelf vendor the matching Qt module. See the [completed ecosystem plan](ARCADE_ECOSYSTEM_PLAN.md) and
 [completion report](COMPLETION_REPORT.md) for verification results, performance
 measurements and remaining platform limitations.
 
