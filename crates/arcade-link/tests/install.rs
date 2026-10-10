@@ -1,8 +1,7 @@
 #![cfg(feature = "install")]
-use arcade_link::{
-    install::*,
-    receipt::{InstallMethod, ManagedBy},
-};
+use arcade_link::install::*;
+#[cfg(target_os = "linux")]
+use arcade_link::receipt::{InstallMethod, ManagedBy};
 use std::{
     fs,
     path::{Path, PathBuf},

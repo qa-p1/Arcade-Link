@@ -9,7 +9,7 @@
 #ifndef ARCADE_START_AT_LOGIN_DEFAULT
   #define ARCADE_START_AT_LOGIN_DEFAULT 0
 #endif
-#define ArcadeHelper AddBackslash(ExtractFileDir(__FILE__)) + "arcade-integration.ps1"
+#define ArcadeHelper AddBackslash(__DIR__) + "arcade-integration.ps1"
 
 [Setup]
 AppId={#ARCADE_INSTALLER_ID}
