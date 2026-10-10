@@ -318,6 +318,81 @@ fn repair_autostart(path: &Path, app: &AppInfo, executable: &Path, create: bool)
 }
 
 #[cfg(target_os = "linux")]
+fn entry_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    let mut in_entry = false;
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_entry = line == "[Desktop Entry]";
+        }
+        if in_entry {
+            if let Some((name, value)) = line.split_once('=') {
+                if name.trim() == key {
+                    return Some(value);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Undo Desktop Entry string escaping before Exec argument quoting. This
+/// reads only the executable token: arguments/field codes are never executed.
+#[cfg(target_os = "linux")]
+fn desktop_executable(text: &str) -> Option<PathBuf> {
+    let value = entry_value(text, "Exec")?;
+    let mut decoded = String::new();
+    let mut chars = value.chars();
+    while let Some(c) = chars.next() {
+        decoded.push(if c == '\\' {
+            match chars.next()? {
+                's' => ' ',
+                'n' => '\n',
+                't' => '\t',
+                'r' => '\r',
+                '\\' => '\\',
+                _ => return None,
+            }
+        } else {
+            c
+        });
+    }
+    let mut chars = decoded.trim_start().chars().peekable();
+    let quoted = chars.peek() == Some(&'"');
+    if quoted {
+        chars.next();
+    }
+    let mut token = String::new();
+    let mut closed = !quoted;
+    while let Some(c) = chars.next() {
+        if quoted && c == '"' {
+            closed = true;
+            if chars.peek().is_some_and(|c| !c.is_whitespace()) {
+                return None;
+            }
+            break;
+        }
+        if !quoted && c.is_whitespace() {
+            break;
+        }
+        token.push(match c {
+            '\\' if quoted => match chars.next()? {
+                c @ ('"' | '`' | '$' | '\\') => c,
+                _ => return None,
+            },
+            '%' => {
+                if chars.next()? != '%' {
+                    return None;
+                }
+                '%'
+            }
+            '"' | '\\' if !quoted => return None,
+            c => c,
+        });
+    }
+    (closed && !token.is_empty() && !token.contains(['=', '\0', '\n', '\r'])).then(|| PathBuf::from(token))
+}
+
+#[cfg(target_os = "linux")]
 fn cleanup_duplicates(environment: &Environment, app: &AppInfo, main: &Path, executable: &Path) -> io::Result<()> {
     let dir = environment.data.join("applications");
     for entry in fs::read_dir(&dir)?.flatten() {
@@ -328,22 +403,8 @@ fn cleanup_duplicates(environment: &Environment, app: &AppInfo, main: &Path, exe
         let Ok(text) = fs::read_to_string(&path) else { continue };
         let owned = text.lines().any(|line| line == format!("X-Arcade-Id={}", app.id))
             || path.file_stem().is_some_and(|id| app.legacy_desktop_ids.iter().any(|s| id == s.as_str()));
-        let wanted = exec(executable, &[]);
-        let mut in_entry = false;
-        let same = text
-            .lines()
-            .filter_map(|line| {
-                if line.starts_with('[') {
-                    in_entry = line == "[Desktop Entry]";
-                }
-                in_entry.then(|| line.strip_prefix("Exec=")).flatten()
-            })
-            .any(|s| {
-                s == wanted
-                    || s.starts_with(&(wanted.clone() + " "))
-                    || s == executable.to_string_lossy()
-                    || s.starts_with(&format!("{} ", executable.display()))
-            });
+        let Some(entry_executable) = desktop_executable(&text) else { continue };
+        let same = canonical(&entry_executable) == canonical(executable);
         if owned && !same {
             remove_file(&path)?;
         }

@@ -87,6 +87,29 @@ fn find_options<'a>(app: &'a AppInfo, runtime: &'a Runtime, version: &'a str) ->
     }
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn duplicate_cleanup_decodes_desktop_escaping_and_exec_quoting() {
+    let root = Root::new();
+    let mut e = Environment::under(&root.0);
+    e.applications = root.0.join("Applications with spaces/Arcade");
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"fixture").unwrap();
+    let r = runtime(source);
+    let dest = e.applications.join(&app.filename);
+    let dir = e.data.join("applications");
+    fs::create_dir_all(&dir).unwrap();
+    let launcher = dir.join("same-executable.desktop");
+    let text = format!("[Desktop Entry]\nType=Application\nX-Arcade-Id={}\nExec=\"{}\" %U\n", app.id, dest.display().to_string().replace(' ', r"\s"));
+    fs::write(&launcher, &text).unwrap();
+    let invalid = dir.join("invalid.desktop");
+    fs::write(&invalid, "[Desktop Entry]\nX-Arcade-Id=arcade.find\nExec=\"unterminated\n").unwrap();
+    install(&e, find_options(&app, &r, "1")).unwrap();
+    assert_eq!(fs::read_to_string(&launcher).unwrap(), text);
+    assert!(invalid.exists(), "malformed launchers are not proof of a stale executable");
+}
+
 #[test]
 fn relative_install_environment_is_refused_before_writing() {
     let e = Environment::under(Path::new("relative-install-root"));
