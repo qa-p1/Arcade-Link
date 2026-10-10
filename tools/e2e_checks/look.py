@@ -105,7 +105,7 @@ def look_consumer_boundaries(s):
     r = subprocess.run([str(binary), "--ignored", "--nocapture", "--test-threads=1"], env=s.env,
                        capture_output=True, text=True, timeout=90)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "0 failed" in r.stdout and "8 passed" in r.stdout, r.stdout
+    assert "0 failed" in r.stdout and "9 passed" in r.stdout, r.stdout
     return r.stdout.strip()
 
 
@@ -248,7 +248,9 @@ def settings(s):
     r = subprocess.run([str(spec["dir"] / spec["bin"]), "--settings"], env=s.env,
                        capture_output=True, text=True, timeout=20)
     assert r.returncode == 0, r.stderr
-    wait_ui(s, "document.querySelectorAll('.arcade-peer').length === 4")
+    # Every app in Link's catalog but Look itself (v0.2.0: Box, Lens, Wheel,
+    # Clipboard, Shelf, Find).
+    wait_ui(s, "document.querySelectorAll('.arcade-peer').length === 6")
     ui(s, "document.querySelector('#connected-apps').scrollIntoView({block:'start'})")
     return s.wait_window('Settings.*Arcade Look')
 
@@ -259,7 +261,7 @@ def native_connected_settings_and_shortcut_warning(s):
     image = png(s.root / "look-settings.png", 320, 200)
     preview(s, image)
     window = settings(s)
-    assert ui(s, "document.querySelectorAll('.arcade-peer button').length === 4")
+    assert ui(s, "document.querySelectorAll('.arcade-peer button').length === 6")
     assert ui(s, "document.querySelectorAll('.arcade-peer input').length === 0")
     ui(s, "document.querySelector('.arcade-diagnostics').open = true")
     shot(s, 'look-connected-apps-missing', window)
