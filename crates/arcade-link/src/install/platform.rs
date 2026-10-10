@@ -71,9 +71,19 @@ pub mod windows {
         Ok(())
     }
     fn same(entry: &str, bin: &Path) -> bool {
-        let value = entry.trim().trim_matches('"').trim_end_matches(['\\', '/']);
-        let expanded = value.replace("%LOCALAPPDATA%", &std::env::var("LOCALAPPDATA").unwrap_or_default());
-        expanded.eq_ignore_ascii_case(bin.to_string_lossy().trim_end_matches(['\\', '/']))
+        use windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW;
+        let value = wide(entry.trim().trim_matches('"'));
+        let size = unsafe { ExpandEnvironmentStringsW(value.as_ptr(), std::ptr::null_mut(), 0) };
+        if size == 0 {
+            return false;
+        }
+        let mut expanded = vec![0u16; size as usize];
+        let written = unsafe { ExpandEnvironmentStringsW(value.as_ptr(), expanded.as_mut_ptr(), size) };
+        if written == 0 || written > size {
+            return false;
+        }
+        let expanded = String::from_utf16_lossy(&expanded[..written.saturating_sub(1) as usize]);
+        expanded.trim_end_matches(['\\', '/']).eq_ignore_ascii_case(bin.to_string_lossy().trim_end_matches(['\\', '/']))
     }
     pub fn add_path(environment: &Environment, bin: &Path) -> io::Result<()> {
         let key = key(environment)?;
@@ -114,6 +124,38 @@ pub mod windows {
         let bin = environment.bin.clone();
         super::super::remove_file(&bin.join(format!("{cli_name}.cmd")))?;
         remove_path_if_last(environment, &bin)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        #[test]
+        fn isolated_shims_share_one_path_entry_and_remove_it_last() {
+            let root = std::env::temp_dir().join(format!("arcade-path-{}", crate::endpoint::new_token().unwrap()));
+            let environment = Environment::under(&root);
+            assert_ne!(environment.windows_environment_key, "Environment");
+            let executable = root.join("sample.exe");
+            fs::create_dir_all(&root).unwrap();
+            fs::write(&executable, b"fixture").unwrap();
+            let key = key(&environment).unwrap();
+            write(&key, "C:\\Existing", REG_EXPAND_SZ, false).unwrap();
+            let first = write_shim(&environment, "arcade-first", &executable).unwrap();
+            write_shim(&environment, "arcade-first", &executable).unwrap();
+            write_shim(&environment, "arcade-second", &executable).unwrap();
+            let (path, kind) = read(&key).unwrap();
+            assert_eq!(kind, REG_EXPAND_SZ);
+            assert_eq!(path.split(';').filter(|p| same(p, &environment.bin)).count(), 1);
+            assert!(fs::read_to_string(first).unwrap().contains("%*"));
+            remove_shim(&environment, "arcade-first").unwrap();
+            assert_eq!(read(&key).unwrap().0, path);
+            remove_shim(&environment, "arcade-second").unwrap();
+            assert_eq!(read(&key).unwrap().0, "C:\\Existing");
+            drop(key);
+            unsafe {
+                checked(RegDeleteTreeW(HKEY_CURRENT_USER, wide(&environment.windows_environment_key).as_ptr())).unwrap();
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 }
 
@@ -166,5 +208,27 @@ pub mod macos {
         let target = environment.bin.join(cli_name);
         super::super::symlink(&target, executable)?;
         Ok(target)
+    }
+
+    #[cfg(all(test, target_os = "macos"))]
+    mod tests {
+        use super::*;
+        #[test]
+        fn bundle_move_and_cli_use_only_the_explicit_environment() {
+            let root = std::env::temp_dir().join(format!("arcade-move-{}", crate::endpoint::new_token().unwrap()));
+            let environment = Environment::under(&root);
+            let bundle = root.join("download/Find.app");
+            let executable = bundle.join("Contents/MacOS/find");
+            std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+            std::fs::write(&executable, b"fixture").unwrap();
+            let installed = move_to_applications(&environment, &bundle, None).unwrap();
+            assert!(in_applications(&environment, &installed));
+            assert_eq!(std::fs::read(installed.join("Contents/MacOS/find")).unwrap(), b"fixture");
+            let cli = install_cli(&environment, "arcade-find", &installed.join("Contents/MacOS/find")).unwrap();
+            assert_eq!(std::fs::read_link(cli).unwrap(), installed.join("Contents/MacOS/find"));
+            assert!(move_to_applications(&environment, &bundle, None).is_err());
+            assert!(bundle.exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 }

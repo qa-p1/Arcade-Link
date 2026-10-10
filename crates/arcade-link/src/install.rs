@@ -321,14 +321,99 @@ fn cleanup_duplicates(environment: &Environment, app: &AppInfo, main: &Path, exe
         let owned = text.lines().any(|line| line == format!("X-Arcade-Id={}", app.id))
             || path.file_stem().is_some_and(|id| app.legacy_desktop_ids.iter().any(|s| id == s.as_str()));
         let wanted = exec(executable, &[]);
-        let same = text.lines().filter_map(|s| s.strip_prefix("Exec=")).any(|s| {
-            s == wanted || s.starts_with(&(wanted.clone() + " ")) || s == executable.to_string_lossy() || s.starts_with(&format!("{} ", executable.display()))
-        });
+        let mut in_entry = false;
+        let same = text
+            .lines()
+            .filter_map(|line| {
+                if line.starts_with('[') {
+                    in_entry = line == "[Desktop Entry]";
+                }
+                in_entry.then(|| line.strip_prefix("Exec=")).flatten()
+            })
+            .any(|s| {
+                s == wanted
+                    || s.starts_with(&(wanted.clone() + " "))
+                    || s == executable.to_string_lossy()
+                    || s.starts_with(&format!("{} ", executable.display()))
+            });
         if owned && !same {
             remove_file(&path)?;
         }
     }
     Ok(())
+}
+
+// Integration files are small; snapshot them before replacing the executable.
+// Binary rollback uses renames, so an update never copies the previous AppImage
+// into memory. Nothing is persisted outside the explicit environment.
+#[cfg(target_os = "linux")]
+enum SavedEntry {
+    Missing,
+    File(Vec<u8>, fs::Permissions),
+    Symlink(PathBuf),
+}
+#[cfg(target_os = "linux")]
+struct InstallRollback {
+    entries: Vec<(PathBuf, SavedEntry)>,
+    dest: PathBuf,
+    staged: PathBuf,
+    replaced: Option<PathBuf>,
+    saved_previous: Option<(PathBuf, PathBuf)>,
+    new_binary: bool,
+    committed: bool,
+}
+#[cfg(target_os = "linux")]
+impl InstallRollback {
+    fn save(&mut self, path: &Path) -> io::Result<()> {
+        if self.entries.iter().any(|(p, _)| p == path) {
+            return Ok(());
+        }
+        let saved = match fs::symlink_metadata(path) {
+            Ok(m) if m.file_type().is_symlink() => SavedEntry::Symlink(fs::read_link(path)?),
+            Ok(m) if m.is_file() => SavedEntry::File(fs::read(path)?, m.permissions()),
+            Ok(_) => return Err(input("integration entry must be a file or symlink")),
+            Err(e) if matches!(e.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) => SavedEntry::Missing,
+            Err(e) => return Err(e),
+        };
+        self.entries.push((path.to_path_buf(), saved));
+        Ok(())
+    }
+}
+#[cfg(target_os = "linux")]
+impl Drop for InstallRollback {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.staged);
+        if self.committed {
+            if let Some((backup, _)) = &self.saved_previous {
+                let _ = fs::remove_file(backup);
+            }
+            return;
+        }
+        if self.new_binary {
+            let _ = fs::remove_file(&self.dest);
+        }
+        if let Some(previous) = &self.replaced {
+            let _ = fs::rename(previous, &self.dest);
+        }
+        if let Some((backup, previous)) = &self.saved_previous {
+            let _ = fs::rename(backup, previous);
+        }
+        for (path, saved) in self.entries.iter().rev() {
+            match saved {
+                SavedEntry::Missing => {
+                    let _ = fs::remove_file(path);
+                }
+                SavedEntry::File(bytes, permissions) => {
+                    if write(path, bytes).is_ok() {
+                        let _ = fs::set_permissions(path, permissions.clone());
+                    }
+                }
+                SavedEntry::Symlink(target) => {
+                    let _ = symlink(path, target);
+                }
+            }
+        }
+    }
 }
 
 /// Linux self-install. Explicit invocation may install a plain fixture file;
@@ -385,30 +470,62 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
         return Err(io::Error::new(io::ErrorKind::AlreadyExists, "CLI path is an existing regular file"));
     }
     let autostart = environment.config.join("autostart").join(format!("{}.desktop", opts.app.autostart_id));
-    if autostart.exists() && !fs::read_to_string(&autostart)?.lines().any(|l| l.starts_with("Exec=")) {
-        return Err(input("autostart entry has no Exec key"));
+    let staged = dest.with_extension(format!("{}.stage", crate::endpoint::new_token()?));
+    let mut rollback = InstallRollback {
+        entries: Vec::new(),
+        dest: dest.clone(),
+        staged: staged.clone(),
+        replaced: None,
+        saved_previous: None,
+        new_binary: false,
+        committed: false,
+    };
+    for path in prepared_icons.iter().map(|(p, _)| p).chain(integration.desktop_entry.iter()).chain(integration.cli.iter()) {
+        rollback.save(path)?;
+    }
+    if autostart.exists() || opts.start_at_login {
+        rollback.save(&autostart)?;
+    }
+    // Duplicate cleanup is reversible too, including legacy launchers.
+    if let Ok(entries) = fs::read_dir(environment.data.join("applications")) {
+        for entry in entries {
+            let path = entry?.path();
+            if path.extension().is_some_and(|e| e == "desktop") {
+                let text = fs::read_to_string(&path)?;
+                let owned = text.lines().any(|line| line == format!("X-Arcade-Id={}", opts.app.id))
+                    || path.file_stem().is_some_and(|id| opts.app.legacy_desktop_ids.iter().any(|s| id == s.as_str()));
+                if owned {
+                    rollback.save(&path)?;
+                }
+            }
+        }
     }
     if !same {
         if dest.exists() && old.as_ref().is_none_or(|r| r.path != dest) {
             return Err(io::Error::new(io::ErrorKind::AlreadyExists, "destination exists without this app's receipt"));
         }
-        let staged = dest.with_extension(format!("{}.stage", crate::endpoint::new_token()?));
-        fs::copy(&source, &staged)?;
+        use std::io::Write;
+        let mut stage = fs::OpenOptions::new().write(true).create_new(true).open(&staged)?;
+        io::copy(&mut fs::File::open(&source)?, &mut stage)?;
+        stage.flush()?;
+        stage.sync_all()?;
+        drop(stage);
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&staged, fs::Permissions::from_mode(0o755))?;
         if dest.exists() {
             let prev = environment.applications.join(".previous").join(&opts.app.filename);
             fs::create_dir_all(prev.parent().unwrap())?;
+            if prev.exists() {
+                let backup = prev.with_extension(format!("{}.backup", crate::endpoint::new_token()?));
+                fs::rename(&prev, &backup)?;
+                rollback.saved_previous = Some((backup, prev.clone()));
+            }
             fs::rename(&dest, &prev)?;
+            rollback.replaced = Some(prev.clone());
             previous = Some(Previous { version: old.as_ref().unwrap().version.clone(), path: prev });
         }
-        if let Err(e) = fs::rename(&staged, &dest) {
-            if let Some(p) = &previous {
-                let _ = fs::rename(&p.path, &dest);
-            }
-            let _ = fs::remove_file(&staged);
-            return Err(e);
-        }
+        fs::rename(&staged, &dest)?;
+        rollback.new_binary = true;
     }
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
@@ -436,6 +553,7 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
         updated_at: now,
     };
     environment.receipts().write(&receipt)?;
+    rollback.committed = true;
     if opts.remove_download && !same {
         remove_file(&source)?;
     }

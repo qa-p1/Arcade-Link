@@ -176,6 +176,9 @@ fn install_update_repair_uninstall_are_isolated_and_receipt_driven() {
     assert!(!autostart.exists());
     assert!(!uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap());
     fs::write(&source, b"version 3").unwrap();
+    install(&e, options("0.3.2", false)).unwrap();
+    assert!(!autostart.exists(), "does not create autostart without an explicit request");
+    uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap();
     let mut reinstall = options("0.3.2", false);
     reinstall.start_at_login = true;
     install(&e, reinstall).unwrap();
@@ -183,4 +186,61 @@ fn install_update_repair_uninstall_are_isolated_and_receipt_driven() {
     assert!(uninstall(&e, &app.id, UninstallOptions { remove_data: true, data_folders: &folders }).unwrap());
     assert!(!data.exists());
     assert!(launchers.join("unrelated.desktop").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn integration_failure_restores_current_previous_receipt_and_launchers() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = AppInfo {
+        id: "arcade.find".into(),
+        name: "Arcade Find".into(),
+        filename: "Arcade-Find.AppImage".into(),
+        desktop_id: "arcade-find".into(),
+        cli_name: "arcade-find".into(),
+        background_args: vec![],
+        legacy_desktop_ids: vec![],
+        autostart_id: "arcade-find".into(),
+    };
+    let source = root.0.join("download.AppImage");
+    let r = runtime(source.clone());
+    let opts = |version| InstallOptions {
+        app: &app,
+        runtime: &r,
+        version,
+        channel: "stable",
+        managed_by: ManagedBy::SelfManaged,
+        icons: &[],
+        start_at_login: false,
+        remove_download: true,
+        refresh_caches: false,
+    };
+    fs::write(&source, b"v1").unwrap();
+    install(&e, opts("1")).unwrap();
+    fs::write(&source, b"v2").unwrap();
+    let current = install(&e, opts("2")).unwrap();
+    let desktop = current.integration.desktop_entry.as_ref().unwrap();
+    let original_desktop = fs::read(desktop).unwrap();
+    // This valid file lacks a main Exec. Failure occurs after the new binary,
+    // icons and launcher have been written, exercising the rollback journal.
+    let autostart = e.config.join("autostart/arcade-find.desktop");
+    fs::create_dir_all(autostart.parent().unwrap()).unwrap();
+    fs::write(&autostart, b"[Desktop Entry]\nHidden=true\n").unwrap();
+    fs::write(&source, b"v3").unwrap();
+    assert!(install(&e, opts("3")).is_err());
+    assert_eq!(fs::read(&current.path).unwrap(), b"v2");
+    assert_eq!(fs::read(&current.previous.as_ref().unwrap().path).unwrap(), b"v1");
+    assert_eq!(fs::read(desktop).unwrap(), original_desktop);
+    assert_eq!(fs::read_link(current.integration.cli.as_ref().unwrap()).unwrap(), current.path);
+    assert_eq!(e.receipts().read(&app.id).unwrap().unwrap(), current);
+    assert_eq!(fs::read(&source).unwrap(), b"v3");
+    assert_eq!(fs::read(&autostart).unwrap(), b"[Desktop Entry]\nHidden=true\n");
+    for dir in [&e.applications, &e.applications.join(".previous")] {
+        assert!(fs::read_dir(dir).unwrap().flatten().all(|p| {
+            let name = p.file_name();
+            let name = name.to_string_lossy();
+            !name.ends_with("stage") && !name.ends_with("backup")
+        }));
+    }
 }
