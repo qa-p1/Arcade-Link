@@ -586,9 +586,20 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&staged, fs::Permissions::from_mode(0o755))?;
         if dest.exists() {
-            let prev = environment.applications.join(".previous").join(&opts.app.filename);
+            let preferred = environment.applications.join(".previous").join(&opts.app.filename);
+            let owned_previous = old.as_ref().and_then(|r| r.previous.as_ref()).map(|p| &p.path);
+            let prev = if let Some(owned) = owned_previous {
+                owned.clone()
+            } else if fs::symlink_metadata(&preferred).is_ok() {
+                preferred.with_file_name(format!("{}-{}", crate::endpoint::new_token()?, opts.app.filename))
+            } else {
+                preferred
+            };
             fs::create_dir_all(prev.parent().unwrap())?;
-            if prev.exists() {
+            if fs::symlink_metadata(&prev).is_ok() {
+                if owned_previous != Some(&prev) {
+                    return Err(io::Error::new(io::ErrorKind::AlreadyExists, "previous destination is not receipt-owned"));
+                }
                 let backup = prev.with_extension(format!("{}.backup", crate::endpoint::new_token()?));
                 fs::rename(&prev, &backup)?;
                 rollback.saved_previous = Some((backup, prev.clone()));

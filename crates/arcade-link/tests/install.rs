@@ -110,6 +110,34 @@ fn duplicate_cleanup_decodes_desktop_escaping_and_exec_quoting() {
     assert!(invalid.exists(), "malformed launchers are not proof of a stale executable");
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn update_preserves_an_unowned_previous_file() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    let r = runtime(source.clone());
+    fs::write(&source, b"v1").unwrap();
+    let first = install(&e, find_options(&app, &r, "1")).unwrap();
+    assert!(first.previous.is_none());
+    let foreign = e.applications.join(".previous").join(&app.filename);
+    fs::create_dir_all(foreign.parent().unwrap()).unwrap();
+    fs::write(&foreign, b"unrelated backup").unwrap();
+    fs::write(&source, b"v2").unwrap();
+    let second = install(&e, find_options(&app, &r, "2")).unwrap();
+    let owned = &second.previous.as_ref().unwrap().path;
+    assert_ne!(owned, &foreign);
+    assert_eq!(fs::read(owned).unwrap(), b"v1");
+    fs::write(&source, b"v3").unwrap();
+    let third = install(&e, find_options(&app, &r, "3")).unwrap();
+    assert_eq!(&third.previous.as_ref().unwrap().path, owned);
+    assert_eq!(fs::read(owned).unwrap(), b"v2");
+    uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap();
+    assert_eq!(fs::read(&foreign).unwrap(), b"unrelated backup");
+    assert!(!owned.exists());
+}
+
 #[test]
 fn relative_install_environment_is_refused_before_writing() {
     let e = Environment::under(Path::new("relative-install-root"));
