@@ -1,0 +1,58 @@
+name: Arcade Link bug report
+description: Report a problem with Arcade Link or an app integration.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you were doing when it occurred.
+      placeholder: Tell us what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the steps that reproduce the problem, if you know them.
+      placeholder: |-
+        1. Run …
+        2. Choose …
+        3. See …
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: Describe what you expected instead.
+  - type: input
+    id: version
+    attributes:
+      label: Arcade Link or affected app version
+      description: Enter the Link crate/CLI version, or the app name and version where the problem appeared.
+      placeholder: e.g. arcade-link 0.2.0 or Arcade Look 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. CachyOS, Windows 11 24H2, macOS 15
+  - type: input
+    id: desktop
+    attributes:
+      label: Desktop environment or window manager
+      placeholder: Hyprland, GNOME Wayland, KDE X11, …
+  - type: input
+    id: apps
+    attributes:
+      label: Arcade apps involved
+      description: Which Arcade apps were involved, with versions?
+      placeholder: e.g. Arcade Link 0.2.0 and Arcade Look 0.1.0
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or other details
+      description: Paste relevant logs or details here. Remove anything private first.
+      render: text
