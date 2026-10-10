@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use interprocess::local_socket::{prelude::*, Stream};
+use interprocess::local_socket::Stream;
 use serde_json::{json, Value};
 
 use crate::endpoint;
@@ -16,6 +16,7 @@ use crate::manifest::{Action, Manifest};
 use crate::paths::Locations;
 use crate::transport;
 use crate::wire::{self, method, InvokeRequest, InvokeResult, JobDone, JobProgress, LineReader, Message, PeerInfo};
+use crate::Content;
 
 /// An endpoint is dead if connecting or `hello` takes longer than this.
 pub const HELLO_TIMEOUT: Duration = Duration::from_millis(150);
@@ -26,17 +27,27 @@ pub const SPINNER_DELAY: Duration = Duration::from_millis(150);
 /// Default answer time for ordinary (non-job) calls.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
-struct ArcRead(Arc<Stream>);
+struct ArcRead(Arc<Stream>, transport::IoControl);
 
 impl std::io::Read for ArcRead {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        (&*self.0).read(buf)
+        self.1.read(&self.0, buf)
+    }
+}
+struct ArcWrite<'a>(&'a Stream, &'a transport::IoControl);
+impl std::io::Write for ArcWrite<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.1.write(self.0, buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.1.flush(self.0)
     }
 }
 
 /// A connection to one running app.
 pub struct Client {
     stream: Arc<Stream>,
+    io: transport::IoControl,
     reader: LineReader<ArcRead>,
     next_id: u64,
     /// The app on the other end.
@@ -46,11 +57,34 @@ pub struct Client {
     notifications: std::collections::VecDeque<Message>,
 }
 
+/// A cancellation handle for a blocking subscription. Closing is idempotent
+/// on Unix; Windows signals a cancellation event and cancels pending pipe I/O.
+/// Closing before a read starts also cancels that read. The Client is dropped after
+/// cancellation. This never kills a process.
+#[derive(Clone)]
+pub struct ConnectionControl {
+    stream: Arc<Stream>,
+    io: transport::IoControl,
+}
+impl ConnectionControl {
+    pub fn close(&self) {
+        self.io.close(&self.stream);
+    }
+}
+
 fn not_running(app_id: &str) -> LinkError {
     LinkError::new(ErrorCode::NotRunning, format!("{app_id} is not running"))
 }
 
 impl Client {
+    pub fn connection_control(&self) -> ConnectionControl {
+        ConnectionControl { stream: self.stream.clone(), io: self.io.clone() }
+    }
+    pub fn set_timeout(&self, timeout: Duration) -> Result<(), LinkError> {
+        self.io.recv_timeout(&self.stream, Some(timeout))?;
+        self.io.send_timeout(&self.stream, Some(timeout))?;
+        Ok(())
+    }
     /// Connects to `app_id`'s endpoint and authenticates.
     pub fn connect(locations: &Locations, app_id: &str, me: &PeerInfo) -> Result<Client, LinkError> {
         Client::connect_with(locations, app_id, me, HELLO_TIMEOUT)
@@ -60,10 +94,13 @@ impl Client {
         let ep = endpoint::read(locations, app_id).map_err(|_| not_running(app_id))?;
         let stream = transport::connect(&ep.address, timeout).map_err(|_| not_running(app_id))?;
         let stream = Arc::new(stream);
-        let _ = stream.set_recv_timeout(Some(timeout));
+        let io = transport::IoControl::new()?;
+        io.recv_timeout(&stream, Some(timeout))?;
+        io.send_timeout(&stream, Some(timeout))?;
         let mut c = Client {
-            reader: LineReader::new(ArcRead(stream.clone())),
+            reader: LineReader::new(ArcRead(stream.clone(), io.clone())),
             stream,
+            io,
             next_id: 0,
             server: PeerInfo::default(),
             protocol: 0,
@@ -80,14 +117,15 @@ impl Client {
         if !wire::SUPPORTED_PROTOCOLS.contains(&c.protocol) {
             return Err(wire::version_mismatch(&[c.protocol]));
         }
-        let _ = c.stream.set_recv_timeout(Some(CALL_TIMEOUT));
+        let _ = c.io.recv_timeout(&c.stream, Some(CALL_TIMEOUT));
+        let _ = c.io.send_timeout(&c.stream, Some(CALL_TIMEOUT));
         Ok(c)
     }
 
     fn send(&mut self, method: &str, params: Value) -> Result<u64, LinkError> {
         self.next_id += 1;
         let id = self.next_id;
-        wire::write_message(&mut &*self.stream, &Message::request(id, method, params)).map_err(LinkError::from)?;
+        wire::write_message(&mut ArcWrite(&self.stream, &self.io), &Message::request(id, method, params)).map_err(LinkError::from)?;
         Ok(id)
     }
 
@@ -129,6 +167,39 @@ impl Client {
         serde_json::from_value(r.get("actions").cloned().unwrap_or(Value::Array(vec![]))).map_err(|e| LinkError::internal(e.to_string()))
     }
 
+    pub fn describe_full(&mut self) -> Result<crate::app::Description, LinkError> {
+        self.typed(method::DESCRIBE, json!({}))
+    }
+    fn typed<T: serde::de::DeserializeOwned>(&mut self, method: &str, params: Value) -> Result<T, LinkError> {
+        serde_json::from_value(self.call(method, params)?).map_err(|e| LinkError::internal(format!("invalid {method} result: {e}")))
+    }
+    pub fn settings(&mut self) -> Result<(), LinkError> {
+        self.call(method::APP_SETTINGS, json!({})).map(|_| ())
+    }
+    pub fn restart(&mut self, mode: Option<&str>) -> Result<(), LinkError> {
+        let params = mode.map_or_else(|| json!({}), |mode| json!({"mode": mode}));
+        self.call(method::APP_RESTART, params).map(|_| ())
+    }
+    pub fn menu(&mut self) -> Result<Vec<crate::manifest::MenuItem>, LinkError> {
+        let value = self.call(method::APP_MENU, json!({}))?;
+        serde_json::from_value(value.get("items").cloned().ok_or_else(|| LinkError::internal("menu has no items"))?)
+            .map_err(|e| LinkError::internal(e.to_string()))
+    }
+    pub fn menu_invoke(&mut self, id: &str) -> Result<(), LinkError> {
+        self.call(method::APP_MENU_INVOKE, json!({"id": id})).map(|_| ())
+    }
+    pub fn shortcuts_set(&mut self, id: &str, accelerator: &str) -> Result<crate::app::ShortcutSetResult, LinkError> {
+        self.typed(method::APP_SHORTCUTS_SET, json!({"id": id, "accelerator": accelerator}))
+    }
+    pub fn settings_export(&mut self) -> Result<Vec<Content>, LinkError> {
+        let value = self.call(method::APP_SETTINGS_EXPORT, json!({}))?;
+        serde_json::from_value(value.get("outputs").cloned().ok_or_else(|| LinkError::internal("export has no outputs"))?)
+            .map_err(|e| LinkError::internal(e.to_string()))
+    }
+    pub fn settings_import(&mut self, inputs: &[Content]) -> Result<crate::app::ImportResult, LinkError> {
+        self.typed(method::APP_SETTINGS_IMPORT, json!({"inputs": inputs}))
+    }
+
     pub fn status(&mut self) -> Result<Value, LinkError> {
         self.call(method::APP_STATUS, json!({}))
     }
@@ -155,7 +226,7 @@ impl Client {
     fn wait_job(&mut self, job: &str, on_progress: &mut dyn FnMut(&JobProgress), cancel: Option<&AtomicBool>) -> Result<InvokeResult, LinkError> {
         // While a cancel flag is supplied, wake up every 100 ms to check it;
         // this only happens during an active job, never while idle.
-        let _ = self.stream.set_recv_timeout(cancel.map(|_| Duration::from_millis(100)));
+        let _ = self.io.recv_timeout(&self.stream, cancel.map(|_| Duration::from_millis(100)));
         let mut cancel_sent = false;
         let result = loop {
             if let Some(flag) = cancel {
@@ -191,7 +262,7 @@ impl Client {
                 _ => {}
             }
         };
-        let _ = self.stream.set_recv_timeout(Some(CALL_TIMEOUT));
+        let _ = self.io.recv_timeout(&self.stream, Some(CALL_TIMEOUT));
         result
     }
 
@@ -200,7 +271,7 @@ impl Client {
         if let Some(m) = self.notifications.pop_front() {
             return Ok(m);
         }
-        let _ = self.stream.set_recv_timeout(timeout);
+        let _ = self.io.recv_timeout(&self.stream, timeout);
         let r = loop {
             match self.next_message() {
                 Ok(m) if m.kind() == wire::Kind::Notification => break Ok(m),
@@ -208,7 +279,7 @@ impl Client {
                 Err(e) => break Err(e),
             }
         };
-        let _ = self.stream.set_recv_timeout(Some(CALL_TIMEOUT));
+        let _ = self.io.recv_timeout(&self.stream, Some(CALL_TIMEOUT));
         r
     }
 }

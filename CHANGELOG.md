@@ -3,6 +3,27 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
+## 0.3.0 — unreleased
+
+- Adds optional settings, restart, menu, menu invocation, shortcut rebinding
+  and settings export/import methods, describe.methods and typed clients.
+  Old Handler implementations and public struct literals still compile.
+- Adds opt-in tray hosting: OS registry watch, blocked subscription reads,
+  immediate fallback on host loss, 300 ms startup and 5 s restart grace,
+  exclusions and clean Tools shutdown. Windows named-pipe deadlines use
+  cancellable OS event waits. Qt port follows separately.
+- Adds canonical accelerator normalize/display/conflicts, app shortcut docs
+  and third-party sheets, JSON schemas, vectors and a stdlib Python validator
+  and Markdown generator, including XKB/Hyprland input aliases.
+- Adds private atomic receipts and explicit-path install detection, Linux
+  AppImage install/update/rollback/repair/uninstall, native Windows PATH/shim
+  and macOS bundle helpers, and shared first-run dialog strings.
+- Adds manifest menu/logs/docs/install extensions without changing existing
+  Manifest fields, mock peers for optional methods and tray hosting, CLI
+  tray/shortcuts commands, install/tray diagnostics and Tools fixtures.
+- Adds shared per-user Inno/NSIS includes and a Windows silent-install CI
+  job, release installArgs and portable asset metadata. Protocol/schema stay 1.
+
 ## 0.2.0 — 2026-10-10
 
 - Registers Arcade Shelf (`arcade.shelf`) and Arcade Find (`arcade.find`) in

@@ -102,5 +102,7 @@
         }
       }
     }
-  ]
+  ],
+  "menu": [{"id": "rescan", "title": "Rescan index", "kind": "action", "enabled": true}],
+  "docs": {"version": "0.1.0-mock"}
 }

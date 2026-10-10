@@ -18,6 +18,8 @@
 //! The core is synchronous: one accept thread blocked in `accept`, a thread
 //! per connection, no timers, no polling. See `SPEC.md` for the protocol.
 
+pub mod accelerator;
+pub mod app;
 pub mod client;
 pub mod content;
 pub mod endpoint;
@@ -25,13 +27,19 @@ pub mod endpoint;
 pub mod engines;
 pub mod error;
 pub mod handoff;
+#[cfg(feature = "install")]
+pub mod install;
 pub mod manifest;
 pub mod oneshot;
 pub mod paths;
 pub mod presence;
+pub mod receipt;
 pub mod registry;
 pub mod server;
+pub mod shortcuts;
 pub mod transport;
+#[cfg(feature = "trayhost")]
+pub mod trayhost;
 pub mod wire;
 
 pub use client::{invoke_action, AppState, CallOptions, Client};

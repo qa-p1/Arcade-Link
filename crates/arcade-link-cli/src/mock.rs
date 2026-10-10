@@ -21,7 +21,7 @@
 
 use std::io::Write;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use arcade_link::server::{Handler, InvokeContext, Reply};
@@ -31,9 +31,23 @@ use serde_json::{json, Value};
 struct Mock {
     actions: Vec<(Action, Value)>,
     busy: bool,
+    document: Mutex<manifest::ManifestDocument>,
+    locations: Locations,
+    script: Value,
+    methods: Vec<String>,
 }
 
 impl Mock {
+    fn scripted(&self, method: &str) -> Result<Option<Value>, LinkError> {
+        let script = &self.script[method];
+        if let Some(error) = script.get("error") {
+            return Err(serde_json::from_value(
+                json!({"code": error, "message": script["reason"].as_str().unwrap_or("mock error"), "reason": script["reason"]}),
+            )
+            .unwrap_or_else(|_| LinkError::internal("invalid mock error")));
+        }
+        Ok(script.get("result").cloned())
+    }
     fn behavior(&self, req: &InvokeRequest) -> Option<(&Action, &Value)> {
         let with_preset = req.preset.as_ref().map(|p| format!("{}#{p}", req.action));
         self.actions
@@ -53,6 +67,85 @@ fn log(req: &InvokeRequest) {
 }
 
 impl Handler for Mock {
+    fn methods(&self) -> Vec<String> {
+        self.methods.clone()
+    }
+    fn settings(&self) -> Result<(), LinkError> {
+        self.scripted("app.settings")?;
+        Ok(())
+    }
+    fn restart(&self, _: &str) -> Result<(), LinkError> {
+        self.scripted("app.restart")?;
+        Ok(())
+    }
+    fn restart_ready(&self, mode: &str) -> Result<(), LinkError> {
+        if self.busy && mode != "force" {
+            return Err(LinkError::busy());
+        }
+        self.scripted("app.restart")?;
+        Ok(())
+    }
+    fn menu(&self) -> Result<Vec<manifest::MenuItem>, LinkError> {
+        if let Some(r) = self.scripted("app.menu")? {
+            return serde_json::from_value(r["items"].clone()).map_err(|e| LinkError::internal(e.to_string()));
+        }
+        Ok(self.document.lock().unwrap().additions.menu.clone())
+    }
+    fn menu_invoke(&self, id: &str) -> Result<(), LinkError> {
+        self.scripted("app.menu.invoke")?;
+        let mut doc = self.document.lock().unwrap();
+        let item = doc.additions.menu.iter_mut().find(|s| s.id == id).ok_or_else(|| LinkError::unavailable("unknown menu id"))?;
+        if !item.enabled || item.kind == manifest::MenuKind::Separator {
+            return Err(LinkError::denied("disabled_menu_item"));
+        }
+        if item.kind == manifest::MenuKind::Toggle {
+            item.checked = Some(!item.checked.unwrap_or(false));
+        }
+        manifest::write_document(&self.locations, &doc)?;
+        Ok(())
+    }
+    fn shortcuts_set(&self, id: &str, accelerator: &str) -> Result<arcade_link::app::ShortcutSetResult, LinkError> {
+        let result = self.scripted("app.shortcuts.set")?.unwrap_or(json!({"applied": true, "via": "native"}));
+        let result: arcade_link::app::ShortcutSetResult = serde_json::from_value(result).map_err(|e| LinkError::internal(e.to_string()))?;
+        let mut doc = self.document.lock().unwrap();
+        let shortcut = doc.manifest.shortcuts.iter_mut().find(|s| s.id == id).ok_or_else(|| LinkError::unavailable("unknown shortcut id"))?;
+        if result.applied {
+            shortcut.accelerator = accelerator.into();
+            manifest::write_document(&self.locations, &doc)?;
+        }
+        Ok(result)
+    }
+    fn settings_export(&self) -> Result<Vec<arcade_link::Content>, LinkError> {
+        if let Some(result) = self.scripted("app.settings.export")? {
+            return serde_json::from_value(result["outputs"].clone()).map_err(|e| LinkError::internal(e.to_string()));
+        }
+        let handoff = arcade_link::Handoff::create(&self.locations, &self.document.lock().unwrap().manifest.id)?;
+        let mut file = handoff.file("settings.json", b"{\"schema\":1,\"portable\":true}")?;
+        file.kind = "file/any".into();
+        handoff.keep();
+        Ok(vec![file])
+    }
+    fn settings_import(&self, inputs: &[arcade_link::Content]) -> Result<arcade_link::app::ImportResult, LinkError> {
+        if let Some(result) = self.scripted("app.settings.import")? {
+            return serde_json::from_value(result).map_err(|e| LinkError::internal(e.to_string()));
+        }
+        let mut documents = Vec::new();
+        for file in inputs {
+            let path = file.path.as_deref().ok_or_else(|| LinkError::denied("invalid_inputs"))?;
+            let text = std::fs::read_to_string(path)?;
+            let doc: Value = serde_json::from_str(&text).map_err(|_| LinkError::denied("invalid_settings"))?;
+            if doc["schema"] != json!(1) || !doc.is_object() {
+                return Err(LinkError::denied("invalid_settings"));
+            }
+            documents.push(doc);
+        }
+        let dest = self.locations.handoff.join("mock-imported-settings.json");
+        if dest.exists() {
+            std::fs::copy(&dest, dest.with_extension("backup.json"))?;
+        }
+        arcade_link::paths::write_atomic(&dest, &serde_json::to_vec(&documents).map_err(|e| LinkError::internal(e.to_string()))?, true)?;
+        Ok(arcade_link::app::ImportResult { imported: true, restart_required: false })
+    }
     fn describe(&self) -> Vec<Action> {
         self.actions.iter().map(|(a, _)| a.clone()).collect()
     }
@@ -110,7 +203,7 @@ impl Handler for Mock {
     }
 
     fn status(&self) -> Value {
-        json!({ "mock": true })
+        json!({ "mock": true, "tray": "own" })
     }
 
     fn activate(&self) -> Result<(), LinkError> {
@@ -159,12 +252,41 @@ pub fn run(loc: &Locations, args: &[String]) -> Result<(), String> {
     }
     m.actions = actions.iter().map(|(a, _)| a.clone()).collect();
     let busy = fixture.get("busy").and_then(Value::as_bool).unwrap_or(false);
-    let handler = Arc::new(Mock { actions, busy });
+    let mut document: manifest::ManifestDocument = m.into();
+    document.additions = serde_json::from_value(fixture.clone()).map_err(|e| e.to_string())?;
+    let tray_settings = fixture.get("settings").and_then(|v| v.get("trayHost"));
+    if let Some(s) = tray_settings {
+        document.additions.tray_host = Some(serde_json::from_value(s.clone()).map_err(|e| e.to_string())?);
+    }
+    let methods = fixture
+        .get("methods")
+        .map(|v| serde_json::from_value(v.clone()))
+        .transpose()
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| arcade_link::wire::method::OPTIONAL.iter().map(|s| (*s).into()).collect());
+    let handler =
+        Arc::new(Mock { actions, busy, document: Mutex::new(document.clone()), locations: loc.clone(), script: fixture["mockMethods"].clone(), methods });
     if super::flag(args, arcade_link::oneshot::FLAG) {
         // One-shot: no manifest, no listener; one request on stdin.
         std::process::exit(arcade_link::oneshot::serve(&*handler));
     }
-    let presence = Presence::start(loc.clone(), m, handler);
+    if let Some(settings) = document.additions.tray_host.clone() {
+        let server = arcade_link::Server::start(
+            arcade_link::ServerConfig { locations: loc.clone(), app: arcade_link::PeerInfo { id: id.clone(), version: document.manifest.version.clone() } },
+            handler,
+        )
+        .map_err(|e| e.to_string())?;
+        let host = arcade_link::trayhost::TrayHostServer::new(settings.enabled);
+        host.set_excluded(&settings.excluded);
+        server.attach_tray_host(host.clone());
+        manifest::write_document(loc, &document).map_err(|e| e.to_string())?;
+        eprintln!("mock {id} tray host ready");
+        super::tray::commands(loc, &host, &mut document)?;
+        host.shutdown();
+        server.stop();
+        return Ok(());
+    }
+    let presence = Presence::start_document(loc.clone(), document, handler);
     if let Some(e) = presence.last_error() {
         return Err(e);
     }

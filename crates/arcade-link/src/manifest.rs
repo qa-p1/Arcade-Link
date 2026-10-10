@@ -9,6 +9,110 @@ use crate::paths::{self, Locations};
 
 pub const MANIFEST_SCHEMA: u32 = 1;
 
+/// App-specific extras. Standard Open, Settings, Restart and Quit entries
+/// are implied and must not be repeated here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MenuItem {
+    pub id: String,
+    pub title: String,
+    pub kind: MenuKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<String>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MenuKind {
+    Action,
+    Toggle,
+    Separator,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Docs {
+    pub version: String,
+}
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrayHostSettings {
+    pub enabled: bool,
+    #[serde(default)]
+    pub excluded: Vec<String>,
+}
+/// v0.3 fields kept separate so existing Manifest/ManifestSettings struct
+/// literals remain source-compatible. Wire JSON is still one schema-1 object.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ManifestAdditions {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub menu: Vec<MenuItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logs: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docs: Option<Docs>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install: Option<crate::receipt::InstallMethod>,
+    /// Serialized inside settings.trayHost, not at the root.
+    #[serde(skip)]
+    pub tray_host: Option<TrayHostSettings>,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct ManifestDocument {
+    pub manifest: Manifest,
+    pub additions: ManifestAdditions,
+}
+impl From<Manifest> for ManifestDocument {
+    fn from(manifest: Manifest) -> Self {
+        Self { manifest, additions: ManifestAdditions::default() }
+    }
+}
+impl ManifestDocument {
+    pub fn from_json(text: &str) -> Result<Self, String> {
+        let value: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        let manifest = Manifest::from_json(text)?;
+        let mut additions: ManifestAdditions = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+        if let Some(host) = value.get("settings").and_then(|s| s.get("trayHost")) {
+            additions.tray_host = Some(serde_json::from_value(host.clone()).map_err(|e| e.to_string())?);
+        }
+        Ok(Self { manifest, additions })
+    }
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).expect("manifest document serializes")
+    }
+}
+impl Serialize for ManifestDocument {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut value = serde_json::to_value(&self.manifest).map_err(serde::ser::Error::custom)?;
+        let additions = serde_json::to_value(&self.additions).map_err(serde::ser::Error::custom)?;
+        value.as_object_mut().unwrap().extend(additions.as_object().unwrap().clone());
+        if let Some(host) = &self.additions.tray_host {
+            value["settings"]["trayHost"] = serde_json::to_value(host).map_err(serde::ser::Error::custom)?;
+        }
+        value.serialize(serializer)
+    }
+}
+impl<'de> Deserialize<'de> for ManifestDocument {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        Self::from_json(&value.to_string()).map_err(serde::de::Error::custom)
+    }
+}
+
+pub fn write_document(locations: &Locations, document: &ManifestDocument) -> io::Result<bool> {
+    let path = locations.manifest(&document.manifest.id);
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        if let Ok(mut old) = ManifestDocument::from_json(&text) {
+            old.manifest.written_at = document.manifest.written_at.clone();
+            if &old == document {
+                return Ok(false);
+            }
+        }
+    }
+    let mut document = document.clone();
+    document.manifest.written_at = now_rfc3339();
+    paths::write_atomic(&path, document.to_json().as_bytes(), false)?;
+    Ok(true)
+}
+
 /// Canonical Arcade IDs. Separate from the platform bundle IDs, which never change.
 pub mod ids {
     pub const BOX: &str = "arcade.box";

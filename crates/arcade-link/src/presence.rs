@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::handoff;
-use crate::manifest::{self, Manifest};
+use crate::manifest::{self, Manifest, ManifestDocument};
 use crate::paths::Locations;
 use crate::server::{Handler, Server, ServerConfig};
 use crate::wire::PeerInfo;
@@ -22,6 +22,7 @@ struct State {
     manifest: Manifest,
     server: Option<Server>,
     last_error: Option<String>,
+    additions: manifest::ManifestAdditions,
 }
 
 impl Presence {
@@ -29,8 +30,16 @@ impl Presence {
     /// With the master switch off the manifest has no actions and nothing
     /// listens, but the app still shows up as installed.
     pub fn start(locations: Locations, manifest: Manifest, handler: Arc<dyn Handler>) -> Presence {
-        let p = Presence { locations, handler, state: Mutex::new(State { manifest: manifest.clone(), server: None, last_error: None }) };
-        p.apply(manifest, true);
+        Self::start_document(locations, manifest.into(), handler)
+    }
+
+    pub fn start_document(locations: Locations, document: ManifestDocument, handler: Arc<dyn Handler>) -> Presence {
+        let p = Presence {
+            locations,
+            handler,
+            state: Mutex::new(State { manifest: document.manifest.clone(), additions: document.additions.clone(), server: None, last_error: None }),
+        };
+        p.apply(document, true);
         handoff::cleanup_stale(&p.locations);
         p
     }
@@ -38,16 +47,22 @@ impl Presence {
     /// Rewrites the manifest (only if it changed), starts or stops the
     /// server to match `settings.linkEnabled`, and tells subscribers.
     pub fn update(&self, manifest: Manifest) {
-        self.apply(manifest, false);
+        let additions = self.state.lock().unwrap_or_else(|e| e.into_inner()).additions.clone();
+        self.apply(ManifestDocument { manifest, additions }, false);
     }
 
-    fn apply(&self, mut manifest: Manifest, first: bool) {
+    pub fn update_document(&self, document: ManifestDocument) {
+        self.apply(document, false);
+    }
+
+    fn apply(&self, mut document: ManifestDocument, first: bool) {
         let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        let enabled = manifest.settings.link_enabled;
+        let enabled = document.manifest.settings.link_enabled;
         if !enabled {
-            manifest.actions.clear();
+            document.manifest.actions.clear();
         }
-        let changed = match manifest::write_manifest(&self.locations, &manifest) {
+        let menu_changed = document.additions.menu != st.additions.menu;
+        let changed = match manifest::write_document(&self.locations, &document) {
             Ok(c) => c,
             Err(e) => {
                 st.last_error = Some(format!("could not write the manifest: {e}"));
@@ -55,7 +70,10 @@ impl Presence {
             }
         };
         if enabled && st.server.is_none() {
-            let config = ServerConfig { app: PeerInfo { id: manifest.id.clone(), version: manifest.version.clone() }, locations: self.locations.clone() };
+            let config = ServerConfig {
+                app: PeerInfo { id: document.manifest.id.clone(), version: document.manifest.version.clone() },
+                locations: self.locations.clone(),
+            };
             match Server::start(config, self.handler.clone()) {
                 Ok(s) => {
                     st.server = Some(s);
@@ -69,9 +87,13 @@ impl Presence {
         if changed && !first {
             if let Some(s) = &st.server {
                 s.notify_changed();
+                if menu_changed {
+                    s.notify_menu_changed();
+                }
             }
         }
-        st.manifest = manifest;
+        st.manifest = document.manifest;
+        st.additions = document.additions;
     }
 
     pub fn manifest(&self) -> Manifest {
