@@ -47,7 +47,11 @@ fn ready(root: &Root, id: &str) -> Client {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Ok(c) = Client::connect(&Locations::under(&root.0), id, &PeerInfo::default()) {
-            return c;
+            // Tray eligibility starts when the manifest is published, after
+            // binding the server. Do not race that publication on Windows.
+            if root.0.join("apps").join(format!("{id}.json")).exists() {
+                return c;
+            }
         }
         assert!(Instant::now() < deadline, "mock did not start");
         std::thread::sleep(Duration::from_millis(10));
