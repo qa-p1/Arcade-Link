@@ -2,15 +2,16 @@
 
 **Protocol version 1 (frozen) · manifest schema 1**
 
-Arcade Link is how the Arcade apps (Box, Lens, Look, Wheel, Clipboard, and
-the optional manager, Tools) recognize each other and work together. It is a
+Arcade Link is how the seven independent apps (Box, Lens, Look, Wheel,
+Clipboard, Find and Shelf) and the optional host, Tools, recognize each other and work together. It is a
 protocol and a small library, not a process: there is no broker. Apps find
 each other through a file-based registry and talk directly over a local
 socket. Nothing has to run except the two apps in a conversation.
 
 Implementations: the Rust crate in `crates/arcade-link` (Box, Lens, Look,
-Clipboard's core, Tools) and the Qt module in `qt/` (Wheel). Both pass the
-conformance vectors in `spec/vectors/`.
+Clipboard's core, Find, Tools) and the Qt module in `qt/` (Wheel and Shelf).
+Both share the v0.2 conformance vectors. The additive v0.3 APIs described
+below are implemented in Rust; their Qt port follows separately.
 
 ## 1. Principles
 
@@ -39,6 +40,14 @@ conformance vectors in `spec/vectors/`.
 
 `ARCADE_HOME`, if set, replaces every root: `$ARCADE_HOME/apps`,
 `$ARCADE_HOME/run`, `$ARCADE_HOME/handoff`.
+
+Receipts live beside `apps/`, in `installs/`: Linux
+`${XDG_DATA_HOME:-~/.local/share}/arcade/installs/`, macOS
+`~/Library/Application Support/Arcade/installs/`, Windows
+`%LOCALAPPDATA%\Arcade\installs\`, or `$ARCADE_HOME/installs/`.
+Install operations take an explicit environment. `ARCADE_HOME` also isolates
+application, launcher, icon and CLI paths; it never adds temporary paths to
+the real user Path or a shell profile. XDG overrides are honored on Linux.
 
 | | Registry (manifests) | Runtime (endpoints, sockets) | Handoff |
 |---|---|---|---|
@@ -106,6 +115,14 @@ IDs, which never change.
 | `group` | string | — | Grouping label in long lists |
 
 Rules:
+
+- Optional schema-1 additions are `menu` (cached app-specific `MenuItem`
+  extras, §4.3), `logs` (log-directory path), `docs: {version}` (bundled user
+  documentation version), and `install` (the receipt method, §8.6, or
+  `dev`). They never imply an action or grant permission.
+- Tools may publish `settings.trayHost: {enabled, excluded:[arcade-id]}`.
+  Missing or disabled means every app owns its icon. Hosting requires a
+  running Tools endpoint and its live `tray.host` answer, not just this cache.
 
 - Apps write their manifest on start (off the startup path) and when their
   capabilities change, atomically (temporary file + rename) and only if the
@@ -181,17 +198,46 @@ are ignored and never given authority.
 | Method | Params → result |
 |---|---|
 | `hello` | `{token, client:{id,version}, protocol:[…]}` → `{server:{id,version}, protocol}`. Must be the first request, within 2 s; anything else, or a wrong token, is answered `denied` and the connection closed. No common version → `version_mismatch` |
-| `describe` | `{}` → `{actions:[Action]}`, the live list |
+| `describe` | `{}` → `{actions:[Action], methods:[string]?}`, the live list and implemented optional methods |
 | `invoke` | `{action, version?, preset?, inputs:[Content], options, context:{source, interactive, reason}}` → an `InvokeResult` `{outputs:[Content], message?, data?}` or `{job}` |
 | `job.cancel` | `{job}` → `{cancelled: bool}`. Partial outputs are removed by the owner |
 | `subscribe` | `{topics:["app.changed", "job.*"]}` → `{topics}`. Job notifications always go to the connection that started the job |
 | `app.status` | `{}` → `{id, version, pid, protocol, busy, jobs, status}`. `status` is an app-defined object; it should include `mode`: `"background"` (started with `--background`, no window) or `"foreground"`, so a manager can relaunch the app the same way after an update |
 | `app.activate` | `{}` → `{activated: true}` (bring the main window forward) |
 | `app.quit` | `{force?}` → `{quitting: true}`, or `busy` while jobs run unless `force` |
+| `app.settings` | `{}` → `{opened:true}`. Same behavior as `--settings` |
+| `app.restart` | `{mode?}` → `{restarting:true}`. `mode` is `normal` (default) or `force`; `busy` while jobs run unless force. A successor waits for the old process to exit |
+| `app.menu` | `{}` → `{items:[MenuItem]}`. App-specific tray extras only; Open, Open Settings, Restart and Quit are implied |
+| `app.menu.invoke` | `{id}` → `{done:true}`. Uses the same validation and behavior as the app's own tray item |
+| `app.shortcuts.set` | `{id, accelerator}` → `{applied:bool, via, hint?}`. Validates, applies live, persists and rewrites the manifest. `via` is `native`, `portal`, `hyprland-runtime` or `manual`; manual includes a helpful command/binding hint. Invalid or reserved: `denied`; cannot apply: `unavailable` |
+| `app.settings.export` | `{}` → `{outputs:[{type:"file/any",path}]}`. Portable settings in a handoff file, excluding secrets and device identity |
+| `app.settings.import` | `{inputs:[Content]}` → `{imported:bool,restartRequired:bool}`. Nonempty `file/any` inputs; validate, back up current settings, then apply |
+
+These additions are optional in protocol 1. Feature-detect through
+`describe.methods` or an `unsupported` error. An absent list advertises no
+optional methods. An older server may instead answer `internal` with
+`unknown method …`; Rust's `LinkError::is_unsupported()` recognizes that
+legacy response. Existing methods and their result fields remain unchanged.
+
+`MenuItem` is `{id,title,kind:"action"|"toggle"|"separator",checked?,enabled,
+effects?}`. `enabled` is required; `checked` belongs to toggles; `effects`
+uses the action vocabulary below. IDs are stable within an app. Examples:
+Clipboard Private mode and Pause sync; Find Rescan index; Lens Capture text
+and Pick color; Shelf New shelf; Box Open pipelines; Wheel Show wheel.
+After a change send `app.changed {app,menu:true}` and refresh the manifest
+cache. Cached items do not replace live invocation validation.
 
 Notifications: `job.progress {job, fraction?, message}`, `job.done {job,
 status: "success"|"error"|"cancelled", outputs, message?, data?, error?}`,
-`app.changed {app}`.
+`app.changed {app,menu?:true}`, `tray.host {hosted:bool,restarting?:bool}`.
+The `tray.host` topic sends an initial answer when subscribed and subsequent
+changes, including a per-app `hosted:false` for exclusions (§8.3).
+
+`app.status.status.tray` is `"own"`, `"hosted"` or `"none"` (no tray).
+The app supplies it along with its other diagnostic status. Handler calls
+run on connection workers, never the UI thread; dispatch UI changes through
+the app's toolkit. Restart is acknowledged after readiness validation and
+before the process may exit; apps perform all refusal checks in readiness.
 
 A server sends `{job}` before any notification for that job. If the caller
 disconnects, its running jobs are cancelled. A job that ends without a result
@@ -285,6 +331,7 @@ options.pipeline}` is what Wheel slots and Lens/Look entries store.
 | `launch_failed` | Started the app but its endpoint didn't answer within 3 s |
 | `timeout` | No answer in time |
 | `unsupported_input` | The action doesn't take this input |
+| `unsupported` | This server does not implement the optional method |
 | `unavailable` | The action can't run here now; `reason` says why |
 | `too_large` | `limit` gives the limit in bytes |
 | `denied` | `reason`: `private_mode`, `secret`, `user_cancelled`, `disabled`, `token` |
@@ -302,6 +349,7 @@ Standard messages, used verbatim (`{app}` is the failing app's name):
 | `launch_failed` | `{app} didn't start.` |
 | `timeout` | `{app} didn't respond in time.` |
 | `unsupported_input` | `{app} can't open this kind of content.` |
+| `unsupported` | `{app} doesn't support this method.` |
 | `unavailable` | `{app} can't do this yet: {reason}.` / `{app} can't do this right now.` |
 | `too_large` | Clipboard: `Too large to send to your devices (limit {N MB}).` Others: `Too large for {app} (limit {N MB}).` |
 | `denied` | `private_mode`: `{app} is in Private mode.` · `secret`: `Not sent: this looks like a password or key.` · `user_cancelled`: `Cancelled.` · `disabled`: `{app} has connections to other Arcade apps turned off.` · other: `{app} declined this request.` |
@@ -350,10 +398,17 @@ zero wakeups):
 | `--background` | Start resident without a window |
 | `--settings` | Open settings |
 | `--quit` | Quit the running instance |
+| `--restart` | Restart the running instance; successor waits for its exit |
+| `--install [--silent] [--no-launch] [--channel C]` | Install this Linux AppImage or macOS bundle; silent has the same defaults, no-launch suppresses starting it |
+| `--uninstall [--silent] [--remove-data]` | Remove receipt-listed installation/integration; remove data only when requested |
+| `--repair` | Rewrite launcher, CLI and recorded autostart from the receipt |
+| `--integration-status` | JSON receipt, entries present, PATH status and hint; no side effects |
 | `--arcade-manifest` | Print the manifest JSON; no side effects |
 | `--arcade-invoke` | One-shot mode (§4.4), apps with headless actions |
 
-Existing flags keep working.
+Existing flags keep working. Apps implement the new flags; the library
+provides the logic. Install dialogs and explicit install/uninstall operations
+belong to the owning app or Tools, with the same silent-mode behavior.
 
 ### 8.2 Connected apps page
 
@@ -370,7 +425,7 @@ Every app has the same page:
   Promotion appears only on this page, never in palettes, menus or results.
 - A diagnostics expander: registry path, endpoint state, last error.
 
-### 8.3 Tray menu
+### 8.3 Tray menu and hosting
 
 Every app that stays resident has the same tray (menu bar) icon. A click opens
 Settings (on macOS the click opens the menu). The menu is:
@@ -379,10 +434,36 @@ Settings (on macOS the click opens the menu). The menu is:
 **Quit Arcade <App>**
 
 "Open <App>" does the app's main thing (Lens: a capture; Wheel: the wheel;
-Look, Box, Clipboard: their window). Restart starts a successor that waits for
+Look, Box, Clipboard: their window). Extras use `app.menu` (§4.3).
+Restart starts a successor that waits for
 the old instance to exit. Start at login is a Settings switch, not a tray
-item. If no tray host exists (yet), the app must stay reachable and show the
-icon when a host appears.
+item.
+
+Tools hosts the apps' trays when running and enabled. Apps remain fully
+functional without it. An app watches the registry using OS notifications;
+when Tools is running with `settings.trayHost.enabled` and the app is not
+excluded, it connects, authenticates with `hello`, and subscribes to
+`tray.host`. Tools answers now and on every change, considering the peer's
+Arcade ID. An excluded peer receives `hosted:false`.
+
+- `hosted:true`: hide the app's icon, keeping the object constructed so it
+  can be shown instantly. At startup defer creation until the first answer,
+  for at most 300 ms; if Tools never answers show the icon at that deadline.
+- `hosted:false` or EOF/crash: show the app's icon immediately, within 1 s
+  (target ≤200 ms). No wait for registry cleanup or endpoint expiry.
+- `restarting:true`: retain the hosted state for at most 5 s across Tools'
+  restart. If a replacement host answers within the window no icon flashes;
+  otherwise show the icon at the deadline. A false answer, exclusion, or
+  Link-off always shows it immediately, overriding restart grace.
+- With Connect with other Arcade apps off, always show the app's own tray.
+  Apps with no tray report `none` and never hide a non-existent icon.
+
+Tools quits by sending `hosted:false` to every subscriber before closing
+the connections. Restart/self-update sends `restarting:true` first. Hosting
+is not application lifecycle management: apps are independent processes.
+The Rust watcher callback runs on a background thread; marshal it to the UI.
+Idle uses blocked reads and OS watchers only, with no polling or timers.
+The only hosting deadlines are startup 300 ms and restart 5 s.
 
 ### 8.4 Naming
 
@@ -399,10 +480,10 @@ Defaults change for new installs only; a saved shortcut is never changed.
 
 | App | Linux | Windows | macOS |
 |---|---|---|---|
-| Box | Ctrl+Alt+Space | Ctrl+Alt+Space | Cmd+Shift+Space |
-| Look | none (Space in GNOME Files) | Ctrl+Alt+Shift+Space | Ctrl+Option+Space |
+| Box | Ctrl+Alt+Space | Ctrl+Alt+Space | Shift+Super+Space |
+| Look | none (Space in GNOME Files) | Ctrl+Alt+Shift+Space | Ctrl+Alt+Space |
 | Lens | Ctrl+Alt+Shift+L | Ctrl+Alt+Shift+L | Ctrl+Alt+Shift+L |
-| Clipboard | Ctrl+Shift+Space | Ctrl+Alt+V | Cmd+Shift+V |
+| Clipboard | Ctrl+Shift+Space | Ctrl+Alt+V | Shift+Super+V |
 | Wheel | F8 | F8 | F8 |
 | Shelf | Ctrl+Alt+S | Ctrl+Alt+S | Ctrl+Alt+S |
 | Find | Ctrl+Alt+F | Ctrl+Alt+F | Ctrl+Alt+F |
@@ -412,6 +493,179 @@ warns "Used by <app>" when another app already uses the accelerator,
 comparing normalized accelerators (case-insensitive, modifier order ignored,
 Control = Ctrl, Option = Alt, Cmd = Super; `spec/vectors/accelerators.json`),
 from the registry, without IPC.
+
+**Canonical notation.** Files use modifiers `Ctrl`, `Alt`, `Shift`, `Super`,
+always in that order, then one key joined with `+`: `Ctrl+Shift+P`,
+`Ctrl+Alt+Shift+L`, `Shift+Super+P`. `Super` means Cmd on macOS; `Alt` means
+Option. Chord sequences use one space: `Ctrl+K Ctrl+S`. A single modifier
+(`Super`) is a valid tap chord. Shifted symbols use the base key and Shift:
+`Ctrl+Shift+Equal`, never `Ctrl++`.
+
+Keys are `A`–`Z`, `0`–`9`, `F1`–`F24`, `Space`, `Enter`, `Tab`, `Escape`,
+`Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `Up`,
+`Down`, `Left`, `Right`, `Minus`, `Equal`, `BracketLeft`, `BracketRight`,
+`Backslash`, `Semicolon`, `Quote`, `Backquote`, `Comma`, `Period`, `Slash`,
+`Print`, `Pause`, `ScrollLock`, `CapsLock`, `NumLock`, `Menu`, `Numpad0`–`Numpad9`,
+`NumpadAdd`, `NumpadSubtract`, `NumpadMultiply`, `NumpadDivide`, `NumpadDecimal`,
+`NumpadEnter`, `VolumeUp`, `VolumeDown`, `VolumeMute`, `MicMute`, `MediaPlayPause`,
+`MediaNext`, `MediaPrevious`, `MediaStop`, `BrightnessUp`, `BrightnessDown`,
+`MouseLeft`, `MouseRight`, `MouseMiddle`, `MouseBack`, `MouseForward`, `WheelUp`,
+`WheelDown`, `WheelLeft`, `WheelRight`, and `Code<N>` (nonnegative decimal,
+without leading zeros except `Code0`) for an unnamed raw keycode.
+
+`normalize()` accepts case-insensitive names, any modifier order, and
+whitespace around `+`, and returns canonical text or an error. Aliases:
+
+- Control/Ctl → Ctrl; Option/Opt → Alt; Cmd/Command/Win/Windows/Meta/Logo/Mod4
+  → Super. XKB Super_L/Super_R, Control_L/Control_R, Alt_L/Alt_R, Shift_L/Shift_R
+  map to their modifier. A final modifier keysym may repeat that modifier
+  as a tap key: `SUPER + SUPER_L` → `Super`; ordinary repeated modifiers
+  and multi-modifier chords without a key are errors.
+- `/ - = , . ; ' \` [ ] \\` map to the corresponding named punctuation;
+  Plus → Equal, without an implied Shift. XKB slash/comma/period/minus/equal,
+  grave/apostrophe/bracketleft/bracketright/backslash/semicolon are accepted.
+- Return → Enter; Esc → Escape; Del → Delete; Ins → Insert; PgUp/Prior/Page_Up
+  → PageUp; PgDn/Next/Page_Down → PageDown; ArrowUp/Down/Left/Right → directions;
+  ISO_Left_Tab → Tab (without an implied Shift). KP_0–KP_9 and
+  KP_Add/Subtract/Multiply/Divide/Decimal/Enter → Numpad equivalents.
+- XF86AudioRaiseVolume/LowerVolume/Mute/MicMute/Play/Next/Prev/Stop →
+  VolumeUp/VolumeDown/VolumeMute/MicMute/MediaPlayPause/MediaNext/MediaPrevious/MediaStop;
+  XF86MonBrightnessUp/Down → BrightnessUp/Down.
+- Hyprland mouse:272/273/274/275/276 → MouseLeft/Right/Middle/Back/Forward;
+  mouse_up/down/left/right → WheelUp/Down/Left/Right; code:NN → CodeNN.
+  No Hyprland modmask API is required; consumers of bind masks must use
+  SHIFT=1, CAPS=2, CTRL=4, ALT=8, MOD2=16, MOD3=32, SUPER=64, MOD5=128.
+
+Display uses macOS `⌃⌥⇧⌘` in modifier order followed by the key (`⇧⌘P`),
+Windows `Ctrl+Alt+Shift+Win+P`, Linux `Ctrl+Alt+Shift+Super+P`, with friendly
+punctuation and arrow glyphs (Slash `/`, Up `↑`, macOS Enter `↩`). Display
+strings never go into files. `conflicts(a,b)` is true for equal normalized
+sequences or a strict sequence prefix: `Ctrl+K` vs `Ctrl+K Ctrl+S`.
+`Super` and `Super+Slash` alone do not conflict under this sequence rule.
+
+**App documents.** `docs/user/shortcuts.json` uses
+[`spec/shortcuts.schema.json`](spec/shortcuts.schema.json), draft 2020-12:
+
+```json
+{"schema":1,"app":"arcade.find","version":"0.3.0","groups":[
+  {"title":"Global","context":"global","shortcuts":[
+    {"id":"toggle","title":"Show or hide Find","keys":{"default":"Ctrl+Alt+F"},"rebindable":true}]},
+  {"title":"Results","context":"overlay","shortcuts":[
+    {"id":"pin","title":"Pin","keys":{"default":"Ctrl+Shift+P","macos":"Shift+Super+P"},"description":"Optional longer text."}]}]}
+```
+
+Schema is 1; shortcut IDs match `^[a-z0-9][a-z0-9.-]*$`, unique throughout
+the file. Titles are required, nonempty, at most 80 characters. Context is
+`global` or a kebab-case area. Keys may contain default/linux/windows/macos;
+each recognized value is a canonical string, a nonempty array of alternatives,
+or null (unavailable). At least one non-null binding is required overall.
+An OS-specific key, including null, overrides default; otherwise use default.
+Unknown fields are ignored; malformed recognized keys are errors.
+`rebindable` defaults false and is allowed only in app global contexts;
+when a manifest is supplied, true IDs must match its `shortcuts[].id`.
+Conflicting bindings (including alternatives) in the same context for the
+same OS are errors, across group boundaries as well as within a group.
+Generate `shortcuts.md` as one Action | Linux | Windows | macOS table per
+group, with display strings, `<br>` between alternatives and `—` unavailable.
+
+**Third-party sheets.** Catalog `shortcuts/<id>.json` uses
+[`spec/shortcut-sheet.schema.json`](spec/shortcut-sheet.schema.json). It has
+the same groups but replaces app/version with kebab-case `id`, `name`,
+`checkedVersion`, `sources` (at least one https URL), and `match` (at least
+one OS: linux `{class:[…]}`, windows `{exe:[…]}`, macos `{bundle:[…]}`).
+Matches are case-insensitive. `rebindable` is forbidden, including false.
+The Rust module and stdlib-only `tools/validate_shortcuts.py` enforce the
+same semantic rules in addition to schema shape validation.
+
+### 8.6 Install standard
+
+An install receipt `<installs>/<arcade-id>.json` is atomic and private
+(0600 on Unix; per-user ACLs in the Windows installers). Readers ignore
+unknown fields. See [`spec/receipt.schema.json`](spec/receipt.schema.json):
+
+```json
+{
+  "schema":1,"id":"arcade.find","version":"0.3.0","channel":"stable",
+  "method":"appimage","managedBy":"self",
+  "path":"/home/u/Applications/Arcade/Arcade-Find.AppImage",
+  "integration":{
+    "desktopEntry":"/home/u/.local/share/applications/arcade-find.desktop",
+    "icons":["/home/u/.local/share/icons/hicolor/256x256/apps/arcade-find.png"],
+    "cli":"/home/u/.local/bin/arcade-find",
+    "autostart":"/home/u/.config/autostart/arcade-find.desktop","uninstaller":null
+  },
+  "previous":{"version":"0.2.1","path":"/home/u/Applications/Arcade/.previous/Arcade-Find.AppImage"},
+  "installedAt":"2026-10-12T10:00:00Z","updatedAt":"2026-10-12T10:00:00Z"
+}
+```
+
+Methods: appimage, windows-installer, macos-bundle, tarball, manual, dev;
+managedBy: self or tools (update owner). Paths are absolute. `previous` is
+optional; timestamps are UTC RFC3339 seconds, updatedAt ≥ installedAt.
+Dev builds never write receipts, and advertise install `dev`: executable
+under a `.git` directory/file ancestor, under target/build of a source
+tree, or `ARCADE_DEV_BUILD=1`. Install detection reports runningFrom,
+isAppImage (APPIMAGE with the running executable inside APPDIR), receipt,
+installedPath, and NotInstalled/InstalledHere/InstalledElsewhere{version}/DevBuild.
+
+**Linux.** Self-installing AppImages copy (or move on the same filesystem)
+to `~/Applications/Arcade/<Name>.AppImage`, stable name without a version,
+mode 0755. Install hicolor 16–512 PNGs and scalable SVG, a `.desktop` entry
+with Settings/Quit/Uninstall actions and `X-Arcade-Id=<id>`, and a
+`~/.local/bin/arcade-<app>` symlink. Rewrite an existing autostart main Exec;
+create it only when requested, preserving other options such as Hidden.
+Keep a replaced binary in `.previous/` and record it. Write the receipt
+after integration succeeds; on failure restore the prior installation.
+Desktop/icon cache refresh commands, when available, are non-fatal.
+Re-exec from the installed path with original args only when launch policy
+requests it. Uninstall reverses receipt paths only, plus caller-supplied
+app data folders if removeData is requested. Repair uses receipt paths and
+an explicit moved path, never guesses. Integration status is read-only and
+offers a fish/bash/zsh PATH hint; it never edits shell profiles.
+
+Each caller passes its existing desktop ID: Box `dev.arcadebox.app`, Wheel
+`com.arcadewheel.ArcadeWheel`, Shelf `arcade.shelf`, Lens `arcade-lens`, Look
+`arcade-look`, Find `arcade-find`, Clipboard `dev.arcade.clipboard`.
+Autostart IDs may differ (Wheel `arcade-wheel`). Remove stale duplicate
+launchers with X-Arcade-Id or a caller-listed legacy desktop ID that point
+at a different executable; preserve unrelated entries.
+
+**First run.** Use shared verbatim strings in
+[`assets/strings/install.json`](assets/strings/install.json), with
+{app}/{version}/{from}/{to} placeholders:
+
+- NotInstalled: “Install {app}?”; adds it to the app launcher and apps
+  folder. Options Start at login and Remove the downloaded file; buttons
+  Install, Just run it once, Don't ask again for this file.
+- InstalledElsewhere, older: “Update {app} {from} → {to}?”; Update or Run
+  this copy once.
+- InstalledElsewhere, same/newer: “{app} {version} is already installed.”;
+  Open installed or Run this copy once.
+- Managed by Tools: open Tools to update; InstalledHere: no install prompt.
+
+Never prompt for dev builds or with --background, --arcade-invoke,
+--arcade-manifest, --version, ARCADE_NO_INSTALL_PROMPT=1, an explicit
+install/uninstall/repair/status request, or a saved dismissal for this file.
+The app owns version comparison, saved dismissal and the UI. Installation
+I/O runs off the UI thread; toolkit operations are dispatched to it.
+
+**Windows.** Per-user installers use `%LOCALAPPDATA%\Programs\<Name>`;
+Start menu entry, optional desktop shortcut and start at login, a shared
+`%LOCALAPPDATA%\Arcade\bin\arcade-<app>.cmd` shim, and a receipt. Add the
+bin folder once to HKCU user Path, preserving other entries and the registry
+string kind, then broadcast WM_SETTINGCHANGE. Remove it when the last shim
+is gone. Never write machine Path. Publisher is qa-p1, homepage and Apps &
+features metadata are supplied. `/VERYSILENT` (Inno) and `/S` (NSIS) have
+interactive install parity; shared includes and sample verification live
+in [`packaging/windows`](packaging/windows/README.md). Their ARCADE_HOME
+test override writes an isolated registry key, never the login-critical Path.
+
+**macOS.** Offer move-to-Applications on first run (`~/Applications`, or
+`/Applications` when explicitly chosen and writable), detect translocation
+and whether already there, write a receipt and offer a CLI symlink. Preserve
+bundle attributes and quarantine; never remove quarantine or bypass macOS
+security. Native bundle moves and Windows PATH helpers are explicit APIs;
+the app/installer owns platform packaging and launch consent.
 
 ## 9. Versioning
 
