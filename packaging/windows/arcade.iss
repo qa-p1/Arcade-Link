@@ -75,8 +75,8 @@ begin
     RaiseException('Arcade installation integration failed (exit ' + IntToStr(ExitCode) + ').');
 end;
 
-; Apps with existing event handlers call these from their own handlers and
-; define ARCADE_CUSTOM_EVENTS to prevent duplicate declarations.
+// Apps with existing event handlers call these from their own handlers and
+// define ARCADE_CUSTOM_EVENTS to prevent duplicate declarations.
 #ifndef ARCADE_CUSTOM_EVENTS
 procedure CurStepChanged(CurStep: TSetupStep);
 begin

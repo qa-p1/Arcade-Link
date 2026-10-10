@@ -77,6 +77,7 @@ fn valid_id(id: &str) -> bool {
 fn absolute(path: &Path) -> bool {
     let s = path.to_string_lossy();
     path.is_absolute()
+        || s.starts_with('/') // Receipt vectors may describe another OS.
         || (s.len() > 2 && s.as_bytes()[0].is_ascii_alphabetic() && s.as_bytes()[1] == b':' && matches!(s.as_bytes()[2], b'\\' | b'/'))
         || s.starts_with("\\\\")
 }
