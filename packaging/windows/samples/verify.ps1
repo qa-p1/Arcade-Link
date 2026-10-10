@@ -13,7 +13,13 @@ $cases = @(
 )
 function Run([string]$Exe, [string[]]$Arguments) {
     $process = Start-Process -FilePath $Exe -ArgumentList $Arguments -Wait -PassThru
-    if ($process.ExitCode -ne 0) { throw "$Exe exited $($process.ExitCode)" }
+    if ($process.ExitCode -ne 0) {
+        foreach ($case in $cases) {
+            $log = Join-Path (Installed $case) 'arcade-integration-error.log'
+            if (Test-Path -LiteralPath $log) { Get-Content -Raw -LiteralPath $log | Write-Host }
+        }
+        throw "$Exe exited $($process.ExitCode)"
+    }
 }
 function Assert([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 function PathCount {

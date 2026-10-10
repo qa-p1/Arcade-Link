@@ -15,6 +15,7 @@ Var ArcadeStartup
 Var ArcadeChannel
 Var ArcadeManagedBy
 Var ArcadeExitCode
+Var ArcadeIntegrationOutput
 
 !macro ArcadeSetup
   Unicode true
@@ -92,8 +93,13 @@ Var ArcadeExitCode
   ${IfNot} ${Errors}
     StrCpy $ArcadeManagedBy $1
   ${EndIf}
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "$INSTDIR\arcade-integration.ps1" -Action Install -Id "${ARCADE_ID}" -CliName "${ARCADE_CLI}" -Version "${ARCADE_VERSION}" -Channel "$ArcadeChannel" -ManagedBy "$ArcadeManagedBy" -ExePath "$INSTDIR\${ARCADE_EXE}" -DesktopEntry "$SMPROGRAMS\${ARCADE_NAME}\${ARCADE_NAME}.lnk" -Autostart "$ArcadeStartup" -Uninstaller "$INSTDIR\uninstall.exe"' $ArcadeExitCode
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "$INSTDIR\arcade-integration.ps1" -Action Install -Id "${ARCADE_ID}" -CliName "${ARCADE_CLI}" -Version "${ARCADE_VERSION}" -Channel "$ArcadeChannel" -ManagedBy "$ArcadeManagedBy" -ExePath "$INSTDIR\${ARCADE_EXE}" -DesktopEntry "$SMPROGRAMS\${ARCADE_NAME}\${ARCADE_NAME}.lnk" -Autostart "$ArcadeStartup" -Uninstaller "$INSTDIR\uninstall.exe"'
+  Pop $ArcadeExitCode
+  Pop $ArcadeIntegrationOutput
   ${If} $ArcadeExitCode != 0
+    FileOpen $0 "$INSTDIR\arcade-integration-error.log" w
+    FileWrite $0 $ArcadeIntegrationOutput
+    FileClose $0
     SetErrorLevel $ArcadeExitCode
     Abort "Arcade installation integration failed."
   ${EndIf}
@@ -111,7 +117,9 @@ Var ArcadeExitCode
 
 !macro ArcadeUninstall
   SetShellVarContext current
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "$INSTDIR\arcade-integration.ps1" -Action Uninstall -Id "${ARCADE_ID}" -CliName "${ARCADE_CLI}" -ExePath "$INSTDIR\${ARCADE_EXE}"' $ArcadeExitCode
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "$INSTDIR\arcade-integration.ps1" -Action Uninstall -Id "${ARCADE_ID}" -CliName "${ARCADE_CLI}" -ExePath "$INSTDIR\${ARCADE_EXE}"'
+  Pop $ArcadeExitCode
+  Pop $ArcadeIntegrationOutput
   ${If} $ArcadeExitCode != 0
     SetErrorLevel $ArcadeExitCode
     Abort "Arcade uninstall integration failed."
@@ -121,6 +129,7 @@ Var ArcadeExitCode
   RMDir "$SMPROGRAMS\${ARCADE_NAME}"
   Delete "$SMSTARTUP\${ARCADE_NAME}.lnk"
   Delete "$INSTDIR\arcade-integration.ps1"
+  Delete "$INSTDIR\arcade-integration-error.log"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${ARCADE_ID}"
 !macroend
 !endif

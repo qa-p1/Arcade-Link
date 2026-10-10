@@ -43,9 +43,10 @@ class Shortcuts(unittest.TestCase):
     def test_cli(self):
         with tempfile.TemporaryDirectory() as d:
             file=Path(d)/'shortcuts.json';file.write_text(json.dumps(load('shortcuts.json')['valid'][0]['document']))
-            result=subprocess.run([sys.executable,str(ROOT/'tools/validate_shortcuts.py'),str(file),'--markdown'],capture_output=True,text=True)
+            result=subprocess.run([sys.executable,str(ROOT/'tools/validate_shortcuts.py'),str(file),'--markdown'],capture_output=True,text=True,encoding='utf-8')
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertIn('| Action | Linux | Windows | macOS |',result.stdout)
+            self.assertIn('⇧⌘P',result.stdout)
             file.write_text('{}')
             self.assertEqual(subprocess.run([sys.executable,str(ROOT/'tools/validate_shortcuts.py'),str(file)],capture_output=True).returncode,1)
 

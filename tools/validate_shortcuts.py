@@ -186,6 +186,10 @@ def markdown(doc: dict) -> str:
     return result
 
 def main(argv=None) -> int:
+    # Canonical display includes Unicode glyphs even through a Windows pipe.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", newline="\n")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("file", type=Path)
     parser.add_argument("--manifest", type=Path)
