@@ -8,5 +8,7 @@
       "effects": ["opens-ui"], "interactive": true, "mock": { "result": { "message": "Previewing" } } },
     { "id": "look.inspect", "title": "Inspect", "verb": "inspect", "accepts": ["file/*"], "produces": ["structured/file-info"],
       "mock": { "result": { "outputs": [{ "type": "structured/file-info", "data": { "kind": "image", "width": 2, "height": 2 } }] } } }
-  ]
+  ],
+  "menu": [],
+  "docs": {"version": "0.0.0-mock"}
 }

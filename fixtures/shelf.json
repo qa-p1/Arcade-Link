@@ -78,5 +78,7 @@
       "interactive": true,
       "privacy": "local"
     }
-  ]
+  ],
+  "menu": [{"id": "new-shelf", "title": "New shelf", "kind": "action", "enabled": true}],
+  "docs": {"version": "0.1.0-mock"}
 }

@@ -4,6 +4,7 @@
 //! `ARCADE_HOME`.
 
 mod mock;
+mod tray;
 
 use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;
@@ -27,6 +28,13 @@ USAGE
   arcade-link mock --as <id> --actions <file.json>
                                               Run a scriptable fake app (see fixtures/)
   arcade-link check-manifest <file.json>      Validate a manifest
+  arcade-link tray <app> [--link-off]          Watch tray hosting as an app
+  arcade-link tray host                       Fake Tools host; commands on stdin
+  arcade-link shortcuts                      Effective globals and conflicts (JSON)
+  arcade-link shortcuts validate <file> [--manifest <file>]
+  arcade-link shortcuts markdown <file>       Generate shortcuts.md
+  arcade-link settings <app>                  Open settings
+  arcade-link restart <app> [--force]          Restart a running app
 
 <app> is a canonical ID (arcade.box) or its short form (box).";
 
@@ -89,6 +97,10 @@ fn main() -> ExitCode {
         Some("activate") => simple(&loc, &args, "app.activate", json!({})),
         Some("quit") => simple(&loc, &args, "app.quit", json!({ "force": flag(&args, "--force") })),
         Some("watch") => watch(&loc),
+        Some("tray") => tray::run(&loc, &args),
+        Some("shortcuts") => shortcuts(&loc, &args),
+        Some("settings") => simple(&loc, &args, "app.settings", json!({})),
+        Some("restart") => simple(&loc, &args, "app.restart", json!({"mode": if flag(&args,"--force") {"force"} else {"normal"}})),
         Some("mock") => mock::run(&loc, &args),
         Some("check-manifest") => check_manifest(&args),
         Some("-V" | "--version") => {
@@ -120,10 +132,21 @@ fn ls(loc: &Locations, args: &[String]) -> Result<(), String> {
                 AppState::Installed { .. } => "installed".into(),
                 AppState::NotInstalled => "not installed".into(),
             };
+            let install =
+                arcade_link::receipt::Store::new(loc).read(&m.id).ok().flatten().map(|r| r.method).or_else(|| reg.additions(&m.id).and_then(|a| a.install));
+            let tray = Client::connect(loc, &m.id, &me())
+                .ok()
+                .and_then(|mut c| {
+                    c.set_timeout(client::HELLO_TIMEOUT).ok()?;
+                    c.status().ok()
+                })
+                .and_then(|s| s["status"]["tray"].as_str().map(String::from))
+                .unwrap_or_else(|| if state.starts_with("running") { "unknown".into() } else { "none".into() });
             json!({
                 "id": m.id, "name": m.name, "version": m.version, "state": state,
                 "linkEnabled": m.settings.link_enabled, "actions": m.actions.len(),
                 "available": m.usable_actions().count(), "executable": m.executable,
+                "install": install, "tray": tray,
             })
         })
         .collect();
@@ -137,16 +160,63 @@ fn ls(loc: &Locations, args: &[String]) -> Result<(), String> {
     }
     for r in rows {
         println!(
-            "{:<18} {:<18} {:<10} {:<18} {:>3} actions ({} available){}",
+            "{:<18} {:<18} {:<10} {:<18} {:>3} actions ({} available)  install={} tray={}{}",
             r["id"].as_str().unwrap_or(""),
             r["name"].as_str().unwrap_or(""),
             r["version"].as_str().unwrap_or(""),
             r["state"].as_str().unwrap_or(""),
             r["actions"],
             r["available"],
+            r["install"].as_str().unwrap_or("unknown"),
+            r["tray"].as_str().unwrap_or("unknown"),
             if r["linkEnabled"] == json!(false) { "  [Link off]" } else { "" }
         );
     }
+    Ok(())
+}
+
+fn shortcuts(loc: &Locations, args: &[String]) -> Result<(), String> {
+    if let Some(command @ ("validate" | "markdown")) = args.get(1).map(String::as_str) {
+        let file = args.get(2).ok_or("shortcuts needs a file")?;
+        let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
+        let v: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let markdown = if v.get("app").is_some() {
+            let doc = arcade_link::shortcuts::Document::from_json(&text).map_err(|e| e.to_string())?;
+            if let Some(file) = value(args, "--manifest") {
+                let m = Manifest::from_json(&std::fs::read_to_string(file).map_err(|e| e.to_string())?)?;
+                doc.validate(Some(&m)).map_err(|e| e.to_string())?;
+            }
+            doc.markdown().map_err(|e| e.to_string())?
+        } else {
+            arcade_link::shortcuts::Sheet::from_json(&text).and_then(|s| s.markdown()).map_err(|e| e.to_string())?
+        };
+        if command == "markdown" {
+            print!("{markdown}");
+        } else {
+            println!("{file}: valid");
+        }
+        return Ok(());
+    }
+    let reg = Registry::load(loc);
+    let mut rows = Vec::new();
+    for app in reg.apps() {
+        for shortcut in &app.shortcuts {
+            let normalized = arcade_link::accelerator::normalize(&shortcut.accelerator);
+            rows.push(json!({"app": app.id, "id": shortcut.id, "accelerator": shortcut.accelerator,
+                "canonical": normalized.as_ref().ok(), "error": normalized.err().map(|e| e.to_string()), "conflicts": []}));
+        }
+    }
+    for a in 0..rows.len() {
+        for b in (a + 1)..rows.len() {
+            if arcade_link::accelerator::conflicts(rows[a]["accelerator"].as_str().unwrap(), rows[b]["accelerator"].as_str().unwrap()).unwrap_or(false) {
+                let other_a = json!({"app": rows[a]["app"], "id": rows[a]["id"]});
+                let other_b = json!({"app": rows[b]["app"], "id": rows[b]["id"]});
+                rows[a]["conflicts"].as_array_mut().unwrap().push(other_b);
+                rows[b]["conflicts"].as_array_mut().unwrap().push(other_a);
+            }
+        }
+    }
+    println!("{}", serde_json::to_string_pretty(&rows).map_err(|e| e.to_string())?);
     Ok(())
 }
 
