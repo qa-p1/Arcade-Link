@@ -86,6 +86,8 @@ pub mod windows {
         expanded.trim_end_matches(['\\', '/']).eq_ignore_ascii_case(bin.to_string_lossy().trim_end_matches(['\\', '/']))
     }
     pub fn add_path(environment: &Environment, bin: &Path) -> io::Result<()> {
+        environment.validate()?;
+        crate::receipt::native_absolute(bin)?;
         let key = key(environment)?;
         let (path, kind) = read(&key)?;
         if path.split(';').any(|p| same(p, bin)) {
@@ -95,6 +97,8 @@ pub mod windows {
         write(&key, &new, kind, environment.windows_environment_key == "Environment")
     }
     pub fn remove_path_if_last(environment: &Environment, bin: &Path) -> io::Result<()> {
+        environment.validate()?;
+        crate::receipt::native_absolute(bin)?;
         if fs::read_dir(bin).is_ok_and(|d| d.flatten().any(|e| e.path().extension().is_some_and(|s| s.eq_ignore_ascii_case("cmd")))) {
             return Ok(());
         }
@@ -107,6 +111,8 @@ pub mod windows {
         Ok(())
     }
     pub fn write_shim(environment: &Environment, cli_name: &str, executable: &Path) -> io::Result<std::path::PathBuf> {
+        environment.validate()?;
+        crate::receipt::native_absolute(executable)?;
         if !crate::shortcuts::identifier(cli_name) || executable.to_string_lossy().contains(['"', '\r', '\n']) {
             return Err(io::Error::other("invalid shim name or executable"));
         }
@@ -118,6 +124,7 @@ pub mod windows {
         Ok(path)
     }
     pub fn remove_shim(environment: &Environment, cli_name: &str) -> io::Result<()> {
+        environment.validate()?;
         if !crate::shortcuts::identifier(cli_name) {
             return Err(io::Error::other("invalid shim name"));
         }
@@ -181,6 +188,8 @@ pub mod macos {
     /// caller explicitly chooses a destination; default is ~/Applications.
     #[cfg(target_os = "macos")]
     pub fn move_to_applications(environment: &Environment, bundle: &Path, destination: Option<&Path>) -> io::Result<PathBuf> {
+        environment.validate()?;
+        crate::receipt::native_absolute(bundle)?;
         if bundle.extension().is_none_or(|s| s != "app") || !bundle.is_dir() {
             return Err(io::Error::other("expected an app bundle"));
         }
@@ -202,6 +211,7 @@ pub mod macos {
     /// An explicit CLI symlink offer accepted by the user.
     #[cfg(unix)]
     pub fn install_cli(environment: &Environment, cli_name: &str, executable: &Path) -> io::Result<PathBuf> {
+        environment.validate()?;
         if !crate::shortcuts::identifier(cli_name) || !executable.is_absolute() {
             return Err(io::Error::other("invalid CLI name or target"));
         }

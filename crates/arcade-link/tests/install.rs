@@ -23,6 +23,78 @@ fn runtime(executable: PathBuf) -> Runtime {
     Runtime { executable, appimage: None, appdir: None, dev_build: false }
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn foreign_receipt_paths_cannot_drive_native_mutations() {
+    const CHILD: &str = "ARCADE_FOREIGN_RECEIPT_TEST";
+    if let Some(root) = std::env::var_os(CHILD) {
+        let e = Environment::under(Path::new(&root));
+        let source = e.home.join("download.AppImage");
+        fs::write(&source, b"fixture").unwrap();
+        let app = find_info();
+        let r = runtime(source);
+        let mut receipt = install(&e, find_options(&app, &r, "1")).unwrap();
+        let victim = PathBuf::from(r"C:\Victim.exe");
+        fs::write(&victim, b"unrelated file in the working directory").unwrap();
+        receipt.path = victim.clone();
+        receipt.validate().unwrap(); // Still valid as portable Windows data.
+        assert!(receipt.validate_native_paths().is_err());
+        e.receipts().write(&receipt).unwrap();
+        assert!(uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).is_err());
+        assert!(repair(&e, &app, None).is_err());
+        assert!(install(&e, find_options(&app, &r, "2")).is_err());
+        assert_eq!(fs::read(&victim).unwrap(), b"unrelated file in the working directory");
+        assert!(e.receipts().read(&app.id).unwrap().is_some());
+        assert!(!integration_status(&e, &app.id, "bash").unwrap().entries[0].exists);
+        return;
+    }
+    let root = Root::new();
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "foreign_receipt_paths_cannot_drive_native_mutations", "--nocapture"])
+        .current_dir(&root.0)
+        .env(CHILD, &root.0)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[cfg(target_os = "linux")]
+fn find_info() -> AppInfo {
+    AppInfo {
+        id: "arcade.find".into(),
+        name: "Arcade Find".into(),
+        filename: "Arcade-Find.AppImage".into(),
+        desktop_id: "arcade-find".into(),
+        cli_name: "arcade-find".into(),
+        autostart_id: "arcade-find".into(),
+        background_args: vec!["--background".into()],
+        legacy_desktop_ids: vec!["old-find".into()],
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn find_options<'a>(app: &'a AppInfo, runtime: &'a Runtime, version: &'a str) -> InstallOptions<'a> {
+    InstallOptions {
+        app,
+        runtime,
+        version,
+        channel: "stable",
+        managed_by: ManagedBy::SelfManaged,
+        icons: &[],
+        start_at_login: false,
+        remove_download: false,
+        refresh_caches: false,
+    }
+}
+
+#[test]
+fn relative_install_environment_is_refused_before_writing() {
+    let e = Environment::under(Path::new("relative-install-root"));
+    assert!(e.validate().is_err());
+    assert!(uninstall(&e, "arcade.find", UninstallOptions { remove_data: false, data_folders: &[] }).is_err());
+    assert!(!e.home.exists());
+}
+
 #[test]
 fn dev_detection_appimage_and_prompt_suppression() {
     let root = Root::new();

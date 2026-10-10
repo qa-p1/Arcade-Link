@@ -102,6 +102,22 @@ fn timestamp(s: &str) -> bool {
 }
 
 impl Receipt {
+    /// Portable receipts may describe another OS. Before using their paths
+    /// for filesystem operations, require absolute paths on this OS instead.
+    pub fn validate_native_paths(&self) -> io::Result<()> {
+        self.validate()?;
+        for path in std::iter::once(&self.path)
+            .chain(self.integration.icons.iter())
+            .chain(self.integration.desktop_entry.iter())
+            .chain(self.integration.cli.iter())
+            .chain(self.integration.autostart.iter())
+            .chain(self.integration.uninstaller.iter())
+            .chain(self.previous.iter().map(|p| &p.path))
+        {
+            native_absolute(path)?;
+        }
+        Ok(())
+    }
     pub fn validate(&self) -> io::Result<()> {
         if self.schema != 1 || !valid_id(&self.id) || self.version.trim().is_empty() || self.channel.trim().is_empty() {
             return Err(invalid("receipt needs schema 1, Arcade id, version and channel"));
@@ -135,6 +151,14 @@ impl Receipt {
         r.validate()?;
         Ok(r)
     }
+}
+
+/// Execution uses native paths, never the portable receipt spelling rules.
+pub(crate) fn native_absolute(path: &Path) -> io::Result<()> {
+    if !path.is_absolute() || path.components().any(|c| c == std::path::Component::ParentDir) {
+        return Err(invalid("filesystem path must be natively absolute without parent traversal"));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -175,6 +199,7 @@ impl Store {
     /// Atomic replacement, 0600 on Unix. Dev builds never create receipts.
     pub fn write(&self, receipt: &Receipt) -> io::Result<()> {
         receipt.validate()?;
+        native_absolute(&self.dir)?;
         if receipt.method == InstallMethod::Dev {
             return Err(invalid("dev builds never write receipts"));
         }
@@ -183,6 +208,7 @@ impl Store {
         paths::write_atomic(&self.path(&receipt.id)?, &bytes, true)
     }
     pub fn remove(&self, id: &str) -> io::Result<()> {
+        native_absolute(&self.dir)?;
         match fs::remove_file(self.path(id)?) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
             _ => Ok(()),

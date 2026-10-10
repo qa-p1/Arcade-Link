@@ -78,6 +78,14 @@ impl Environment {
     pub fn receipts(&self) -> Store {
         Store::new(&self.locations)
     }
+    pub fn validate(&self) -> io::Result<()> {
+        for path in
+            [&self.home, &self.data, &self.config, &self.applications, &self.bin, &self.local_app_data, &self.locations.registry, &self.locations.runtime]
+        {
+            crate::receipt::native_absolute(path)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -152,7 +160,7 @@ pub fn is_dev_build(executable: &Path) -> bool {
 pub fn detect(environment: &Environment, id: &str, runtime: &Runtime) -> io::Result<Detection> {
     let running_from = runtime.running_from();
     let receipt = environment.receipts().read(id)?;
-    let installed_path = receipt.as_ref().filter(|r| r.path.exists()).map(|r| r.path.clone());
+    let installed_path = receipt.as_ref().filter(|r| r.path.is_absolute() && r.path.exists()).map(|r| r.path.clone());
     let state = if runtime.dev_build || is_dev_build(&running_from) {
         State::DevBuild
     } else if let Some(path) = &installed_path {
@@ -420,6 +428,7 @@ impl Drop for InstallRollback {
 /// first-run UI must additionally use `Detection::is_app_image`.
 #[cfg(target_os = "linux")]
 pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Result<Receipt> {
+    environment.validate()?;
     opts.app.validate()?;
     let detected = detect(environment, &opts.app.id, opts.runtime)?;
     if detected.state == State::DevBuild {
@@ -435,6 +444,9 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     let dest = environment.applications.join(&opts.app.filename);
     fs::create_dir_all(&environment.applications)?;
     let old = detected.receipt;
+    if let Some(receipt) = &old {
+        receipt.validate_native_paths()?;
+    }
     let same = canonical(&source) == canonical(&dest);
     let mut previous = old.as_ref().and_then(|r| r.previous.clone());
     let mut integration = Integration {
@@ -568,8 +580,10 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
 /// explicit consent to repoint a moved installation.
 #[cfg(target_os = "linux")]
 pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>) -> io::Result<Receipt> {
+    environment.validate()?;
     app.validate()?;
     let mut receipt = environment.receipts().read(&app.id)?.ok_or_else(|| input("no receipt"))?;
+    receipt.validate_native_paths()?;
     if let Some(path) = moved_to {
         if !path.is_absolute() || !path.is_file() {
             return Err(input("moved installation must be an absolute file"));
@@ -607,7 +621,9 @@ pub struct UninstallOptions<'a> {
 /// Removes only receipt-listed integration and explicitly supplied data.
 /// Does not invoke a Windows uninstaller: apps/Tools run its recorded command.
 pub fn uninstall(environment: &Environment, id: &str, opts: UninstallOptions<'_>) -> io::Result<bool> {
+    environment.validate()?;
     let Some(receipt) = environment.receipts().read(id)? else { return Ok(false) };
+    receipt.validate_native_paths()?;
     for path in std::iter::once(&receipt.path).chain(receipt.previous.iter().map(|p| &p.path)) {
         if path.is_dir() && (receipt.method != crate::receipt::InstallMethod::MacosBundle || path.extension().is_none_or(|e| e != "app")) {
             return Err(input("refusing a directory as an installed executable"));
@@ -701,7 +717,7 @@ pub fn integration_status(environment: &Environment, id: &str, shell: &str) -> i
             .chain(r.integration.uninstaller.iter())
             .chain(r.previous.iter().map(|p| &p.path))
         {
-            entries.push(EntryStatus { path: p.clone(), exists: p.exists() });
+            entries.push(EntryStatus { path: p.clone(), exists: p.is_absolute() && p.exists() });
         }
     }
     let bin_on_path = environment.path.as_ref().is_some_and(|p| env::split_paths(p).any(|p| canonical(&p) == canonical(&environment.bin)));
@@ -711,6 +727,7 @@ pub fn integration_status(environment: &Environment, id: &str, shell: &str) -> i
 /// Replaces this process on Unix, or starts a successor on Windows. The
 /// caller passes original args and owns any old-process wait handshake.
 pub fn reexec(path: &Path, original_args: &[std::ffi::OsString]) -> io::Result<()> {
+    crate::receipt::native_absolute(path)?;
     let mut cmd = Command::new(path);
     cmd.args(original_args).env_remove("APPIMAGE").env_remove("APPDIR");
     #[cfg(unix)]
