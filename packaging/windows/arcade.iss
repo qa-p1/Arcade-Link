@@ -25,11 +25,11 @@ DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#ARCADE_EXE}
 
 [Tasks]
-Name: "arcade-desktop"; Description: "Create a desktop shortcut"; Flags: unchecked
+Name: "arcade_desktop"; Description: "Create a desktop shortcut"; Flags: unchecked
 #if ARCADE_START_AT_LOGIN_DEFAULT
-Name: "arcade-startup"; Description: "Start at login"
+Name: "arcade_startup"; Description: "Start at login"
 #else
-Name: "arcade-startup"; Description: "Start at login"; Flags: unchecked
+Name: "arcade_startup"; Description: "Start at login"; Flags: unchecked
 #endif
 
 [Files]
@@ -37,8 +37,8 @@ Source: "{#ArcadeHelper}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{userprograms}\{#ARCADE_NAME}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"
-Name: "{userdesktop}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"; Tasks: arcade-desktop
-Name: "{userstartup}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"; Parameters: "--background"; Tasks: arcade-startup
+Name: "{userdesktop}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"; Tasks: arcade_desktop
+Name: "{userstartup}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"; Parameters: "--background"; Tasks: arcade_startup
 
 [Code]
 function ArcadeQuote(Value: String): String;
@@ -55,7 +55,7 @@ begin
     ArcadeQuote(ExpandConstant('{app}\arcade-integration.ps1'));
   if Installing then begin
     Autostart := '-';
-    if WizardIsTaskSelected('arcade-startup') then
+    if WizardIsTaskSelected('arcade_startup') then
       Autostart := ExpandConstant('{userstartup}\{#ARCADE_NAME}.lnk');
     Params := Params + ' -Action Install -Version ' + ArcadeQuote('{#ARCADE_VERSION}') +
       ' -Channel ' + ArcadeQuote(ExpandConstant('{param:ARCADECHANNEL|stable}')) +

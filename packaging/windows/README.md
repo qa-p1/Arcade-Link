@@ -40,7 +40,7 @@ For Inno, include `arcade.iss`, then supply the app's `[Files]` and build
 directives. Existing Pascal event handlers define `ARCADE_CUSTOM_EVENTS`
 and call `ArcadeIntegration(True)` at `ssPostInstall` and
 `ArcadeIntegration(False)` at `usUninstall`. `/VERYSILENT /SUPPRESSMSGBOXES
-/NORESTART` uses the same integration; `/MERGETASKS=arcade-startup` or
+/NORESTART` uses the same integration; `/MERGETASKS=arcade_startup` or
 `/TASKS=` chooses startup tasks. Runtime `/ARCADEMANAGEDBY=tools` and
 `/ARCADECHANNEL=stable` carry receipt ownership/channel.
 

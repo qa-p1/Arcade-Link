@@ -184,7 +184,7 @@ impl Sheet {
         for (os, field) in [("linux", "class"), ("windows", "exe"), ("macos", "bundle")] {
             if let Some(value) = self.r#match.get(os) {
                 let names = value.get(field).and_then(Value::as_array).ok_or_else(|| fail(format!("match.{os}.{field} must be a nonempty array")))?;
-                if names.is_empty() || names.iter().any(|n| !n.as_str().is_some_and(|s| !s.trim().is_empty())) {
+                if names.is_empty() || names.iter().any(|n| n.as_str().is_none_or(|s| s.trim().is_empty())) {
                     return Err(fail("match names must be nonempty strings"));
                 }
                 matched = true;

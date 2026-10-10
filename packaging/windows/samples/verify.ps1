@@ -8,7 +8,7 @@ $oldKind = if ($hadPath) { $key.GetValueKind('Path') } else { [Microsoft.Win32.R
 $root = Join-Path $env:LOCALAPPDATA 'Arcade'
 $bin = Join-Path $root 'bin'
 $cases = @(
-    @{ Id='arcade.ci-inno'; Name='Arcade Link CI Inno'; Cli='arcade-ci-inno'; Setup='sample-inno.exe'; Args=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/MERGETASKS=arcade-startup,arcade-desktop'); Uninstaller='unins000.exe'; UninstallArgs=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') },
+    @{ Id='arcade.ci-inno'; Name='Arcade Link CI Inno'; Cli='arcade-ci-inno'; Setup='sample-inno.exe'; Args=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/MERGETASKS=arcade_startup,arcade_desktop'); Uninstaller='unins000.exe'; UninstallArgs=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') },
     @{ Id='arcade.ci-nsis'; Name='Arcade Link CI NSIS'; Cli='arcade-ci-nsis'; Setup='sample-nsis.exe'; Args=@('/S','/STARTATLOGIN=1','/DESKTOPSHORTCUT=1'); Uninstaller='uninstall.exe'; UninstallArgs=@('/S') }
 )
 function Run([string]$Exe, [string[]]$Arguments) {
