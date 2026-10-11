@@ -231,6 +231,8 @@ pub fn standard_message(code: ErrorCode, app: &str, reason: Option<&str>, limit:
         ErrorCode::Cancelled => "Cancelled.".to_string(),
         ErrorCode::VersionMismatch => format!("{app} needs an update to work with this app."),
         ErrorCode::Internal => match reason {
+            // `unsupported` travels as internal + this reason (see ErrorWire).
+            Some("unsupported_method") => format!("{app} doesn't support this method."),
             Some(r) => format!("{app} ran into a problem: {}", sentence(r)),
             None => format!("{app} ran into a problem."),
         },

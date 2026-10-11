@@ -204,6 +204,8 @@ QString standardMessage(const QString &codeIn, const QString &app, const QString
 {
     const QString code = knownCodes().contains(codeIn) ? codeIn : QStringLiteral("internal");
     const QString reason = reasonIn.trimmed();
+    if (codeIn == u"unsupported" || (code == u"internal" && reason == u"unsupported_method"))
+        return QStringLiteral("%1 doesn't support this method.").arg(app);
     if (code == u"not_installed") return QStringLiteral("%1 isn't installed.").arg(app);
     if (code == u"not_running") return QStringLiteral("%1 isn't running.").arg(app);
     if (code == u"launch_failed") return QStringLiteral("%1 didn't start.").arg(app);
