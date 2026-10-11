@@ -84,11 +84,17 @@ fn cancel_on_interrupt() {
 }
 
 fn main() -> ExitCode {
-    // `arcade-link describe box | head` must end quietly, not panic.
-    #[cfg(unix)]
-    unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
-    }
+    // Keep Rust's ignored SIGPIPE: a subscription closed during Link-off must
+    // produce an I/O error, never terminate the watcher. A closed stdout pipe
+    // still ends quietly for commands such as `describe box | head`.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let message = info.payload().downcast_ref::<String>().map(String::as_str).or_else(|| info.payload().downcast_ref::<&str>().copied());
+        if message.is_some_and(|s| s.starts_with("failed printing to stdout: Broken pipe")) {
+            std::process::exit(0);
+        }
+        default_hook(info);
+    }));
     let args: Vec<String> = std::env::args().skip(1).collect();
     let loc = Locations::discover();
     let r = match args.first().map(String::as_str) {
