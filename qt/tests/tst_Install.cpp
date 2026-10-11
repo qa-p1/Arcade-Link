@@ -246,6 +246,30 @@ private slots:
     QVERIFY(!QFileInfo::exists(data));
     QVERIFY(!QFileInfo::exists(same)); // Repair removed the stale old path.
   }
+  void repairReplacesFinalSymlinkWithoutWritingThrough() {
+    QTemporaryDir root;
+    const auto e = ArcadeInstall::Environment::under(root.path());
+    ArcadeInstall installer(e);
+    const auto source = root.filePath(QStringLiteral("download.AppImage"));
+    put(source, "v1");
+    auto opts = options(source, QStringLiteral("1"));
+    opts.startAtLogin = true;
+    QJsonObject receipt;
+    QString error;
+    QVERIFY2(installer.install(opts, &receipt, &error), qPrintable(error));
+    const auto integration = receipt.value(QStringLiteral("integration")).toObject();
+    for (const auto &key : {QStringLiteral("desktopEntry"), QStringLiteral("autostart")}) {
+      const auto entry = integration.value(key).toString();
+      const auto outside = root.filePath(key + QStringLiteral("-outside.desktop"));
+      QVERIFY(QFile::rename(entry, outside));
+      const auto before = get(outside);
+      QVERIFY(QFile::link(outside, entry));
+      QVERIFY2(installer.repair(opts.app, {}, &receipt, &error), qPrintable(error));
+      QCOMPARE(get(outside), before);
+      QVERIFY(!QFileInfo(entry).isSymLink());
+      QVERIFY(get(entry).contains("X-Arcade-Id=arcade.find"));
+    }
+  }
   void foreignIntegrationAndPreviousSurvive() {
     QTemporaryDir root;
     const auto e = ArcadeInstall::Environment::under(root.path());

@@ -10,6 +10,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
+#include <QTemporaryFile>
 #include <functional>
 #ifdef Q_OS_UNIX
 #include <cerrno>
@@ -243,15 +244,36 @@ static bool atomicWrite(const QString &path, const QByteArray &bytes,
     return false;
   if (!QDir().mkpath(QFileInfo(path).absolutePath()))
     return fail(error, QStringLiteral("cannot create parent of %1").arg(path));
-  QSaveFile file(path);
-  file.setDirectWriteFallback(false); // failure must leave the old file intact
-  if (!file.open(QIODevice::WriteOnly))
+  // QSaveFile resolves a final symlink. Stage a sibling instead and rename the
+  // directory entry itself, so an owned launcher symlink cannot redirect writes.
+  QTemporaryFile file(QFileInfo(path).absolutePath() +
+                       QStringLiteral("/.arcade-write-XXXXXX"));
+  if (!file.open())
     return fail(error, file.errorString());
-  if (privateFile &&
-      !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner))
+  const auto permissions = QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+      (privateFile ? QFileDevice::Permissions{} :
+                     QFileDevice::Permissions(QFileDevice::ReadGroup | QFileDevice::ReadOther));
+  if (!file.setPermissions(permissions))
     return fail(error, file.errorString());
-  if (file.write(bytes) != bytes.size() || !file.commit())
+  if (file.write(bytes) != bytes.size() || !file.flush())
     return fail(error, file.errorString());
+#ifdef Q_OS_UNIX
+  if (::fsync(file.handle()) != 0)
+    return fail(error, QString::fromLocal8Bit(std::strerror(errno)));
+#endif
+  const auto staged = file.fileName();
+  file.close();
+#ifdef Q_OS_WIN
+  if (!MoveFileExW(reinterpret_cast<LPCWSTR>(staged.utf16()),
+                   reinterpret_cast<LPCWSTR>(path.utf16()),
+                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    return fail(error, QStringLiteral("cannot replace %1 (%2)")
+                           .arg(path).arg(GetLastError()));
+#else
+  if (::rename(QFile::encodeName(staged).constData(),
+               QFile::encodeName(path).constData()) != 0)
+    return fail(error, QString::fromLocal8Bit(std::strerror(errno)));
+#endif
   return true;
 }
 static bool removeFile(const QString &path, QString *error) {
