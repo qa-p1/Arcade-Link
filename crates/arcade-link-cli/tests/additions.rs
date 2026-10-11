@@ -70,7 +70,7 @@ fn lines(child: &mut OwnedChild) -> mpsc::Receiver<String> {
     rx
 }
 fn expect(rx: &mpsc::Receiver<String>, state: &str) {
-    assert_eq!(rx.recv_timeout(Duration::from_secs(10)).unwrap(), state);
+    assert_eq!(rx.recv_timeout(Duration::from_secs(10)).unwrap_or_else(|e| panic!("waiting for tray state {state}: {e}")), state);
 }
 
 #[test]
@@ -153,18 +153,26 @@ fn cli_and_mock_tray_hosts_are_scriptable_and_crash_hands_back() {
         let root = Root::new();
         let mut command =
             if mock { root.command(&["mock", "--as", "tools", "--actions", fixture("tools").to_str().unwrap()]) } else { root.command(&["tray", "host"]) };
-        let mut host = OwnedChild(command.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap());
+        let mut host = OwnedChild(command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn().unwrap());
+        let acknowledgements = lines(&mut host);
+        if !mock {
+            expect(&acknowledgements, "ready");
+        }
         drop(ready(&root, "arcade.tools"));
         let mut app = OwnedChild(root.command(&["tray", "find"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap());
         let states = lines(&mut app);
         expect(&states, "hosted");
         host.send("hosted false\n");
+        expect(&acknowledgements, "ok hosted false");
         expect(&states, "own");
         host.send("hosted true\n");
+        expect(&acknowledgements, "ok hosted true");
         expect(&states, "hosted");
         host.send("exclude find\n");
+        expect(&acknowledgements, "ok exclude find");
         expect(&states, "own");
         host.send("include find\n");
+        expect(&acknowledgements, "ok include find");
         expect(&states, "hosted");
         app.send("link off\n");
         expect(&states, "own");
