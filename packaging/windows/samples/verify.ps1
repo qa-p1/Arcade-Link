@@ -31,8 +31,11 @@ function Run([string]$Exe, [string[]]$Arguments) {
     $process = Start-Process -FilePath $Exe -ArgumentList $Arguments -Wait -PassThru
     if ($process.ExitCode -ne 0) {
         foreach ($case in $cases) {
-            $log = Join-Path (Installed $case) 'arcade-integration-error.log'
-            if (Test-Path -LiteralPath $log) { Get-Content -Raw -LiteralPath $log | Write-Host }
+            $dirs = @((Installed $case), (Join-Path $env:LOCALAPPDATA ('Programs\' + $case.Name))) | Select-Object -Unique
+            foreach ($dir in $dirs) {
+                $log = Join-Path $dir 'arcade-integration-error.log'
+                if (Test-Path -LiteralPath $log) { Write-Host "== $log"; Get-Content -Raw -LiteralPath $log | Write-Host }
+            }
         }
         throw "$Exe exited $($process.ExitCode)"
     }
@@ -132,6 +135,8 @@ try {
         if (-not (Test-Path -LiteralPath $receipt)) {
             Write-Host ('Receipts present: ' + ((Get-ChildItem -LiteralPath (Join-Path $root 'installs') -ErrorAction SilentlyContinue | ForEach-Object Name) -join ', '))
             if (Test-Path -LiteralPath $setupLog) { Get-Content -Raw -LiteralPath $setupLog | Write-Host }
+            $integrationLog = Join-Path $env:LOCALAPPDATA ('Programs\' + $case.Name + '\arcade-integration-error.log')
+            if (Test-Path -LiteralPath $integrationLog) { Get-Content -Raw -LiteralPath $integrationLog | Write-Host }
             throw ($case.Id + ': reinstall without tasks wrote no receipt')
         }
         $r = Get-Content -Raw -LiteralPath $receipt -Encoding UTF8 | ConvertFrom-Json

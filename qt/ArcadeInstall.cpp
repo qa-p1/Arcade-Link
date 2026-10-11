@@ -10,7 +10,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
-#include <QTemporaryFile>
+#include <QRandomGenerator>
 #include <functional>
 #ifdef Q_OS_UNIX
 #include <cerrno>
@@ -246,33 +246,58 @@ static bool atomicWrite(const QString &path, const QByteArray &bytes,
     return fail(error, QStringLiteral("cannot create parent of %1").arg(path));
   // QSaveFile resolves a final symlink. Stage a sibling instead and rename the
   // directory entry itself, so an owned launcher symlink cannot redirect writes.
-  QTemporaryFile file(QFileInfo(path).absolutePath() +
-                       QStringLiteral("/.arcade-write-XXXXXX"));
-  if (!file.open())
+  // A plain QFile is used because QTemporaryFile keeps its own handle on
+  // Windows after close(), which makes the rename fail with a sharing error.
+  const auto staged = QFileInfo(path).absolutePath() +
+      QStringLiteral("/.arcade-write-%1").arg(QRandomGenerator::system()->generate64(), 16, 16, QLatin1Char('0'));
+  QFile file(staged);
+  if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly))
     return fail(error, file.errorString());
+  const auto discard = [&](const QString &message) {
+    file.close();
+    QFile::remove(staged);
+    return fail(error, message);
+  };
   const auto permissions = QFileDevice::ReadOwner | QFileDevice::WriteOwner |
       (privateFile ? QFileDevice::Permissions{} :
                      QFileDevice::Permissions(QFileDevice::ReadGroup | QFileDevice::ReadOther));
   if (!file.setPermissions(permissions))
-    return fail(error, file.errorString());
+    return discard(file.errorString());
   if (file.write(bytes) != bytes.size() || !file.flush())
-    return fail(error, file.errorString());
+    return discard(file.errorString());
 #ifdef Q_OS_UNIX
   if (::fsync(file.handle()) != 0)
-    return fail(error, QString::fromLocal8Bit(std::strerror(errno)));
+    return discard(QString::fromLocal8Bit(std::strerror(errno)));
 #endif
-  const auto staged = file.fileName();
   file.close();
 #ifdef Q_OS_WIN
-  if (!MoveFileExW(reinterpret_cast<LPCWSTR>(staged.utf16()),
-                   reinterpret_cast<LPCWSTR>(path.utf16()),
-                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-    return fail(error, QStringLiteral("cannot replace %1 (%2)")
-                           .arg(path).arg(GetLastError()));
+  // Another handle (a concurrent writer, a reader or a virus scanner) can
+  // briefly hold either file; retry sharing and access errors with a backoff.
+  const auto from = QDir::toNativeSeparators(staged);
+  const auto to = QDir::toNativeSeparators(path);
+  DWORD code = 0;
+  for (int attempt = 0, delay = 1; attempt < 40; ++attempt, delay = qMin(delay * 2, 25)) {
+    if (MoveFileExW(reinterpret_cast<LPCWSTR>(from.utf16()), reinterpret_cast<LPCWSTR>(to.utf16()),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+      code = 0;
+      break;
+    }
+    code = GetLastError();
+    if (code != ERROR_SHARING_VIOLATION && code != ERROR_ACCESS_DENIED)
+      break;
+    Sleep(DWORD(delay));
+  }
+  if (code != 0) {
+    QFile::remove(staged);
+    return fail(error, QStringLiteral("cannot replace %1 (%2)").arg(path).arg(code));
+  }
 #else
   if (::rename(QFile::encodeName(staged).constData(),
-               QFile::encodeName(path).constData()) != 0)
-    return fail(error, QString::fromLocal8Bit(std::strerror(errno)));
+               QFile::encodeName(path).constData()) != 0) {
+    const auto message = QString::fromLocal8Bit(std::strerror(errno));
+    QFile::remove(staged);
+    return fail(error, message);
+  }
 #endif
   return true;
 }

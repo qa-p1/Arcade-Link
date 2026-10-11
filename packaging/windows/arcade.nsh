@@ -75,8 +75,8 @@ Var ArcadeIntegrationOutput
   WriteUninstaller "$INSTDIR\uninstall.exe"
   CreateDirectory "$SMPROGRAMS\${ARCADE_NAME}"
   CreateShortcut "$SMPROGRAMS\${ARCADE_NAME}\${ARCADE_NAME}.lnk" "$INSTDIR\${ARCADE_EXE}"
-  StrCpy $ArcadeStartup "-"
-  StrCpy $ArcadeDesktop "-"
+  StrCpy $ArcadeStartup "none"
+  StrCpy $ArcadeDesktop "none"
   ${If} ${SectionIsSelected} ${ArcadeDesktopTask}
     StrCpy $ArcadeDesktop "$DESKTOP\${ARCADE_NAME}.lnk"
   ${EndIf}

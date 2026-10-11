@@ -18,6 +18,11 @@ param(
     [string]$QuietUninstallArgs = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
 )
 $ErrorActionPreference = 'Stop'
+# Installers only see an exit code; keep the reason next to the script.
+trap {
+    try { [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'arcade-integration-error.log'), ($_ | Out-String)) } catch { }
+    exit 1
+}
 $root = Join-Path $env:LOCALAPPDATA 'Arcade'
 if ($env:ARCADE_HOME) { $root = [IO.Path]::GetFullPath($env:ARCADE_HOME) }
 $bin = Join-Path $root 'bin'
@@ -25,8 +30,9 @@ $receipts = Join-Path $root 'installs'
 $receiptPath = Join-Path $receipts ($Id + '.json')
 $shim = Join-Path $bin ($CliName + '.cmd')
 $utf8 = New-Object Text.UTF8Encoding($false)
-if ($Autostart -eq '-') { $Autostart = '' }
-if ($DesktopShortcut -eq '-') { $DesktopShortcut = '' }
+# 'none' marks an unchecked task; '-' is accepted from older includes.
+if ($Autostart -in @('none','-')) { $Autostart = '' }
+if ($DesktopShortcut -in @('none','-')) { $DesktopShortcut = '' }
 
 function Write-Atomic([string]$Path, [string]$Text, [bool]$Private = $false) {
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path)) | Out-Null
