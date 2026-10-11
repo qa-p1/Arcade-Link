@@ -91,6 +91,12 @@ impl Registry {
         self.additions.get(app_id)
     }
 
+    /// Disk generation of an app manifest. Rewriting an identical manifest
+    /// is a readiness event even when its semantic fields do not change.
+    pub fn revision(&self, app_id: &str) -> Option<(Option<SystemTime>, u64)> {
+        self.entries.values().find(|e| e.manifest.as_ref().is_some_and(|d| d.manifest.id == app_id)).map(|e| (e.modified, e.len))
+    }
+
     pub fn document(&self, app_id: &str) -> Option<ManifestDocument> {
         Some(ManifestDocument { manifest: self.get(app_id)?.clone(), additions: self.additions(app_id).cloned().unwrap_or_default() })
     }
@@ -194,10 +200,11 @@ impl SharedRegistry {
                 return;
             }
             let changed_runtime = event.paths.iter().any(|p| p.extension().is_some_and(|x| x == "endpoint"));
+            let changed_manifest = event.paths.iter().any(|p| p.extension().is_some_and(|x| x == "json"));
             let snapshot = match inner.write() {
                 Ok(mut r) => {
                     let changed = r.refresh();
-                    if !changed && !changed_runtime {
+                    if !changed && !changed_runtime && !changed_manifest {
                         return;
                     }
                     r.clone()

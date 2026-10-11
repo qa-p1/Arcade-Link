@@ -33,16 +33,46 @@ impl Handler for App {
     }
 }
 fn tools(loc: &Locations, attach: bool) -> (Server, TrayHostServer, ManifestDocument) {
-    let s =
-        Server::start(ServerConfig { app: PeerInfo { id: "arcade.tools".into(), version: "0.3.0".into() }, locations: loc.clone() }, Arc::new(App)).unwrap();
     let h = TrayHostServer::new(true);
-    if attach {
-        s.attach_tray_host(h.clone());
-    }
+    let config = ServerConfig { app: PeerInfo { id: "arcade.tools".into(), version: "0.3.0".into() }, locations: loc.clone() };
+    let s = if attach { Server::start_with_tray_host(config, Arc::new(App), h.clone()) } else { Server::start(config, Arc::new(App)) }.unwrap();
     let mut m: ManifestDocument = Manifest::new("arcade.tools", "0.3.0", std::env::current_exe().unwrap().to_str().unwrap()).into();
     m.additions.tray_host = Some(TrayHostSettings { enabled: true, excluded: vec![] });
     manifest::write_document(loc, &m).unwrap();
     (s, h, m)
+}
+
+#[test]
+fn failed_subscription_recovers_on_same_endpoint_manifest_rewrite_without_polling() {
+    let root = Root::new();
+    let loc = Locations::under(&root.0);
+    let (server, host, doc) = tools(&loc, false);
+    let (_watcher, rx) = watcher(&loc, true);
+    expect(&rx, TrayState::Own, Duration::from_secs(1));
+    server.attach_tray_host(host.clone());
+    assert!(rx.recv_timeout(Duration::from_millis(350)).is_err(), "attaching without a registry event must not start idle retries");
+    assert!(host.subscribers().is_empty());
+    // The normal manifest writer intentionally elides identical writes;
+    // explicitly publish a readiness event without changing token or JSON.
+    arcade_link::paths::write_atomic(&loc.manifest(&doc.manifest.id), doc.to_json().as_bytes(), false).unwrap();
+    expect(&rx, TrayState::Hosted, Duration::from_secs(1));
+    assert_eq!(host.subscribers().len(), 1);
+}
+
+#[test]
+fn atomic_host_start_can_subscribe_before_manifest_publication() {
+    let root = Root::new();
+    let loc = Locations::under(&root.0);
+    let host = TrayHostServer::new(true);
+    let _server = Server::start_with_tray_host(
+        ServerConfig { app: PeerInfo { id: "arcade.tools".into(), version: "1".into() }, locations: loc.clone() },
+        Arc::new(App),
+        host,
+    )
+    .unwrap();
+    let mut client = Client::connect(&loc, "arcade.tools", &PeerInfo { id: "arcade.find".into(), version: "1".into() }).unwrap();
+    client.subscribe(&["tray.host"]).unwrap();
+    assert_eq!(client.next_notification(Some(Duration::from_millis(300))).unwrap().params()["hosted"], true);
 }
 fn watcher(loc: &Locations, enabled: bool) -> (TrayHostWatcher, mpsc::Receiver<(TrayState, Instant)>) {
     let (tx, rx) = mpsc::channel();

@@ -271,14 +271,14 @@ pub fn run(loc: &Locations, args: &[String]) -> Result<(), String> {
         std::process::exit(arcade_link::oneshot::serve(&*handler));
     }
     if let Some(settings) = document.additions.tray_host.clone() {
-        let server = arcade_link::Server::start(
-            arcade_link::ServerConfig { locations: loc.clone(), app: arcade_link::PeerInfo { id: id.clone(), version: document.manifest.version.clone() } },
-            handler,
-        )
-        .map_err(|e| e.to_string())?;
         let host = arcade_link::trayhost::TrayHostServer::new(settings.enabled);
         host.set_excluded(&settings.excluded);
-        server.attach_tray_host(host.clone());
+        let server = arcade_link::Server::start_with_tray_host(
+            arcade_link::ServerConfig { locations: loc.clone(), app: arcade_link::PeerInfo { id: id.clone(), version: document.manifest.version.clone() } },
+            handler,
+            host.clone(),
+        )
+        .map_err(|e| e.to_string())?;
         manifest::write_document(loc, &document).map_err(|e| e.to_string())?;
         eprintln!("mock {id} tray host ready");
         super::tray::commands(loc, &host, &mut document)?;

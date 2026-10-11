@@ -241,6 +241,7 @@ fn watch(
     let mut registry = shared.snapshot();
     let mut generation = 0;
     let mut attempted = None;
+    let mut attempted_revision = None;
     let mut active = false;
     let mut control = None;
     let mut startup = Some(started + STARTUP_GRACE);
@@ -277,11 +278,15 @@ fn watch(
             }
             Some(Event::Link(enabled)) => {
                 config.link_enabled = enabled;
+                if enabled {
+                    attempted = None;
+                }
                 pending = Some(Event::Registry(registry.clone()));
             }
             Some(Event::Registry(r)) => {
                 registry = r;
                 let token = candidate(&config, &registry);
+                let revision = registry.revision(ids::TOOLS);
                 if explicitly_disabled(&config, &registry) {
                     generation += 1;
                     active = false;
@@ -291,11 +296,12 @@ fn watch(
                     startup = None;
                     emit(if config.has_tray { TrayState::Own } else { TrayState::None });
                 } else if let Some(token) = token {
-                    if !active && attempted.as_ref() != Some(&token) {
+                    if !active && (attempted.as_ref() != Some(&token) || attempted_revision != revision) {
                         generation += 1;
                         close(&mut control);
                         active = true;
                         attempted = Some(token);
+                        attempted_revision = revision;
                         connect(&config, tx.clone(), generation, startup);
                     }
                 } else if !active && grace.is_none() {
@@ -328,7 +334,7 @@ fn watch(
                 }
                 // Endpoint replacement may have arrived before EOF. Process
                 // every buffered restart notification first, then reconnect.
-                if candidate(&config, &registry).is_some_and(|t| attempted.as_ref() != Some(&t)) {
+                if candidate(&config, &registry).is_some_and(|t| attempted.as_ref() != Some(&t) || attempted_revision != registry.revision(ids::TOOLS)) {
                     pending = Some(Event::Registry(registry.clone()));
                 }
             }

@@ -386,6 +386,28 @@ impl Server {
     /// Fails with `AddrInUse` if a live instance of the same app already
     /// answers on its endpoint. A stale endpoint (dead process) is replaced.
     pub fn start(config: ServerConfig, handler: Arc<dyn Handler>) -> std::io::Result<Server> {
+        #[cfg(feature = "trayhost")]
+        {
+            Self::start_inner(config, handler, None)
+        }
+        #[cfg(not(feature = "trayhost"))]
+        {
+            Self::start_inner(config, handler)
+        }
+    }
+
+    /// Publish a Tools endpoint with tray hosting ready before any connection
+    /// can subscribe. Publish the enabled manifest after this returns.
+    #[cfg(feature = "trayhost")]
+    pub fn start_with_tray_host(config: ServerConfig, handler: Arc<dyn Handler>, host: crate::trayhost::TrayHostServer) -> std::io::Result<Server> {
+        Self::start_inner(config, handler, Some(host))
+    }
+
+    fn start_inner(
+        config: ServerConfig,
+        handler: Arc<dyn Handler>,
+        #[cfg(feature = "trayhost")] host: Option<crate::trayhost::TrayHostServer>,
+    ) -> std::io::Result<Server> {
         let loc = &config.locations;
         paths::ensure_private_dir(&loc.runtime)?;
         if crate::client::probe(loc, &config.app.id, &config.app).is_some() {
@@ -417,7 +439,7 @@ impl Server {
             conns: Mutex::new(Vec::new()),
             stopping: AtomicBool::new(false),
             #[cfg(feature = "trayhost")]
-            tray_host: Mutex::new(None),
+            tray_host: Mutex::new(host),
         });
         let accept = inner.clone();
         let handle = std::thread::Builder::new().name("arcade-link-accept".into()).spawn(move || {
@@ -566,6 +588,11 @@ fn serve(inner: Arc<Inner>, stream: Stream) {
                     .and_then(Value::as_array)
                     .map(|a| a.iter().filter_map(|t| t.as_str().map(String::from)).collect())
                     .unwrap_or_default();
+                #[cfg(feature = "trayhost")]
+                if topics.iter().any(|t| t == method::TRAY_HOST) && inner.tray_host.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
+                    conn.send(&Message::response(id, Err(LinkError::unsupported_method(method::TRAY_HOST))));
+                    continue;
+                }
                 if let Ok(mut t) = conn.topics.lock() {
                     t.clone_from(&topics);
                 }

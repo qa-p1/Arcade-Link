@@ -24,18 +24,20 @@ impl Handler for Host {
 pub fn run(loc: &Locations, args: &[String]) -> Result<(), String> {
     if args.get(1).is_some_and(|s| s == "host") {
         let host = TrayHostServer::new(true);
-        let server = Server::start(
+        let server = Server::start_with_tray_host(
             ServerConfig { locations: loc.clone(), app: PeerInfo { id: "arcade.tools".into(), version: env!("CARGO_PKG_VERSION").into() } },
             Arc::new(Host),
+            host.clone(),
         )
         .map_err(|e| e.to_string())?;
-        server.attach_tray_host(host.clone());
         let mut document: ManifestDocument =
             Manifest::new("arcade.tools", env!("CARGO_PKG_VERSION"), &std::env::current_exe().map_err(|e| e.to_string())?.to_string_lossy()).into();
         document.manifest.launch.background = vec!["tray".into(), "host".into()];
         document.additions.tray_host = Some(TrayHostSettings { enabled: true, excluded: Vec::new() });
         manifest::write_document(loc, &document).map_err(|e| e.to_string())?;
         eprintln!("tray host ready: hosted true|false, restarting, exclude <ids>, include <id>, quit, crash");
+        println!("ready");
+        io::stdout().flush().map_err(|e| e.to_string())?;
         commands(loc, &host, &mut document)?;
         host.shutdown();
         server.stop();
@@ -78,6 +80,8 @@ pub(crate) fn commands(loc: &Locations, host: &TrayHostServer, doc: &mut Manifes
             }
             ["restarting"] | ["restarting", "true"] => {
                 host.announce_restarting();
+                println!("ok {line}");
+                io::stdout().flush().map_err(|e| e.to_string())?;
                 continue;
             }
             ["exclude", ids @ ..] => {
@@ -98,6 +102,8 @@ pub(crate) fn commands(loc: &Locations, host: &TrayHostServer, doc: &mut Manifes
             }
         }
         manifest::write_document(loc, doc).map_err(|e| e.to_string())?;
+        println!("ok {line}");
+        io::stdout().flush().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
