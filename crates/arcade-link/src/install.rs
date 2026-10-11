@@ -186,7 +186,7 @@ pub fn detect(environment: &Environment, id: &str, runtime: &Runtime) -> io::Res
 /// Suppression is part of the shared contract. Persistent "don't ask again"
 /// preferences remain app-owned (the caller passes `dismissed`).
 pub fn should_prompt(detection: &Detection, args: &[String], no_prompt: bool, dismissed: bool) -> bool {
-    detection.is_app_image
+    (detection.is_app_image || (cfg!(target_os = "macos") && detection.running_from.extension().is_some_and(|extension| extension == "app")))
         && !matches!(detection.state, State::DevBuild | State::InstalledHere)
         && !no_prompt
         && env::var("ARCADE_NO_INSTALL_PROMPT").as_deref() != Ok("1")

@@ -478,7 +478,11 @@ bool ArcadeInstall::detect(const QString &id, const Runtime &runtime,
 }
 bool ArcadeInstall::shouldPrompt(const Detection &d, const QStringList &args,
                                  bool noPrompt, bool dismissed) {
-  if (!d.isAppImage || d.state == u"devBuild" || d.state == u"installedHere" ||
+  bool installable = d.isAppImage;
+#ifdef Q_OS_MACOS
+  installable = installable || d.runningFrom.endsWith(u".app");
+#endif
+  if (!installable || d.state == u"devBuild" || d.state == u"installedHere" ||
       noPrompt || dismissed ||
       qEnvironmentVariable("ARCADE_NO_INSTALL_PROMPT") == u"1")
     return false;

@@ -405,6 +405,17 @@ private slots:
     ArcadeInstall installer(e);
     const auto bundle = root.filePath(QStringLiteral("download/Find.app"));
     put(bundle + QStringLiteral("/Contents/MacOS/find"), "fixture");
+    ArcadeInstall::Runtime runtime;
+    runtime.executable = bundle + QStringLiteral("/Contents/MacOS/find");
+    ArcadeInstall::Detection detection;
+    QVERIFY(installer.detect(QStringLiteral("arcade.find"), runtime, &detection));
+    QCOMPARE(detection.runningFrom, bundle);
+    QVERIFY(!detection.isAppImage);
+    QVERIFY(ArcadeInstall::shouldPrompt(detection, {}));
+    for (const auto &arg : {"--background", "--arcade-invoke", "--arcade-manifest", "--version"})
+      QVERIFY(!ArcadeInstall::shouldPrompt(detection, {QString::fromLatin1(arg)}));
+    QVERIFY(!ArcadeInstall::shouldPrompt(detection, {}, true));
+    QVERIFY(!ArcadeInstall::shouldPrompt(detection, {}, false, true));
     // A real quarantine xattr is kept by ditto; never remove it.
     QCOMPARE(QProcess::execute(
                  QStringLiteral("/usr/bin/xattr"),

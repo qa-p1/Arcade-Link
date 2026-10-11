@@ -294,6 +294,24 @@ fn dev_detection_appimage_and_prompt_suppression() {
     assert!(strings::format(&strings::get().older.title, "Find", "0.3.0", "0.2.0", "0.3.0").contains("Update Find 0.2.0 → 0.3.0?"));
 }
 
+#[test]
+fn macos_bundle_prompt_uses_the_same_suppression_rules() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let bundle = root.0.join("download/Find.app");
+    let exe = bundle.join("Contents/MacOS/find");
+    fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    fs::write(&exe, b"bundle fixture").unwrap();
+    let detected = detect(&e, "arcade.find", &runtime(exe)).unwrap();
+    assert!(!detected.is_app_image);
+    assert_eq!(should_prompt(&detected, &[], false, false), cfg!(target_os = "macos"));
+    for flag in ["--background", "--arcade-invoke", "--arcade-manifest", "--version"] {
+        assert!(!should_prompt(&detected, &[flag.into()], false, false));
+    }
+    assert!(!should_prompt(&detected, &[], true, false));
+    assert!(!should_prompt(&detected, &[], false, true));
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn install_update_repair_uninstall_are_isolated_and_receipt_driven() {
