@@ -273,7 +273,10 @@
         "v": 1,
         "id": 1,
         "method": "app.shortcuts.set",
-        "params": {}
+        "params": {
+          "id": "toggle",
+          "accelerator": "Ctrl+Alt+F"
+        }
       },
       "response": {
         "v": 1,

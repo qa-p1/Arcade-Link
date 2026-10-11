@@ -150,7 +150,7 @@ static const QStringList &knownCodes()
     static const QStringList codes{
         QStringLiteral("not_installed"), QStringLiteral("not_running"), QStringLiteral("launch_failed"), QStringLiteral("timeout"),
         QStringLiteral("unsupported_input"), QStringLiteral("unavailable"), QStringLiteral("too_large"), QStringLiteral("denied"),
-        QStringLiteral("busy"), QStringLiteral("cancelled"), QStringLiteral("version_mismatch"), QStringLiteral("internal")};
+        QStringLiteral("busy"), QStringLiteral("cancelled"), QStringLiteral("version_mismatch"), QStringLiteral("unsupported"), QStringLiteral("internal")};
     return codes;
 }
 
@@ -173,6 +173,11 @@ Error Error::make(const QString &code, const QString &message, const QString &re
     e.reason = reason;
     e.limit = limit;
     return e;
+}
+
+bool Error::isUnsupported() const
+{
+    return code == u"unsupported" || (code == u"internal" && (reason == u"unsupported_method" || message.startsWith(u"unknown method")));
 }
 
 QString Error::userMessage(const QString &app) const { return standardMessage(code, app, reason, limit); }
@@ -535,7 +540,7 @@ void Registry::watch()
     connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, [this](const QString &path) {
         const bool appsChanged = refresh();
         // Endpoints appearing or disappearing change "running" state too.
-        if (appsChanged || path == m_locations.runtime) emit changed();
+        if (appsChanged || path == m_locations.runtime || path == m_locations.registry) emit changed();
     });
 }
 
@@ -628,6 +633,7 @@ struct Responder::State {
     std::shared_ptr<std::atomic_bool> cancel;
     bool answered = false;
     bool finished = false;
+    std::function<void()> onDone;
     ~State()
     {
         if (!answered && socket) socket->write(errorLine(requestId, Error::make(QStringLiteral("internal"), QStringLiteral("no answer"))));
@@ -647,6 +653,7 @@ void Responder::done(const QJsonObject &result) const
     if (!d || d->answered) return;
     d->answered = true;
     if (d->socket) d->socket->write(responseLine(d->requestId, result));
+    if (d->onDone) d->onDone();
 }
 
 void Responder::fail(const Error &error) const
@@ -769,11 +776,31 @@ void Server::stop()
     for (QLocalSocket *s : sockets) s->disconnectFromServer();
 }
 
+QStringList Server::methods() const
+{
+    QStringList out;
+    if (settings) out << QStringLiteral("app.settings");
+    if (restart) out << QStringLiteral("app.restart");
+    if (menu) out << QStringLiteral("app.menu");
+    if (menuInvoke) out << QStringLiteral("app.menu.invoke");
+    if (shortcutsSet) out << QStringLiteral("app.shortcuts.set");
+    if (settingsExport) out << QStringLiteral("app.settings.export");
+    if (settingsImport) out << QStringLiteral("app.settings.import");
+    return out;
+}
+
+void Server::notifyMenuChanged()
+{
+    const auto n = notificationLine(QStringLiteral("app.changed"), {{QStringLiteral("app"), m_appId}, {QStringLiteral("menu"), true}});
+    for (auto it = m_topics.cbegin(); it != m_topics.cend(); ++it)
+        if (it.value().contains(QStringLiteral("app.changed")) || it.value().contains(QStringLiteral("*"))) it.key()->write(n);
+}
+
 void Server::notifyChanged()
 {
     const QByteArray n = notificationLine(QStringLiteral("app.changed"), {{QStringLiteral("app"), m_appId}});
     for (auto it = m_topics.cbegin(); it != m_topics.cend(); ++it)
-        if (it.value().contains(QStringLiteral("app.changed"))) it.key()->write(n);
+        if (it.value().contains(QStringLiteral("app.changed")) || it.value().contains(QStringLiteral("*"))) it.key()->write(n);
 }
 
 void Server::onConnection()
@@ -838,7 +865,7 @@ void Server::handle(QLocalSocket *socket, const QJsonObject &m)
         return;
     }
     if (method == u"describe") {
-        socket->write(responseLine(id, QJsonObject{{QStringLiteral("actions"), describe ? describe() : QJsonArray()}}));
+        socket->write(responseLine(id, QJsonObject{{QStringLiteral("actions"), describe ? describe() : QJsonArray()}, {QStringLiteral("methods"), QJsonArray::fromStringList(methods())}}));
     } else if (method == u"invoke") {
         Responder r;
         r.d = std::make_shared<Responder::State>();
@@ -857,12 +884,19 @@ void Server::handle(QLocalSocket *socket, const QJsonObject &m)
         for (const auto &t : params.value(QStringLiteral("topics")).toArray()) topics << t.toString();
         m_topics.insert(socket, topics);
         socket->write(responseLine(id, QJsonObject{{QStringLiteral("topics"), QJsonArray::fromStringList(topics)}}));
+    } else if (method == u"unsubscribe") {
+        QStringList topics = m_topics.value(socket);
+        for (const auto &t : params.value(QStringLiteral("topics")).toArray()) topics.removeAll(t.toString());
+        m_topics.insert(socket, topics);
+        socket->write(responseLine(id, QJsonObject{{QStringLiteral("topics"), QJsonArray::fromStringList(topics)}}));
     } else if (method == u"app.status") {
+        QJsonObject details = status ? status() : QJsonObject();
+        if (trayState) details.insert(QStringLiteral("tray"), trayState());
         socket->write(responseLine(id, QJsonObject{{QStringLiteral("id"), m_appId}, {QStringLiteral("version"), m_version},
                                                    {QStringLiteral("pid"), QCoreApplication::applicationPid()},
                                                    {QStringLiteral("protocol"), ProtocolVersion}, {QStringLiteral("busy"), busy()},
                                                    {QStringLiteral("jobs"), m_jobs.size()},
-                                                   {QStringLiteral("status"), status ? QJsonValue(status()) : QJsonValue()}}));
+                                                   {QStringLiteral("status"), details}}));
     } else if (method == u"app.activate") {
         if (activate && activate()) socket->write(responseLine(id, QJsonObject{{QStringLiteral("activated"), true}}));
         else socket->write(errorLine(id, Error::make(QStringLiteral("unavailable"), QStringLiteral("cannot activate"), QStringLiteral("this app has no window to show"))));
@@ -874,12 +908,98 @@ void Server::handle(QLocalSocket *socket, const QJsonObject &m)
             socket->flush();
             if (quit) QTimer::singleShot(0, this, [this] { quit(); });
         }
+    } else if (method == u"app.restart" && restart) {
+        const QString mode = params.value(QStringLiteral("mode")).toString(QStringLiteral("normal"));
+        Error error;
+        if (mode != u"normal" && mode != u"force") error = Error::make(QStringLiteral("denied"), QStringLiteral("invalid restart mode"));
+        else if (busy() && mode != u"force") error = Error::make(QStringLiteral("busy"), QStringLiteral("jobs are running"));
+        else if (restartReady) error = restartReady(mode);
+        if (error.isError()) socket->write(errorLine(id, error));
+        else {
+            socket->write(responseLine(id, QJsonObject{{QStringLiteral("restarting"), true}}));
+            socket->flush();
+            QTimer::singleShot(0, this, [this, mode] { if (restart) restart(mode); });
+        }
     } else {
-        socket->write(errorLine(id, Error::make(QStringLiteral("internal"), QStringLiteral("unknown method %1").arg(method))));
+        MethodHandler handler;
+        if (method == u"app.settings") handler = settings;
+        else if (method == u"app.menu") handler = menu;
+        else if (method == u"app.menu.invoke") handler = menuInvoke;
+        else if (method == u"app.shortcuts.set") handler = shortcutsSet;
+        else if (method == u"app.settings.export") handler = settingsExport;
+        else if (method == u"app.settings.import") handler = settingsImport;
+        if (!handler) {
+            socket->write(errorLine(id, Error::make(QStringLiteral("unsupported"), QStringLiteral("unknown method %1").arg(method), QStringLiteral("unsupported_method"))));
+            return;
+        }
+        if (method == u"app.menu.invoke" && params.value(QStringLiteral("id")).toString().isEmpty()) {
+            socket->write(errorLine(id, Error::make(QStringLiteral("denied"), QStringLiteral("menu id is required"))));
+            return;
+        }
+        if (method == u"app.shortcuts.set" && (params.value(QStringLiteral("id")).toString().isEmpty() || !params.value(QStringLiteral("accelerator")).isString())) {
+            socket->write(errorLine(id, Error::make(QStringLiteral("denied"), QStringLiteral("shortcut id and accelerator are required"))));
+            return;
+        }
+        if (method == u"app.settings.import" && !params.value(QStringLiteral("inputs")).isArray()) {
+            socket->write(errorLine(id, Error::make(QStringLiteral("denied"), QStringLiteral("inputs must be an array"))));
+            return;
+        }
+        Responder r;
+        r.d = std::make_shared<Responder::State>();
+        r.d->server = this;
+        r.d->socket = socket;
+        r.d->requestId = id;
+        r.d->peerId = socket->property("arcadePeer").toString();
+        if (method == u"app.menu.invoke") r.d->onDone = [server = QPointer<Server>(this)] { if (server) server->notifyMenuChanged(); };
+        handler(params, r);
     }
 }
 
 // ---- Client ----------------------------------------------------------------
+
+QJsonObject Client::describe(Error *error) { return call(QStringLiteral("describe"), {}, error).toObject(); }
+bool Client::settings(Error *error) { return call(QStringLiteral("app.settings"), {}, error).toObject().value(QStringLiteral("opened")).toBool(); }
+bool Client::restart(const QString &mode, Error *error)
+{
+    QJsonObject p;
+    if (!mode.isEmpty()) p.insert(QStringLiteral("mode"), mode);
+    return call(QStringLiteral("app.restart"), p, error).toObject().value(QStringLiteral("restarting")).toBool();
+}
+QJsonArray Client::menu(Error *error) { return call(QStringLiteral("app.menu"), {}, error).toObject().value(QStringLiteral("items")).toArray(); }
+bool Client::menuInvoke(const QString &id, Error *error)
+{
+    return call(QStringLiteral("app.menu.invoke"), {{QStringLiteral("id"), id}}, error).toObject().value(QStringLiteral("done")).toBool();
+}
+QJsonObject Client::shortcutsSet(const QString &id, const QString &accelerator, Error *error)
+{
+    return call(QStringLiteral("app.shortcuts.set"), {{QStringLiteral("id"), id}, {QStringLiteral("accelerator"), accelerator}}, error).toObject();
+}
+QJsonArray Client::settingsExport(Error *error) { return call(QStringLiteral("app.settings.export"), {}, error).toObject().value(QStringLiteral("outputs")).toArray(); }
+QJsonObject Client::settingsImport(const QJsonArray &inputs, Error *error)
+{
+    return call(QStringLiteral("app.settings.import"), {{QStringLiteral("inputs"), inputs}}, error).toObject();
+}
+bool Client::subscribe(const QStringList &topics, Error *error)
+{
+    Error local;
+    call(QStringLiteral("subscribe"), {{QStringLiteral("topics"), QJsonArray::fromStringList(topics)}}, &local);
+    if (error) *error = local;
+    return !local.isError();
+}
+bool Client::nextNotification(QJsonObject *out, Error *error, int timeoutMs)
+{
+    if (!m_notifications.isEmpty()) { if (out) *out = m_notifications.takeFirst(); return true; }
+    QJsonObject message;
+    if (!readMessage(&message, timeoutMs, error)) return false;
+    if (!message.contains(QStringLiteral("id")) && message.contains(QStringLiteral("method"))) {
+        if (out) *out = message;
+        return true;
+    }
+    if (error) *error = Error::make(QStringLiteral("internal"), QStringLiteral("expected a notification"));
+    return false;
+}
+
+
 
 Client::~Client() = default;
 
@@ -949,6 +1069,7 @@ bool Client::readMessage(QJsonObject *out, int timeoutMs, Error *error)
 
 QJsonValue Client::call(const QString &method, const QJsonObject &params, Error *error, int timeoutMs)
 {
+    if (error) *error = {};
     const qint64 id = ++m_nextId;
     m_socket->write(requestLine(id, method, params));
     m_socket->waitForBytesWritten(timeoutMs);

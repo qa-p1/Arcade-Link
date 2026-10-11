@@ -35,6 +35,8 @@ USAGE
   arcade-link shortcuts markdown <file>       Generate shortcuts.md
   arcade-link settings <app>                  Open settings
   arcade-link restart <app> [--force]          Restart a running app
+  arcade-link call <app> <method> [--params JSON]
+                                              Call an optional protocol method
 
 <app> is a canonical ID (arcade.box) or its short form (box).";
 
@@ -101,6 +103,16 @@ fn main() -> ExitCode {
         Some("shortcuts") => shortcuts(&loc, &args),
         Some("settings") => simple(&loc, &args, "app.settings", json!({})),
         Some("restart") => simple(&loc, &args, "app.restart", json!({"mode": if flag(&args,"--force") {"force"} else {"normal"}})),
+        Some("call") => {
+            let method = args.get(2).ok_or_else(|| "call needs an app and method".to_string());
+            method.and_then(|method| {
+                let params: Value = serde_json::from_str(value(&args, "--params").unwrap_or("{}")).map_err(|e| e.to_string())?;
+                if !params.is_object() {
+                    return Err("params must be a JSON object".into());
+                }
+                simple(&loc, &args, method, params)
+            })
+        }
         Some("mock") => mock::run(&loc, &args),
         Some("check-manifest") => check_manifest(&args),
         Some("-V" | "--version") => {
