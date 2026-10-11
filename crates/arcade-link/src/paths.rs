@@ -180,6 +180,26 @@ pub fn user_id() -> u32 {
     }
 }
 
+/// Runs a file operation that Windows can briefly refuse with "access denied"
+/// while another handle replaces or reads the same file (concurrent atomic
+/// writers). Other platforms and other errors return immediately.
+pub(crate) fn retry_sharing<T>(mut op: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    #[cfg(windows)]
+    {
+        let mut delay = 1;
+        for _ in 0..40 {
+            match op() {
+                Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                    std::thread::sleep(std::time::Duration::from_millis(delay));
+                    delay = (delay * 2).min(25);
+                }
+                result => return result,
+            }
+        }
+    }
+    op()
+}
+
 /// Writes `bytes` to `path` through a temporary file and an atomic rename.
 /// The file is readable only by the current user on Unix.
 pub fn write_atomic(path: &Path, bytes: &[u8], private: bool) -> io::Result<()> {
@@ -205,7 +225,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8], private: bool) -> io::Result<()> 
         f.write_all(bytes)?;
         f.sync_all()?;
         drop(f);
-        fs::rename(&tmp, path)
+        retry_sharing(|| fs::rename(&tmp, path))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);

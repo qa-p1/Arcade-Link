@@ -194,7 +194,8 @@ impl Store {
         Ok(self.dir.join(format!("{id}.json")))
     }
     pub fn read(&self, id: &str) -> io::Result<Option<Receipt>> {
-        match fs::read_to_string(self.path(id)?) {
+        let path = self.path(id)?;
+        match paths::retry_sharing(|| fs::read_to_string(&path)) {
             Ok(text) => {
                 let receipt = Receipt::from_json(&text)?;
                 if receipt.id != id {

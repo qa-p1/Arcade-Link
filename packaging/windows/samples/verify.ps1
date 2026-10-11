@@ -123,11 +123,17 @@ try {
         $startup = Join-Path ([Environment]::GetFolderPath('Startup')) ($case.Name + '.lnk')
         ForeignShortcut $desktop
         ForeignShortcut $startup
+        $setupLog = Join-Path ([IO.Path]::GetTempPath()) ($case.Id + '-unchecked-tasks.log')
         $arguments = if ($case.Id -eq 'arcade.ci-inno') {
-            @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=""')
+            @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=""',('/LOG="' + $setupLog + '"'))
         } else { @('/S','/STARTATLOGIN=0','/DESKTOPSHORTCUT=0') }
         Run (Join-Path $PSScriptRoot $case.Setup) $arguments
         $receipt = Join-Path $root ('installs\' + $case.Id + '.json')
+        if (-not (Test-Path -LiteralPath $receipt)) {
+            Write-Host ('Receipts present: ' + ((Get-ChildItem -LiteralPath (Join-Path $root 'installs') -ErrorAction SilentlyContinue | ForEach-Object Name) -join ', '))
+            if (Test-Path -LiteralPath $setupLog) { Get-Content -Raw -LiteralPath $setupLog | Write-Host }
+            throw ($case.Id + ': reinstall without tasks wrote no receipt')
+        }
         $r = Get-Content -Raw -LiteralPath $receipt -Encoding UTF8 | ConvertFrom-Json
         Assert (-not $r.integration.desktopShortcut -and -not $r.integration.autostart) 'unchecked tasks were recorded'
         ForeignShortcut $r.integration.desktopEntry
