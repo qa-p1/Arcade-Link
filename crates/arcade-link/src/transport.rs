@@ -9,6 +9,89 @@ use interprocess::local_socket::{prelude::*, ConnectOptions, GenericFilePath, Li
 
 use crate::paths::Locations;
 
+#[cfg(windows)]
+mod windows;
+
+/// The named-pipe backend has no timeout support. Use native overlapped I/O
+/// with event waits there; Unix keeps its existing socket implementation.
+/// A manual cancellation event also covers closing just before a read starts.
+#[derive(Clone)]
+pub(crate) struct IoControl {
+    #[cfg(windows)]
+    native: std::sync::Arc<windows::State>,
+}
+impl IoControl {
+    pub(crate) fn new() -> io::Result<Self> {
+        Ok(Self {
+            #[cfg(windows)]
+            native: std::sync::Arc::new(windows::State::new()?),
+        })
+    }
+    pub(crate) fn recv_timeout(&self, stream: &Stream, timeout: Option<Duration>) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            let _ = stream;
+            self.native.recv_timeout(timeout);
+            Ok(())
+        }
+        #[cfg(unix)]
+        {
+            stream.set_recv_timeout(timeout)
+        }
+    }
+    pub(crate) fn send_timeout(&self, stream: &Stream, timeout: Option<Duration>) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            let _ = stream;
+            self.native.send_timeout(timeout);
+            Ok(())
+        }
+        #[cfg(unix)]
+        {
+            stream.set_send_timeout(timeout)
+        }
+    }
+    pub(crate) fn read(&self, stream: &Stream, buf: &mut [u8]) -> io::Result<usize> {
+        #[cfg(windows)]
+        {
+            self.native.read(stream, buf)
+        }
+        #[cfg(unix)]
+        {
+            std::io::Read::read(&mut &*stream, buf)
+        }
+    }
+    pub(crate) fn write(&self, stream: &Stream, buf: &[u8]) -> io::Result<usize> {
+        #[cfg(windows)]
+        {
+            self.native.write(stream, buf)
+        }
+        #[cfg(unix)]
+        {
+            std::io::Write::write(&mut &*stream, buf)
+        }
+    }
+    pub(crate) fn flush(&self, stream: &Stream) -> io::Result<()> {
+        // FlushFileBuffers waits for the peer to consume bytes and has no
+        // deadline. Writes already queue ordered bytes; interprocess's limbo
+        // handles draining at drop, marked dirty by our native write helper.
+        #[cfg(windows)]
+        {
+            let _ = stream;
+            Ok(())
+        }
+        #[cfg(unix)]
+        {
+            std::io::Write::flush(&mut &*stream)
+        }
+    }
+    pub(crate) fn close(&self, stream: &Stream) {
+        #[cfg(windows)]
+        self.native.cancel();
+        close(stream);
+    }
+}
+
 /// Unix socket paths must fit `sun_path` (104 bytes on macOS, 108 on Linux).
 pub const MAX_SOCKET_PATH: usize = 100;
 
@@ -106,6 +189,18 @@ pub fn connect(address: &str, timeout: Duration) -> io::Result<Stream> {
     #[cfg(not(unix))]
     let _ = timeout;
     opts.connect_sync()
+}
+
+pub(crate) fn close(stream: &Stream) {
+    #[cfg(unix)]
+    {
+        #[allow(irrefutable_let_patterns)]
+        if let Stream::UdSocket(s) = stream {
+            let _ = s.inner().shutdown(std::net::Shutdown::Both);
+        }
+    }
+    #[cfg(windows)]
+    cancel_io(stream);
 }
 
 #[cfg(all(test, unix))]

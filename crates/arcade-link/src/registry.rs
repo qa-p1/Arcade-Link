@@ -10,14 +10,14 @@ use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use crate::content::Content;
-use crate::manifest::{Action, Manifest};
+use crate::manifest::{Action, Manifest, ManifestAdditions, ManifestDocument};
 use crate::paths::Locations;
 
 #[derive(Debug, Clone)]
 struct Entry {
     modified: Option<SystemTime>,
     len: u64,
-    manifest: Option<Manifest>,
+    manifest: Option<ManifestDocument>,
 }
 
 /// A snapshot of the installed apps.
@@ -26,12 +26,13 @@ pub struct Registry {
     dir: PathBuf,
     entries: HashMap<PathBuf, Entry>,
     apps: Vec<Manifest>,
+    additions: HashMap<String, ManifestAdditions>,
 }
 
 impl Registry {
     /// An empty registry for `locations`; call [`Registry::refresh`] to read it.
     pub fn new(locations: &Locations) -> Registry {
-        Registry { dir: locations.registry.clone(), entries: HashMap::new(), apps: Vec::new() }
+        Registry { dir: locations.registry.clone(), entries: HashMap::new(), apps: Vec::new(), additions: HashMap::new() }
     }
 
     /// Reads the registry now.
@@ -61,16 +62,19 @@ impl Registry {
                 let modified = meta.modified().ok();
                 let entry = match self.entries.get(&path) {
                     Some(old) if old.modified == modified && old.len == meta.len() => old.clone(),
-                    _ => Entry { modified, len: meta.len(), manifest: std::fs::read_to_string(&path).ok().and_then(|t| Manifest::from_json(&t).ok()) },
+                    _ => Entry { modified, len: meta.len(), manifest: std::fs::read_to_string(&path).ok().and_then(|t| ManifestDocument::from_json(&t).ok()) },
                 };
                 seen.insert(path, entry);
             }
         }
-        let mut apps: Vec<Manifest> = seen.values().filter_map(|e| e.manifest.clone()).filter(Manifest::executable_exists).collect();
+        let docs: Vec<_> = seen.values().filter_map(|e| e.manifest.as_ref()).filter(|d| d.manifest.executable_exists()).collect();
+        let additions: HashMap<_, _> = docs.iter().map(|d| (d.manifest.id.clone(), d.additions.clone())).collect();
+        let mut apps: Vec<Manifest> = docs.iter().map(|d| d.manifest.clone()).collect();
         apps.sort_by(|a, b| a.id.cmp(&b.id));
         self.entries = seen;
-        let changed = apps != self.apps;
+        let changed = apps != self.apps || additions != self.additions;
         self.apps = apps;
+        self.additions = additions;
         changed
     }
 
@@ -81,6 +85,20 @@ impl Registry {
 
     pub fn get(&self, app_id: &str) -> Option<&Manifest> {
         self.apps.iter().find(|m| m.id == app_id)
+    }
+
+    pub fn additions(&self, app_id: &str) -> Option<&ManifestAdditions> {
+        self.additions.get(app_id)
+    }
+
+    /// Disk generation of an app manifest. Rewriting an identical manifest
+    /// is a readiness event even when its semantic fields do not change.
+    pub fn revision(&self, app_id: &str) -> Option<(Option<SystemTime>, u64)> {
+        self.entries.values().find(|e| e.manifest.as_ref().is_some_and(|d| d.manifest.id == app_id)).map(|e| (e.modified, e.len))
+    }
+
+    pub fn document(&self, app_id: &str) -> Option<ManifestDocument> {
+        Some(ManifestDocument { manifest: self.get(app_id)?.clone(), additions: self.additions(app_id).cloned().unwrap_or_default() })
     }
 
     /// Installed peers other than `me`.
@@ -182,10 +200,11 @@ impl SharedRegistry {
                 return;
             }
             let changed_runtime = event.paths.iter().any(|p| p.extension().is_some_and(|x| x == "endpoint"));
+            let changed_manifest = event.paths.iter().any(|p| p.extension().is_some_and(|x| x == "json"));
             let snapshot = match inner.write() {
                 Ok(mut r) => {
                     let changed = r.refresh();
-                    if !changed && !changed_runtime {
+                    if !changed && !changed_runtime && !changed_manifest {
                         return;
                     }
                     r.clone()

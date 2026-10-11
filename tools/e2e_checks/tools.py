@@ -117,7 +117,7 @@ class GUI:
         if not background:
             self.window = self.s.wait_window("^Arcade Tools$")
             try:
-                self.wait(lambda r: len(r.get("apps", [])) == 5)
+                self.wait(lambda r: len(r.get("apps", [])) == len(APP_IDS))
             except AssertionError:
                 self.shot("tools-startup-error")
                 raise
@@ -208,7 +208,7 @@ def gui_verified_lifecycle_with_real_busy_peer(s):
         gui.start()
         before = gui.report()["revision"]
         gui.click(id="refresh")
-        gui.wait(lambda r: r["revision"] > before and len(r.get("apps", [])) == 5)
+        gui.wait(lambda r: r["revision"] > before and len(r.get("apps", [])) == len(APP_IDS))
         gui.click("Arcade Box channel", app="arcade.box")
         s.xdotool("key", "Escape")  # Also force a native paint after the Xvfb resize.
         assert all(not a["managed"] for a in gui.report()["apps"]), gui.report()

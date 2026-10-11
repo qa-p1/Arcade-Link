@@ -12,7 +12,7 @@ name = "arcade-link"
 path = "src/main.rs"
 
 [dependencies]
-arcade-link = { path = "../arcade-link", features = ["watch"] }
+arcade-link = { path = "../arcade-link", features = ["watch", "trayhost", "install"] }
 serde_json = "1"
 
 [target.'cfg(unix)'.dependencies]

@@ -180,6 +180,26 @@ pub fn user_id() -> u32 {
     }
 }
 
+/// Runs a file operation that Windows can briefly refuse with "access denied"
+/// while another handle replaces or reads the same file (concurrent atomic
+/// writers). Other platforms and other errors return immediately.
+pub(crate) fn retry_sharing<T>(mut op: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    #[cfg(windows)]
+    {
+        let mut delay = 1;
+        for _ in 0..40 {
+            match op() {
+                Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                    std::thread::sleep(std::time::Duration::from_millis(delay));
+                    delay = (delay * 2).min(25);
+                }
+                result => return result,
+            }
+        }
+    }
+    op()
+}
+
 /// Writes `bytes` to `path` through a temporary file and an atomic rename.
 /// The file is readable only by the current user on Unix.
 pub fn write_atomic(path: &Path, bytes: &[u8], private: bool) -> io::Result<()> {
@@ -187,10 +207,13 @@ pub fn write_atomic(path: &Path, bytes: &[u8], private: bool) -> io::Result<()> 
     let dir = path.parent().ok_or_else(|| io::Error::other("path has no parent"))?;
     fs::create_dir_all(dir)?;
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-    let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
-    {
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(io::Error::other)?;
+    let suffix: String = random.iter().map(|b| format!("{b:02x}")).collect();
+    let tmp = dir.join(format!(".{name}.{suffix}.tmp"));
+    let result = (|| {
         let mut opts = fs::OpenOptions::new();
-        opts.write(true).create(true).truncate(true);
+        opts.write(true).create_new(true);
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
@@ -200,11 +223,14 @@ pub fn write_atomic(path: &Path, bytes: &[u8], private: bool) -> io::Result<()> 
         let _ = private;
         let mut f = opts.open(&tmp)?;
         f.write_all(bytes)?;
-        f.sync_all().ok();
-    }
-    fs::rename(&tmp, path).inspect_err(|_| {
+        f.sync_all()?;
+        drop(f);
+        retry_sharing(|| fs::rename(&tmp, path))
+    })();
+    if result.is_err() {
         let _ = fs::remove_file(&tmp);
-    })
+    }
+    result
 }
 
 #[cfg(test)]

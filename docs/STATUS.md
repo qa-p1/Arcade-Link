@@ -1,46 +1,72 @@
-# Arcade Link: status
+# Arcade Link status
 
-Documentation review: 2026-10-08. Protocol v1 and manifest schema 1 remain
-compatible. The existing apps pin published tag `v0.2.0` (2026-10-10, adds
-Shelf and Find; see the [changelog](../CHANGELOG.md)); changes on `main` do
-not move a tag.
+Updated 2026-10-11 for v0.3.0, protocol 1 and manifest schema 1.
+Work is in `arcade/tools-hub-core`, pushed to `arcade/tools-hub` for
+[PR #3](https://github.com/qa-p1/Arcade-Link/pull/3). Merge and the v0.3.0 tag
+remain owner actions.
 
-## Implemented and verified
+## Implemented
 
-The Rust library and Qt module provide the registry, local transport, content
-matching, invocation, lifecycle and conformance behavior documented in
-[SPEC.md](../SPEC.md). Rust's optional features are `watch` and `engines`.
-There is no always-running broker. Shared engine support currently provides
-Tesseract discovery and an explicit per-user download.
+Rust and Qt provide optional app control methods, feature detection, tray
+hosting, canonical accelerators, shortcut documents/sheets, receipts and
+installation/platform helpers. Existing APIs and the original accelerator
+vector pairs remain compatible. The CLI and mock peers exercise the new
+methods and hosting; fixtures include menu/docs/methods and Tools' hosting
+settings. Shared Windows installer includes, dialog strings, release metadata,
+all eight SVG glyphs and their 16/22/24/32/48 PNG renders are present.
 
-Native Linux, Windows and macOS Rust/Qt CI builds and tests passed at
-`e0e20c2` ([CI evidence](https://github.com/qa-p1/Arcade-Link/actions/runs/37795738247)).
-The completed app integration passed 74/74 isolated ecosystem checks; detailed
-commands, implementation commits, stress results and platform evidence are in
-the [completion report](../COMPLETION_REPORT.md). These are recorded runs, not
-a claim that a documentation edit reran the interactive suite.
+Qt watches the registry/socket off the GUI thread and delivers queued signals
+on its owning thread. Its conformance and interop tests cover all vectors,
+Qt clients against Rust methods, Rust clients against Qt methods and the Qt
+watcher against the Rust fake host. `tools/vendor_qt.py` creates/verifies a
+complete commit/checksum-pinned bundle for app adoption.
+
+The isolated `presence,trayhost,install,shortcuts` e2e selection uses mock
+peers, crate-backed watchers and a temporary AppImage harness. Existing real
+fleet groups remain available, with missing/stale binary diagnostics. Bench
+probes measure tray hand-back and scaffold host idle/overlay instrumentation;
+the mock overlay paints nothing and does not establish production budgets.
+The shared new-app brief is mirrored in `NEW_APP_SPEC.md`.
+
+## Verified
+
+Linux local verification uses system Rust 1.99, C++20/Qt 6.11 and Python 3.14.
+Format, Clippy (including locked), workspace tests, each feature alone,
+Python tests, five Qt test executables, isolated e2e and benchmark scaffolds
+pass. Find and Tools compile unchanged against a patched Link in temporary
+source copies; their original checkouts remain clean.
+
+[Native CI](https://github.com/qa-p1/Arcade-Link/actions/runs/38154982039)
+passes Rust 1.88 and Qt 6.8 on Linux, Windows and macOS, plus silent Inno/NSIS
+install/uninstall. Installer CI also covers old-copy uninstall after a newer
+installation and isolated PATH identity parity. Later updates and the current
+head's check results are on [the PR checks page](https://github.com/qa-p1/Arcade-Link/pull/3/checks).
+
+The [implementation report](V0.3_REPORT.md) gives commands/output tails,
+regression test names, focused commits and current CI evidence.
 
 ## Limits
 
-- Windows/macOS CI tests are not interactive app validation. Full Wayland
-  screen/recorder flows still need a real-platform run.
-- Whole-app benchmark regressions passed, but the data do not prove zero idle
-  wakeups or isolate Link's one-MiB RSS target. Box recorded nonzero idle CPU.
-- Same-user transport authentication does not establish application identity.
-- Shared app lists and Tools mappings are explicit; new app onboarding requires
-  the integration changes described in the [new-app brief](../NEW_APP_SPEC.md).
-- Signed releases/minisign, targeted mesh delivery and remote invocation remain
-  outside the completed scope. Each app's status file records its own release gates.
+- Application adoption, full Tools product/hub e2e, real desktop dialogs,
+  tray icon painting and production Tools/overlay performance follow later.
+  Main sibling checkouts currently have no `docs/user/shortcuts.json`; the
+  latest optional-doc scan validates 31 available catalog sheets and reports
+  all seven missing app docs. The owner's earlier fleet validator run is
+  separate evidence from the local run recorded here.
+- One Rust engine-download test is intentionally ignored. Two optional Python
+  JSON Schema tests skip without `jsonschema`; semantic/shared-vector tests
+  and canonical key schema-regex checks run without extra dependencies.
+- Linux rollback covers ordinary I/O failure across multiple paths, not
+  power-loss atomicity. Cache refresh is non-fatal; repair cannot recreate
+  missing icon bytes without the app's bundled assets.
+- Native CI is not an interactive desktop check. macOS ditto retains
+  quarantine; signing/notarization, Gatekeeper and real translocation remain
+  app release checks. Windows receipts use private user/SYSTEM ACLs, not
+  Unix permission bits.
+- Same-user IPC authentication does not prove app identity. Apps own secret
+  exclusion, imported-settings validation/backups, live shortcut registration,
+  persistence, dialogs and restart successor waiting.
 
-## Documents
-
-| Document | Purpose |
-|---|---|
-| [README](../README.md) | Library/CLI overview and build commands |
-| [SPEC](../SPEC.md) | Current protocol and integration contract |
-| [New-app brief](../NEW_APP_SPEC.md) | Portable instructions to attach to a new app idea |
-| [Completion report](../COMPLETION_REPORT.md) | Implementation results, evidence and remaining limits |
-| [Ecosystem plan](../ARCADE_ECOSYSTEM_PLAN.md) | Historical plan with final results in §16 |
-| [Benchmark record](../benchmarks/baseline.md) | Baseline, final measurements and caveats |
-| [E2E check modules](../tools/e2e_checks/README.md) | Adding isolated ecosystem checks |
-| [Assets](../assets/README.md) | Shared glyphs and integration tokens |
+No real profile, shell startup file, autostart, icon or Hyprland configuration
+was changed. Every mutating check uses explicit temporary roots or scoped
+ARCADE_HOME/XDG values, and only started child processes are stopped.
