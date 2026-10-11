@@ -11,6 +11,22 @@ $cases = @(
     @{ Id='arcade.ci-inno'; Name='Arcade Link CI Inno'; Cli='arcade-ci-inno'; Setup='sample-inno.exe'; Args=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/MERGETASKS=arcade_startup,arcade_desktop'); Uninstaller='unins000.exe'; UninstallArgs=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') },
     @{ Id='arcade.ci-nsis'; Name='Arcade Link CI NSIS'; Cli='arcade-ci-nsis'; Setup='sample-nsis.exe'; Args=@('/S','/STARTATLOGIN=1','/DESKTOPSHORTCUT=1'); Uninstaller='uninstall.exe'; UninstallArgs=@('/S') }
 )
+$foreignShortcuts = @{}
+function ForeignShortcut([string]$Path) {
+    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path)) | Out-Null
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $null
+    try {
+        $shortcut = $shell.CreateShortcut($Path)
+        $shortcut.TargetPath = Join-Path $env:WINDIR 'System32\cmd.exe'
+        $shortcut.Description = 'Foreign shortcut regression fixture'
+        $shortcut.Save()
+        $foreignShortcuts[$Path] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($Path))
+    } finally {
+        if ($shortcut) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) | Out-Null }
+        [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null
+    }
+}
 function Run([string]$Exe, [string[]]$Arguments) {
     $process = Start-Process -FilePath $Exe -ArgumentList $Arguments -Wait -PassThru
     if ($process.ExitCode -ne 0) {
@@ -99,11 +115,40 @@ try {
         Assert (-not (Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Desktop')) ($case.Name + '.lnk')))) ($case.Id + ': desktop shortcut remained after uninstall')
     }
     Write-Host 'Both silent uninstalls and last-one-out Path removal passed'
+    foreach ($case in $cases) {
+        # Regression: unchecked tasks never authorize deleting filenames that
+        # happen to match this app, and a recorded shortcut may become foreign.
+        $case.ActiveDir = $case.OldDir
+        $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) ($case.Name + '.lnk')
+        $startup = Join-Path ([Environment]::GetFolderPath('Startup')) ($case.Name + '.lnk')
+        ForeignShortcut $desktop
+        ForeignShortcut $startup
+        $arguments = if ($case.Id -eq 'arcade.ci-inno') {
+            @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=""')
+        } else { @('/S','/STARTATLOGIN=0','/DESKTOPSHORTCUT=0') }
+        Run (Join-Path $PSScriptRoot $case.Setup) $arguments
+        $receipt = Join-Path $root ('installs\' + $case.Id + '.json')
+        $r = Get-Content -Raw -LiteralPath $receipt -Encoding UTF8 | ConvertFrom-Json
+        Assert (-not $r.integration.desktopShortcut -and -not $r.integration.autostart) 'unchecked tasks were recorded'
+        ForeignShortcut $r.integration.desktopEntry
+        Uninstall $case
+        foreach ($entry in @($desktop, $startup, $r.integration.desktopEntry)) {
+            Assert (Test-Path -LiteralPath $entry) ('uninstall removed foreign shortcut: ' + $entry)
+            Assert ([Convert]::ToBase64String([IO.File]::ReadAllBytes($entry)) -eq $foreignShortcuts[$entry]) ('uninstall changed foreign shortcut: ' + $entry)
+        }
+        Assert (-not (Test-Path -LiteralPath $receipt)) 'receipt survived ownership-aware uninstall'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $bin ($case.Cli + '.cmd')))) 'owned shim survived uninstall'
+        Write-Host "$($case.Id): unchecked desktop/startup tasks and changed recorded shortcut survived uninstall"
+    }
+    Assert ((PathCount) -eq 0) 'ownership regression left the shared Path entry'
 } finally {
     foreach ($case in $cases) {
         try { Uninstall $case } catch { Write-Warning $_ }
         Remove-Item -LiteralPath (Installed $case) -Recurse -Force -ErrorAction SilentlyContinue
         if ($case.OldDir) { Remove-Item -LiteralPath $case.OldDir -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    foreach ($entry in $foreignShortcuts.Keys) {
+        Remove-Item -LiteralPath $entry -Force -ErrorAction SilentlyContinue
     }
     if ($hadPath) { $key.SetValue('Path', $oldPath, $oldKind) } else { $key.DeleteValue('Path', $false) }
     $key.Dispose()
