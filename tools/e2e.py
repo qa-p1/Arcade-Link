@@ -254,9 +254,18 @@ class Session:
         p = self.root / f"{app}.log"
         return p.read_text(errors="replace")[-3000:] if p.exists() else ""
 
-    def kill(self, app: str, sig=signal.SIGKILL) -> None:
+    def kill(self, app: str, sig=None) -> None:
         p = self.procs.pop(app, None)
         if p and p.poll() is None:
+            if os.name == "nt":
+                if sig is None:
+                    p.kill()
+                else:
+                    p.terminate()
+                p.wait(timeout=5)
+                return
+            if sig is None:
+                sig = signal.SIGKILL
             try:
                 os.killpg(p.pid, sig)
             except ProcessLookupError:

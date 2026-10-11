@@ -3,10 +3,19 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 import e2e
 
 
 class RunnerTests(unittest.TestCase):
+    def test_runner_imports_without_posix_kill_signal(self):
+        spec = importlib.util.spec_from_file_location("arcade_e2e_windows", e2e.LINK / "tools/e2e.py")
+        module = importlib.util.module_from_spec(spec)
+        signals = type("WindowsSignals", (), {"SIGTERM": e2e.signal.SIGTERM})()
+        with mock.patch.dict("sys.modules", {"signal": signals}):
+            spec.loader.exec_module(module)
+        self.assertEqual(module.APP_IDS, e2e.APP_IDS)
+
     def test_app_count_tracks_the_rust_list_and_shelf_uses_cpp(self):
         self.assertEqual(set(e2e.APP_IDS), set(e2e.APPS))
         self.assertEqual(len(e2e.APP_IDS), 7)

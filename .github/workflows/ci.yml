@@ -71,6 +71,14 @@ jobs:
           cli="$PWD/target/debug/arcade-link"
           [ -f "$cli.exe" ] && cli="$cli.exe"
           ARCADE_LINK_CLI="$cli" ctest --test-dir qt/build -C Release --output-on-failure
+      - name: Print Qt test logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem qt/build -Filter '*.txt' | Where-Object Name -ne 'CMakeCache.txt' | ForEach-Object {
+            Write-Host "Qt test log: $($_.Name)"
+            Get-Content $_.FullName
+          }
 
   windows-installers:
     name: Shared Windows installers (CI account only)
