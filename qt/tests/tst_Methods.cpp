@@ -279,21 +279,33 @@ private slots:
       }
     } stop{mock};
     QVERIFY(mock.waitForStarted());
+    // Presence publishes its manifest before binding the socket. Wait for the
+    // mock's post-bind acknowledgement, rather than treating publication as
+    // readiness on a loaded CI runner.
+    QByteArray startup;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        (startup += mock.readAllStandardError()).contains("listening ("), 10000);
     QTRY_VERIFY_WITH_TIMEOUT(
         QFileInfo::exists(loc.manifestPath(Ids::Clipboard)), 10000);
     bool ok = false;
+    QString failure;
     worker([&] {
       Error e;
       auto c = Client::connect(loc, Ids::Clipboard, Ids::Tools,
-                               QStringLiteral("1"), 3000, &e);
-      if (!c)
+                               QStringLiteral("1"), 10000, &e);
+      if (!c) {
+        failure = QStringLiteral("connect: %1 (%2)").arg(e.message, e.reason);
         return;
+      }
       const auto menu = c->menu(&e);
       if (menu.isEmpty() || !c->settings(&e) || !c->restart({}, &e) ||
           !c->menuInvoke(
               menu.first().toObject().value(QStringLiteral("id")).toString(),
-              &e))
+              &e)) {
+        failure = QStringLiteral("menu/settings/restart/invoke: %1 (%2)")
+                      .arg(e.message, e.reason);
         return;
+      }
       const auto files = c->settingsExport(&e);
       ok = !files.isEmpty() &&
            c->settingsImport(files, &e)
@@ -301,8 +313,11 @@ private slots:
                .toBool() &&
            c->describe(&e).value(QStringLiteral("methods")).toArray().size() ==
                7;
+      if (!ok)
+        failure = QStringLiteral("export/import/describe: %1 (%2)")
+                      .arg(e.message, e.reason);
     });
-    QVERIFY(ok);
+    QVERIFY2(ok, qPrintable(failure));
     Server server(Ids::Wheel, QStringLiteral("0.3.0"), loc);
     configure(server, {{QStringLiteral("result"),
                         QJsonObject{{QStringLiteral("done"), true}}}});
