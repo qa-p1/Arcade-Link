@@ -643,6 +643,13 @@ files and links intact and report them in `integration.skipped` as
 `{path, reason}`; these diagnostic entries are never owned or removed.
 Reuse or remove a previous binary only when the old receipt records it;
 otherwise choose an unused path. Rollback restores saved links atomically.
+Recheck launcher, autostart and CLI ownership on update, repair and uninstall;
+a receipt is not proof that a current entry still belongs to the app. Repair
+detaches conflicting entries and records them as skipped. Uninstall refuses
+before any deletion when a recorded entry has changed ownership, with a path
+in the error; repair can detach it before retrying. Integration status reports
+these conflicts without writing. Atomic writes replace the final directory
+entry itself and never follow a final symlink.
 Desktop/icon cache refresh commands, when available, are non-fatal.
 Re-exec from the installed path with original args only when launch policy
 requests it. Uninstall reverses receipt paths only, plus caller-supplied

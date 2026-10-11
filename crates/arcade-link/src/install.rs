@@ -442,7 +442,38 @@ fn available_entry(path: &Path, owned: bool) -> io::Result<bool> {
 
 #[cfg(target_os = "linux")]
 fn skipped(integration: &mut Integration, path: PathBuf) {
-    integration.skipped.push(SkippedEntry { path, reason: "existing entry belongs to another installation".into() });
+    if !integration.skipped.iter().any(|entry| entry.path == path) {
+        integration.skipped.push(SkippedEntry { path, reason: "existing entry belongs to another installation".into() });
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn recorded_desktop_owned(path: &Path, id: &str, executable: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(path) else { return false };
+    match entry_value(&text, "X-Arcade-Id") {
+        Some(marker) => marker == id,
+        None => {
+            entry_value(&text, "Type") == Some("Application")
+                && desktop_executable(&text).is_some_and(|p| p.is_absolute() && canonical(&p) == canonical(executable))
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn integration_conflicts(receipt: &Receipt) -> io::Result<Vec<PathBuf>> {
+    let mut conflicts = Vec::new();
+    for path in receipt.integration.desktop_entry.iter().chain(receipt.integration.autostart.iter()) {
+        if !available_entry(path, recorded_desktop_owned(path, &receipt.id, &receipt.path))? {
+            conflicts.push(path.clone());
+        }
+    }
+    if let Some(path) = &receipt.integration.cli {
+        let owned = fs::read_link(path).is_ok_and(|target| target == receipt.path);
+        if !available_entry(path, owned)? {
+            conflicts.push(path.clone());
+        }
+    }
+    Ok(conflicts)
 }
 
 #[cfg(target_os = "linux")]
@@ -602,7 +633,12 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     let desktop_entry = environment.data.join("applications").join(format!("{}.desktop", opts.app.desktop_id));
     within_root(&desktop_entry, &environment.data.join("applications"))?;
     let recorded = old.as_ref().is_some_and(|r| r.integration.desktop_entry.as_ref() == Some(&desktop_entry));
-    if available_entry(&desktop_entry, desktop_owned(&desktop_entry, opts.app, recorded))? {
+    let owned = if recorded {
+        old.as_ref().is_some_and(|r| recorded_desktop_owned(&desktop_entry, &r.id, &r.path))
+    } else {
+        desktop_owned(&desktop_entry, opts.app, false)
+    };
+    if available_entry(&desktop_entry, owned)? {
         integration.desktop_entry = Some(desktop_entry.clone());
     } else {
         skipped(&mut integration, desktop_entry.clone());
@@ -647,7 +683,12 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     within_root(&autostart, &environment.config.join("autostart"))?;
     if fs::symlink_metadata(&autostart).is_ok() || opts.start_at_login {
         let recorded = old.as_ref().is_some_and(|r| r.integration.autostart.as_ref() == Some(&autostart));
-        if available_entry(&autostart, desktop_owned(&autostart, opts.app, recorded))? {
+        let owned = if recorded {
+            old.as_ref().is_some_and(|r| recorded_desktop_owned(&autostart, &r.id, &r.path))
+        } else {
+            desktop_owned(&autostart, opts.app, false)
+        };
+        if available_entry(&autostart, owned)? {
             integration.autostart = Some(autostart.clone());
         } else {
             skipped(&mut integration, autostart.clone());
@@ -771,6 +812,7 @@ pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>)
     let mut receipt = environment.receipts().read(&app.id)?.ok_or_else(|| input("no receipt"))?;
     receipt.validate_native_paths()?;
     validate_integration_roots(environment, &receipt)?;
+    let conflicts = integration_conflicts(&receipt)?;
     if let Some(path) = moved_to {
         if !path.is_absolute() || !path.is_file() {
             return Err(input("moved installation must be an absolute file"));
@@ -779,6 +821,18 @@ pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>)
     }
     if !receipt.path.is_file() {
         return Err(input("installed executable is missing"));
+    }
+    for path in conflicts {
+        if receipt.integration.desktop_entry.as_ref() == Some(&path) {
+            receipt.integration.desktop_entry = None;
+        }
+        if receipt.integration.autostart.as_ref() == Some(&path) {
+            receipt.integration.autostart = None;
+        }
+        if receipt.integration.cli.as_ref() == Some(&path) {
+            receipt.integration.cli = None;
+        }
+        skipped(&mut receipt.integration, path);
     }
     if let Some(path) = &receipt.integration.desktop_entry {
         write(path, desktop(app, &receipt.path).as_bytes())?;
@@ -813,6 +867,10 @@ pub fn uninstall(environment: &Environment, id: &str, opts: UninstallOptions<'_>
     receipt.validate_native_paths()?;
     #[cfg(target_os = "linux")]
     validate_integration_roots(environment, &receipt)?;
+    #[cfg(target_os = "linux")]
+    if let Some(path) = integration_conflicts(&receipt)?.first() {
+        return Err(input(&format!("integration ownership conflict at {}; repair to detach the foreign entry before uninstalling", path.display())));
+    }
     for path in std::iter::once(&receipt.path).chain(receipt.previous.iter().map(|p| &p.path)) {
         if path.is_dir() && (receipt.method != crate::receipt::InstallMethod::MacosBundle || path.extension().is_none_or(|e| e != "app")) {
             return Err(input("refusing a directory as an installed executable"));
@@ -912,6 +970,20 @@ pub fn integration_status(environment: &Environment, id: &str, shell: &str) -> i
     }
     let bin_on_path = environment.path.as_ref().is_some_and(|p| env::split_paths(p).any(|p| canonical(&p) == canonical(&environment.bin)));
     let skipped = receipt.as_ref().map_or_else(Vec::new, |r| r.integration.skipped.clone());
+    #[cfg(target_os = "linux")]
+    let skipped = {
+        let mut skipped = skipped;
+        if let Some(r) = &receipt {
+            if r.validate_native_paths().is_ok() {
+                for path in integration_conflicts(r)? {
+                    if !skipped.iter().any(|entry| entry.path == path) {
+                        skipped.push(SkippedEntry { path, reason: "existing entry belongs to another installation".into() });
+                    }
+                }
+            }
+        }
+        skipped
+    };
     Ok(IntegrationStatus { receipt, entries, bin_on_path, path_hint: (!bin_on_path).then(|| path_hint(&environment.bin, shell)), skipped })
 }
 

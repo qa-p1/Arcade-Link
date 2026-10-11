@@ -764,6 +764,44 @@ static bool availableEntry(const QString &path, bool owned) {
   return (!info.exists() && !info.isSymLink()) ||
          (owned && (info.isFile() || info.isSymLink()));
 }
+#ifdef Q_OS_LINUX
+static bool recordedDesktopOwned(const QString &path, const QString &id,
+                                  const QString &exe) {
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly))
+    return false;
+  const auto text = QString::fromUtf8(file.readAll());
+  const auto marker = entryValue(text, QStringLiteral("X-Arcade-Id"));
+  if (!marker.isEmpty())
+    return marker == id;
+  const auto target = desktopExecutable(text);
+  return entryValue(text, QStringLiteral("Type")) == u"Application" &&
+         QDir::isAbsolutePath(target) && canonical(target) == canonical(exe);
+}
+static QStringList integrationConflicts(const QJsonObject &receipt) {
+  const auto integration = receipt.value(QStringLiteral("integration")).toObject();
+  const auto id = receipt.value(QStringLiteral("id")).toString();
+  const auto exe = receipt.value(QStringLiteral("path")).toString();
+  QStringList conflicts;
+  for (const auto &key : {QStringLiteral("desktopEntry"), QStringLiteral("autostart")}) {
+    const auto path = integration.value(key).toString();
+    if (!path.isEmpty() && !availableEntry(path, recordedDesktopOwned(path, id, exe)))
+      conflicts << path;
+  }
+  const auto cli = integration.value(QStringLiteral("cli")).toString();
+  if (!cli.isEmpty() && !availableEntry(cli, QFileInfo(cli).isSymLink() &&
+                                            QFileInfo(cli).symLinkTarget() == exe))
+    conflicts << cli;
+  return conflicts;
+}
+static void appendSkipped(QJsonArray &skipped, const QString &path) {
+  for (const auto &entry : skipped)
+    if (entry.toObject().value(QStringLiteral("path")).toString() == path)
+      return;
+  skipped << QJsonObject{{QStringLiteral("path"), path},
+                         {QStringLiteral("reason"), QStringLiteral("existing entry belongs to another installation")}};
+}
+#endif
 static QString resolvedPath(const QString &path) {
   QString ancestor = path;
   QStringList tail;
@@ -966,10 +1004,9 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
     return false;
   if (availableEntry(
           entry,
-          desktopOwned(
-              entry, opts.app,
-              oldIntegration.value(QStringLiteral("desktopEntry")).toString() ==
-                  entry)))
+          oldIntegration.value(QStringLiteral("desktopEntry")).toString() == entry
+              ? recordedDesktopOwned(entry, opts.app.id, old.value(QStringLiteral("path")).toString())
+              : desktopOwned(entry, opts.app, false)))
     integration.insert(QStringLiteral("desktopEntry"), entry);
   else
     skip(entry);
@@ -1034,10 +1071,9 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
       opts.startAtLogin) {
     if (availableEntry(
             autoPath,
-            desktopOwned(
-                autoPath, opts.app,
-                oldIntegration.value(QStringLiteral("autostart")).toString() ==
-                    autoPath)))
+            oldIntegration.value(QStringLiteral("autostart")).toString() == autoPath
+                ? recordedDesktopOwned(autoPath, opts.app.id, old.value(QStringLiteral("path")).toString())
+                : desktopOwned(autoPath, opts.app, false)))
       integration.insert(QStringLiteral("autostart"), autoPath);
     else
       skip(autoPath);
@@ -1198,6 +1234,7 @@ bool ArcadeInstall::repair(const AppInfo &app, const QString &movedTo,
   if (!validateNativeReceiptPaths(receipt, error) ||
       !integrationRoots(m_environment, receipt, error))
     return false;
+  const auto conflicts = integrationConflicts(receipt);
   if (!movedTo.isEmpty()) {
     if (!QDir::isAbsolutePath(movedTo) || !QFileInfo(movedTo).isFile())
       return fail(
@@ -1207,8 +1244,18 @@ bool ArcadeInstall::repair(const AppInfo &app, const QString &movedTo,
   const auto exe = receipt.value(QStringLiteral("path")).toString();
   if (!QFileInfo(exe).isFile())
     return fail(error, QStringLiteral("installed executable is missing"));
-  const auto integration =
+  auto integration =
       receipt.value(QStringLiteral("integration")).toObject();
+  auto skipped = integration.value(QStringLiteral("skipped")).toArray();
+  for (const auto &path : conflicts) {
+    for (const auto &key : {QStringLiteral("desktopEntry"), QStringLiteral("autostart"), QStringLiteral("cli")})
+      if (integration.value(key).toString() == path)
+        integration.insert(key, QJsonValue::Null);
+    appendSkipped(skipped, path);
+  }
+  if (!skipped.isEmpty())
+    integration.insert(QStringLiteral("skipped"), skipped);
+  receipt.insert(QStringLiteral("integration"), integration);
   const auto entry =
       integration.value(QStringLiteral("desktopEntry")).toString();
   if (!entry.isEmpty()) {
@@ -1259,6 +1306,10 @@ bool ArcadeInstall::uninstall(const QString &id, const UninstallOptions &opts,
 #ifdef Q_OS_LINUX
   if (!integrationRoots(m_environment, receipt, error))
     return false;
+  const auto conflicts = integrationConflicts(receipt);
+  if (!conflicts.isEmpty())
+    return fail(error, QStringLiteral("integration ownership conflict at %1; repair to detach the foreign entry before uninstalling")
+                           .arg(conflicts.first()));
 #endif
   const auto exe = receipt.value(QStringLiteral("path")).toString();
   const auto previous = receipt.value(QStringLiteral("previous"))
@@ -1366,15 +1417,19 @@ QJsonObject ArcadeInstall::integrationStatus(const QString &id,
   for (const auto &path :
        m_environment.path.split(QDir::listSeparator(), Qt::SkipEmptyParts))
     onPath |= canonical(path) == canonical(m_environment.bin);
+  auto skipped = receipt.value(QStringLiteral("integration")).toObject()
+                     .value(QStringLiteral("skipped")).toArray();
+#ifdef Q_OS_LINUX
+  if (!receipt.isEmpty() && validateNativeReceiptPaths(receipt))
+    for (const auto &path : integrationConflicts(receipt))
+      appendSkipped(skipped, path);
+#endif
   return {
       {QStringLiteral("receipt"),
        receipt.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(receipt)},
       {QStringLiteral("entries"), entries},
       {QStringLiteral("binOnPath"), onPath},
-      {QStringLiteral("skipped"), receipt.value(QStringLiteral("integration"))
-                                      .toObject()
-                                      .value(QStringLiteral("skipped"))
-                                      .toArray()},
+      {QStringLiteral("skipped"), skipped},
       {QStringLiteral("pathHint"),
        onPath ? QJsonValue(QJsonValue::Null)
               : QJsonValue(pathHint(m_environment.bin, shell))}};

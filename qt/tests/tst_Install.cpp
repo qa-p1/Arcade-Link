@@ -270,6 +270,43 @@ private slots:
       QVERIFY(get(entry).contains("X-Arcade-Id=arcade.find"));
     }
   }
+  void staleReceiptCannotRewriteOrDeleteForeignIntegration() {
+    for (const auto &marker : {QByteArray("X-Arcade-Id=arcade.look\n"), QByteArray()}) {
+      QTemporaryDir root;
+      const auto e = ArcadeInstall::Environment::under(root.path());
+      ArcadeInstall installer(e);
+      const auto source = root.filePath(QStringLiteral("download.AppImage"));
+      put(source, "v1");
+      auto opts = options(source, QStringLiteral("1"));
+      opts.startAtLogin = true;
+      QJsonObject receipt;
+      QString error;
+      QVERIFY2(installer.install(opts, &receipt, &error), qPrintable(error));
+      const auto integration = receipt.value(QStringLiteral("integration")).toObject();
+      const QByteArray foreign = "[Desktop Entry]\nType=Application\n" + marker + "Exec=/foreign/program\n";
+      for (const auto &key : {QStringLiteral("desktopEntry"), QStringLiteral("autostart")})
+        put(integration.value(key).toString(), foreign);
+      const auto cli = integration.value(QStringLiteral("cli")).toString();
+      QVERIFY(QFile::remove(cli));
+      QVERIFY(QFile::link(QStringLiteral("/foreign/program"), cli));
+      const auto original = get(e.receipts().path(opts.app.id));
+      QVERIFY(!installer.uninstall(opts.app.id, {}, nullptr, &error));
+      QVERIFY(error.contains(QStringLiteral("ownership conflict")));
+      QCOMPARE(get(e.receipts().path(opts.app.id)), original);
+      QVERIFY(QFileInfo::exists(receipt.value(QStringLiteral("path")).toString()));
+      QCOMPARE(installer.integrationStatus(opts.app.id, QStringLiteral("bash"))
+                   .value(QStringLiteral("skipped")).toArray().size(), 3);
+      QVERIFY2(installer.repair(opts.app, {}, &receipt, &error), qPrintable(error));
+      const auto repaired = receipt.value(QStringLiteral("integration")).toObject();
+      for (const auto &key : {QStringLiteral("desktopEntry"), QStringLiteral("autostart"), QStringLiteral("cli")})
+        QVERIFY(repaired.value(key).isNull());
+      QCOMPARE(repaired.value(QStringLiteral("skipped")).toArray().size(), 3);
+      QVERIFY2(installer.uninstall(opts.app.id, {}, nullptr, &error), qPrintable(error));
+      for (const auto &key : {QStringLiteral("desktopEntry"), QStringLiteral("autostart")})
+        QCOMPARE(get(integration.value(key).toString()), foreign);
+      QCOMPARE(QFileInfo(cli).symLinkTarget(), QStringLiteral("/foreign/program"));
+    }
+  }
   void foreignIntegrationAndPreviousSurvive() {
     QTemporaryDir root;
     const auto e = ArcadeInstall::Environment::under(root.path());
@@ -344,7 +381,7 @@ private slots:
     QVERIFY(QFile::link(target, desktop));
     const auto autoPath = QDir(e.config).filePath(
         QStringLiteral("autostart/arcade-find.desktop"));
-    put(autoPath, "[Desktop Entry]\nHidden=true\n");
+    put(autoPath, "[Desktop Entry]\nX-Arcade-Id=arcade.find\nHidden=true\n");
     integration.insert(QStringLiteral("autostart"), autoPath);
     receipt.insert(QStringLiteral("integration"), integration);
     QVERIFY(e.receipts().write(receipt));

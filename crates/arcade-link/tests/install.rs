@@ -89,6 +89,45 @@ fn find_options<'a>(app: &'a AppInfo, runtime: &'a Runtime, version: &'a str) ->
 
 #[cfg(target_os = "linux")]
 #[test]
+fn stale_receipt_cannot_rewrite_or_delete_foreign_integration() {
+    for marker in ["X-Arcade-Id=arcade.look\n", ""] {
+        let root = Root::new();
+        let e = Environment::under(&root.0);
+        let app = find_info();
+        let source = root.0.join("download.AppImage");
+        fs::write(&source, b"v1").unwrap();
+        let r = runtime(source);
+        let mut opts = find_options(&app, &r, "1");
+        opts.start_at_login = true;
+        let first = install(&e, opts).unwrap();
+        let foreign = format!("[Desktop Entry]\nType=Application\n{marker}Exec=/foreign/program\n");
+        for path in first.integration.desktop_entry.iter().chain(first.integration.autostart.iter()) {
+            fs::write(path, &foreign).unwrap();
+        }
+        let cli = first.integration.cli.as_ref().unwrap();
+        fs::remove_file(cli).unwrap();
+        std::os::unix::fs::symlink("/foreign/program", cli).unwrap();
+        let original = fs::read(e.receipts().path(&app.id).unwrap()).unwrap();
+        let error = uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap_err();
+        assert!(error.to_string().contains("ownership conflict"));
+        assert_eq!(fs::read(e.receipts().path(&app.id).unwrap()).unwrap(), original);
+        assert!(first.path.exists());
+        assert_eq!(integration_status(&e, &app.id, "bash").unwrap().skipped.len(), 3);
+        let repaired = repair(&e, &app, None).unwrap();
+        assert!(repaired.integration.desktop_entry.is_none());
+        assert!(repaired.integration.autostart.is_none());
+        assert!(repaired.integration.cli.is_none());
+        assert_eq!(repaired.integration.skipped.len(), 3);
+        uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap();
+        for path in first.integration.desktop_entry.iter().chain(first.integration.autostart.iter()) {
+            assert_eq!(fs::read_to_string(path).unwrap(), foreign);
+        }
+        assert_eq!(fs::read_link(cli).unwrap(), Path::new("/foreign/program"));
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn duplicate_cleanup_decodes_desktop_escaping_and_exec_quoting() {
     let root = Root::new();
     let mut e = Environment::under(&root.0);
@@ -155,7 +194,7 @@ fn rollback_atomically_restores_a_launcher_symlink_over_the_generated_file() {
     let original = fs::read(&target).unwrap();
     let autostart = e.config.join("autostart/arcade-find.desktop");
     fs::create_dir_all(autostart.parent().unwrap()).unwrap();
-    fs::write(&autostart, b"[Desktop Entry]\nHidden=true\n").unwrap();
+    fs::write(&autostart, b"[Desktop Entry]\nX-Arcade-Id=arcade.find\nHidden=true\n").unwrap();
     first.integration.autostart = Some(autostart);
     e.receipts().write(&first).unwrap();
     fs::write(&source, b"v2").unwrap();
@@ -474,7 +513,7 @@ fn integration_failure_restores_current_previous_receipt_and_launchers() {
     // icons and launcher have been written, exercising the rollback journal.
     let autostart = e.config.join("autostart/arcade-find.desktop");
     fs::create_dir_all(autostart.parent().unwrap()).unwrap();
-    fs::write(&autostart, b"[Desktop Entry]\nHidden=true\n").unwrap();
+    fs::write(&autostart, b"[Desktop Entry]\nX-Arcade-Id=arcade.find\nHidden=true\n").unwrap();
     current.integration.autostart = Some(autostart.clone());
     e.receipts().write(&current).unwrap();
     fs::write(&source, b"v3").unwrap();
@@ -485,7 +524,7 @@ fn integration_failure_restores_current_previous_receipt_and_launchers() {
     assert_eq!(fs::read_link(current.integration.cli.as_ref().unwrap()).unwrap(), current.path);
     assert_eq!(e.receipts().read(&app.id).unwrap().unwrap(), current);
     assert_eq!(fs::read(&source).unwrap(), b"v3");
-    assert_eq!(fs::read(&autostart).unwrap(), b"[Desktop Entry]\nHidden=true\n");
+    assert_eq!(fs::read(&autostart).unwrap(), b"[Desktop Entry]\nX-Arcade-Id=arcade.find\nHidden=true\n");
     for dir in [&e.applications, &e.applications.join(".previous")] {
         assert!(fs::read_dir(dir).unwrap().flatten().all(|p| {
             let name = p.file_name();
