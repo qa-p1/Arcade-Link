@@ -88,6 +88,23 @@ fn shortcut_vectors_and_markdown() {
         assert!(invalid, "{}", case["name"]);
     }
 }
+
+#[test]
+fn sheets_reserve_global_and_shortcuts_reject_conflicting_alternatives() {
+    let v = vectors("shortcuts.json");
+    for name in ["third-party-global-is-reserved-for-system-sheets", "duplicate-alternatives", "prefix-alternatives", "shadowed-default-alternatives"] {
+        let case = v["invalid"].as_array().unwrap().iter().find(|c| c["name"] == name).unwrap();
+        if let Some(sheet) = case.get("sheet") {
+            assert!(Sheet::from_json(&sheet.to_string()).is_err(), "{name}");
+        } else {
+            assert!(Document::from_json(&case["document"].to_string()).is_err(), "{name}");
+        }
+    }
+    for name in ["windows-system-global-context", "macos-system-global-context", "microphone-and-horizontal-scroll-sheet"] {
+        let case = v["valid"].as_array().unwrap().iter().find(|c| c["name"] == name).unwrap();
+        Sheet::from_json(&case["sheet"].to_string()).unwrap();
+    }
+}
 #[test]
 fn receipt_vectors() {
     let v = vectors("receipts.json");

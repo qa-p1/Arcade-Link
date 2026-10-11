@@ -134,6 +134,8 @@ def validate(doc: dict, manifest: dict | None = None) -> None:
         context = group.get("context")
         if not isinstance(context, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", context):
             raise ValueError("invalid context")
+        if sheet and context == "global" and doc["id"] not in ("windows-system", "macos-system"):
+            raise ValueError("sheet global context is reserved for system sheets; use app for app-wide groups")
         if not isinstance(group.get("shortcuts"), list):
             raise ValueError("shortcuts must be an array")
         for shortcut in group["shortcuts"]:
@@ -157,10 +159,13 @@ def validate(doc: dict, manifest: dict | None = None) -> None:
             nonnull = False
             for name in ("default",) + OS:
                 if name in keys:
-                    for key in _bindings(keys[name]):
+                    alternatives = _bindings(keys[name])
+                    for index, key in enumerate(alternatives):
                         nonnull = True
                         if normalize(key) != key:
                             raise ValueError(f"noncanonical key {key!r}")
+                        if any(conflicts(key, previous) for previous in alternatives[:index]):
+                            raise ValueError(f"{id_}: conflicting alternatives in keys.{name}")
             if not nonnull:
                 raise ValueError("keys need at least one non-null binding")
             for os in OS:

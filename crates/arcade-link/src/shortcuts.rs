@@ -115,10 +115,16 @@ fn validate_groups(groups: &[Group], sheet: bool, manifest: Option<&Manifest>) -
             let mut nonnull = false;
             for name in ["default", "linux", "windows", "macos"] {
                 if let Some(value) = shortcut.keys.get(name) {
-                    for key in bindings(value)? {
+                    let alternatives = bindings(value)?;
+                    for (index, key) in alternatives.iter().enumerate() {
                         nonnull = true;
                         if !accelerator::is_canonical(key) {
                             return Err(fail(format!("{}: noncanonical key {key:?}", shortcut.id)));
+                        }
+                        for previous in &alternatives[..index] {
+                            if accelerator::conflicts(key, previous).map_err(|e| fail(e.to_string()))? {
+                                return Err(fail(format!("{}: conflicting alternatives in keys.{name}", shortcut.id)));
+                            }
                         }
                     }
                 }
@@ -172,6 +178,9 @@ impl Sheet {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if self.schema != 1 || !kebab(&self.id) || self.name.trim().is_empty() || self.checked_version.trim().is_empty() {
             return Err(fail("sheets require schema 1, a kebab-case id, name and checkedVersion"));
+        }
+        if !["windows-system", "macos-system"].contains(&self.id.as_str()) && self.groups.iter().any(|g| g.context == "global") {
+            return Err(fail("sheet global context is reserved for windows-system and macos-system; use app for app-wide groups"));
         }
         if self.sources.is_empty()
             || self.sources.iter().any(|s| {

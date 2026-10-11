@@ -40,6 +40,17 @@ class Shortcuts(unittest.TestCase):
         self.assertEqual(sc.effective(doc['groups'][1]['shortcuts'][2],'windows'),[])
         self.assertIn('| Pin | Ctrl+Shift+P | Ctrl+Shift+P | ⇧⌘P |',sc.markdown(doc))
 
+    def test_sheets_reserve_global_and_conflicting_alternatives(self):
+        vectors=load('shortcuts.json')
+        names={'third-party-global-is-reserved-for-system-sheets','duplicate-alternatives','prefix-alternatives','shadowed-default-alternatives'}
+        for case in vectors['invalid']:
+            if case['name'] in names:
+                with self.subTest(name=case['name']),self.assertRaises(ValueError):
+                    sc.validate(case.get('sheet',case.get('document')))
+        for case in vectors['valid']:
+            if case['name'] in {'windows-system-global-context','macos-system-global-context','microphone-and-horizontal-scroll-sheet'}:
+                sc.validate(case['sheet'])
+
     def test_cli(self):
         with tempfile.TemporaryDirectory() as d:
             file=Path(d)/'shortcuts.json';file.write_text(json.dumps(load('shortcuts.json')['valid'][0]['document']))

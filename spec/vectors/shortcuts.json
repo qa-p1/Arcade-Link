@@ -217,6 +217,160 @@
         ]
       },
       "markdown": "## Hardware\n\n| Action | Linux | Windows | macOS |\n| --- | --- | --- | --- |\n| MicMute | MicMute | MicMute | MicMute |\n| WheelLeft | WheelLeft | WheelLeft | WheelLeft |\n| WheelRight | WheelRight | WheelRight | WheelRight |\n\n"
+    },
+    {
+      "name": "windows-system-global-context",
+      "sheet": {
+        "schema": 1,
+        "id": "windows-system",
+        "name": "windows-system",
+        "checkedVersion": "143",
+        "sources": [
+          "https://support.mozilla.org/kb/keyboard-shortcuts-perform-firefox-tasks-quickly"
+        ],
+        "match": {
+          "linux": {
+            "class": [
+              "firefox",
+              "org.mozilla.firefox"
+            ]
+          },
+          "windows": {
+            "exe": [
+              "firefox.exe"
+            ]
+          },
+          "macos": {
+            "bundle": [
+              "org.mozilla.firefox"
+            ]
+          }
+        },
+        "groups": [
+          {
+            "title": "Browser",
+            "context": "global",
+            "shortcuts": [
+              {
+                "id": "search",
+                "title": "Search",
+                "keys": {
+                  "default": "Ctrl+K",
+                  "macos": "Super+K"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "markdown": "## Browser\n\n| Action | Linux | Windows | macOS |\n| --- | --- | --- | --- |\n| Search | Ctrl+K | Ctrl+K | ⌘K |\n\n"
+    },
+    {
+      "name": "macos-system-global-context",
+      "sheet": {
+        "schema": 1,
+        "id": "macos-system",
+        "name": "macos-system",
+        "checkedVersion": "143",
+        "sources": [
+          "https://support.mozilla.org/kb/keyboard-shortcuts-perform-firefox-tasks-quickly"
+        ],
+        "match": {
+          "linux": {
+            "class": [
+              "firefox",
+              "org.mozilla.firefox"
+            ]
+          },
+          "windows": {
+            "exe": [
+              "firefox.exe"
+            ]
+          },
+          "macos": {
+            "bundle": [
+              "org.mozilla.firefox"
+            ]
+          }
+        },
+        "groups": [
+          {
+            "title": "Browser",
+            "context": "global",
+            "shortcuts": [
+              {
+                "id": "search",
+                "title": "Search",
+                "keys": {
+                  "default": "Ctrl+K",
+                  "macos": "Super+K"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "markdown": "## Browser\n\n| Action | Linux | Windows | macOS |\n| --- | --- | --- | --- |\n| Search | Ctrl+K | Ctrl+K | ⌘K |\n\n"
+    },
+    {
+      "name": "microphone-and-horizontal-scroll-sheet",
+      "sheet": {
+        "schema": 1,
+        "id": "firefox",
+        "name": "Firefox",
+        "checkedVersion": "143",
+        "sources": [
+          "https://support.mozilla.org/kb/keyboard-shortcuts-perform-firefox-tasks-quickly"
+        ],
+        "match": {
+          "linux": {
+            "class": [
+              "firefox",
+              "org.mozilla.firefox"
+            ]
+          },
+          "windows": {
+            "exe": [
+              "firefox.exe"
+            ]
+          },
+          "macos": {
+            "bundle": [
+              "org.mozilla.firefox"
+            ]
+          }
+        },
+        "groups": [
+          {
+            "title": "Hardware",
+            "context": "app",
+            "shortcuts": [
+              {
+                "id": "mic",
+                "title": "Mute microphone",
+                "keys": {
+                  "default": "MicMute"
+                }
+              },
+              {
+                "id": "left",
+                "title": "Scroll left",
+                "keys": {
+                  "default": "WheelLeft"
+                }
+              },
+              {
+                "id": "right",
+                "title": "Scroll right",
+                "keys": {
+                  "default": "WheelRight"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "markdown": "## Hardware\n\n| Action | Linux | Windows | macOS |\n| --- | --- | --- | --- |\n| Mute microphone | MicMute | MicMute | MicMute |\n| Scroll left | WheelLeft | WheelLeft | WheelLeft |\n| Scroll right | WheelRight | WheelRight | WheelRight |\n\n"
     }
   ],
   "invalid": [
@@ -1299,6 +1453,136 @@
                   "windows": null,
                   "macos": "Ctrl+M"
                 }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "third-party-global-is-reserved-for-system-sheets",
+      "sheet": {
+        "schema": 1,
+        "id": "firefox",
+        "name": "Firefox",
+        "checkedVersion": "143",
+        "sources": [
+          "https://support.mozilla.org/kb/keyboard-shortcuts-perform-firefox-tasks-quickly"
+        ],
+        "match": {
+          "linux": {
+            "class": [
+              "firefox",
+              "org.mozilla.firefox"
+            ]
+          },
+          "windows": {
+            "exe": [
+              "firefox.exe"
+            ]
+          },
+          "macos": {
+            "bundle": [
+              "org.mozilla.firefox"
+            ]
+          }
+        },
+        "groups": [
+          {
+            "title": "Browser",
+            "context": "global",
+            "shortcuts": [
+              {
+                "id": "search",
+                "title": "Search",
+                "keys": {
+                  "default": "Ctrl+K",
+                  "macos": "Super+K"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicate-alternatives",
+      "document": {
+        "schema": 1,
+        "app": "arcade.find",
+        "version": "0.3.0",
+        "groups": [
+          {
+            "title": "Global",
+            "context": "global",
+            "shortcuts": [
+              {
+                "id": "toggle",
+                "title": "Show or hide Find",
+                "keys": {
+                  "default": [
+                    "Ctrl+K",
+                    "Ctrl+K"
+                  ]
+                },
+                "rebindable": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "prefix-alternatives",
+      "document": {
+        "schema": 1,
+        "app": "arcade.find",
+        "version": "0.3.0",
+        "groups": [
+          {
+            "title": "Global",
+            "context": "global",
+            "shortcuts": [
+              {
+                "id": "toggle",
+                "title": "Show or hide Find",
+                "keys": {
+                  "default": [
+                    "Ctrl+K",
+                    "Ctrl+K Ctrl+S"
+                  ]
+                },
+                "rebindable": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "shadowed-default-alternatives",
+      "document": {
+        "schema": 1,
+        "app": "arcade.find",
+        "version": "0.3.0",
+        "groups": [
+          {
+            "title": "Global",
+            "context": "global",
+            "shortcuts": [
+              {
+                "id": "toggle",
+                "title": "Show or hide Find",
+                "keys": {
+                  "default": [
+                    "Ctrl+K",
+                    "Ctrl+K Ctrl+S"
+                  ],
+                  "linux": "Ctrl+J",
+                  "windows": "Ctrl+J",
+                  "macos": "Ctrl+J"
+                },
+                "rebindable": true
               }
             ]
           }
