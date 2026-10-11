@@ -773,7 +773,16 @@ void Server::stop()
     for (auto &flag : m_jobs) flag->store(true);
     m_server.close();
     const auto sockets = m_authed.keys();
-    for (QLocalSocket *s : sockets) s->disconnectFromServer();
+    for (QLocalSocket *s : sockets) {
+        // QLocalServer owns the sockets. Its member destructor runs after our
+        // maps are destroyed, so no socket callback may still capture this.
+        s->disconnect(this);
+        s->abort();
+        s->deleteLater();
+    }
+    m_socketJobs.clear();
+    m_authed.clear();
+    m_topics.clear();
 }
 
 QStringList Server::methods() const

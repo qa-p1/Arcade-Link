@@ -70,6 +70,7 @@ fn lines(child: &mut OwnedChild) -> mpsc::Receiver<String> {
     rx
 }
 fn expect(rx: &mpsc::Receiver<String>, state: &str) {
+    eprintln!("waiting for {state}");
     assert_eq!(rx.recv_timeout(Duration::from_secs(10)).unwrap_or_else(|e| panic!("waiting for tray state {state}: {e}")), state);
 }
 
@@ -159,7 +160,7 @@ fn cli_and_mock_tray_hosts_are_scriptable_and_crash_hands_back() {
             expect(&acknowledgements, "ready");
         }
         drop(ready(&root, "arcade.tools"));
-        let mut app = OwnedChild(root.command(&["tray", "find"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap());
+        let mut app = OwnedChild(root.command(&["tray", "find"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn().unwrap());
         let states = lines(&mut app);
         expect(&states, "hosted");
         host.send("hosted false\n");
