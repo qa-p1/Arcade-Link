@@ -34,6 +34,38 @@ class MethodsTest : public QObject {
     server.restart = [](const QString &) {};
   }
 private slots:
+  void destroyingServerWithALiveJobDisconnectsSafely() {
+    QTemporaryDir root;
+    const auto loc = Locations::under(root.path());
+    Responder held;
+    auto server = std::make_unique<Server>(Ids::Find, QStringLiteral("1"), loc);
+    server->invoke = [&](const QJsonObject &, const Responder &r) {
+      held = r;
+      r.startJob();
+    };
+    QVERIFY(server->start());
+    std::atomic_bool started{false}, disconnected{false};
+    auto *thread = QThread::create([&] {
+      Error error;
+      auto client = Client::connect(loc, Ids::Find, Ids::Tools,
+                                   QStringLiteral("1"), 3000, &error);
+      if (!client) return;
+      started = !client->call(QStringLiteral("invoke"), {}, &error)
+                     .toObject().value(QStringLiteral("job")).toString().isEmpty();
+      QJsonObject message;
+      disconnected = !client->nextNotification(&message, &error, 3000);
+    });
+    thread->start();
+    QTRY_VERIFY_WITH_TIMEOUT(started.load(), 4000);
+    // The owned socket emits disconnected during destruction; its callbacks
+    // must not access maps that have already been destroyed.
+    server.reset();
+    QTRY_VERIFY_WITH_TIMEOUT(thread->isFinished(), 4000);
+    delete thread;
+    QVERIFY(disconnected.load());
+    QVERIFY(held.cancelled());
+    held.finish({});
+  }
   void everyMethodVectorRunsThroughTheServer() {
     QFile file(QStringLiteral(ARCADE_LINK_VECTORS "/methods.json"));
     QVERIFY(file.open(QIODevice::ReadOnly));
