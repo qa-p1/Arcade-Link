@@ -470,12 +470,19 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False) -> int:
     s = Session(root, headless=scaffold, mock_peers=scaffold)
     if scaffold:
         print("Link scaffold: mock peer presence, crate watchers/install harness, sibling shortcut documents")
+    selected = [g.strip() for g in only.split(",")] if only is not None else None
+    if selected is not None and (not all(selected) or any(g not in CHECKS for g in selected)):
+        # A typo or an empty selection must never report success.
+        print(f"unknown or empty check group selection {only!r}; known: {', '.join(CHECKS)}")
+        return 2
     failures = 0
+    ran = 0
     try:
         for group, funcs in CHECKS.items():
-            if only and group not in only.split(","):
+            if selected is not None and group not in selected:
                 continue
             for f in funcs:
+                ran += 1
                 name = f"{group}: {f.__name__}"
                 t0 = time.time()
                 try:
@@ -490,6 +497,9 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False) -> int:
         s.close()
         if os.environ.get("E2E_KEEP"):
             print(f"kept {root}")
+    if not ran:
+        print("no checks ran")
+        return 1
     print(f"{'all checks passed' if not failures else f'{failures} check(s) failed'}")
     return 1 if failures else 0
 
@@ -508,16 +518,16 @@ def main() -> int:
     p.add_argument("--real-apps", action="store_true", help="require current fleet builds for presence, even in a scaffold-only selection")
     p.add_argument("command", nargs="*", help="`run -- CMD…` runs CMD in the isolated session")
     args = p.parse_args()
-    scaffold = bool(args.only and set(args.only.split(",")) <= {"presence", "trayhost", "install", "shortcuts"} and set(args.only.split(",")) & {"trayhost", "install", "shortcuts"} and not args.real_apps)
+    scaffold = bool(args.only and set(args.only.split(",")) <= {"presence", "trayhost", "install", "shortcuts", "tools-hub"} and set(args.only.split(",")) & {"trayhost", "install", "shortcuts", "tools-hub"} and not args.real_apps)
     if os.environ.get("ARCADE_E2E_INNER") != "1":
         for tool in (("dbus-run-session",) if scaffold else ("Xvfb", "dbus-run-session", "xdotool")):
             if not shutil.which(tool):
                 print(f"e2e: {tool} is required (not run)", file=sys.stderr)
                 return 2
         subprocess.check_call(["cargo", "build", "-p", "arcade-link-cli", "--locked"], cwd=LINK)
-        if not args.command and (not args.only or "install" in args.only.split(",")):
+        if not args.command and (args.only is None or "install" in args.only.split(",")):
             subprocess.check_call(["cargo", "build", "-p", "arcade-link", "--example", "install-harness", "--features", "install", "--locked"], cwd=LINK)
-        if not args.only and not args.command:
+        if args.only is None and not args.command:
             # A full run gives every group its own fresh session: groups leave
             # apps running in states (open pickers, toggled settings, held
             # profiles) that the next group must not inherit.

@@ -169,8 +169,13 @@ receipts/install logic, Qt parity, installer includes and shared assets for
 seven independent apps. The [current implementation report](docs/V0.3_REPORT.md)
 records the review regressions and Linux/native CI evidence.
 
-The new isolated e2e groups and tray hand-back probe exercise mock peers and
-crate/Qt watchers. They do not certify Tools' product UI, fleet tray rendering,
-real first-run dialogs or the full `tools-hub` group. Those checks follow app
+The new isolated e2e groups (`trayhost`, `install`, `shortcuts`, `tools-hub`)
+and the tray hand-back probe exercise mock peers and crate/Qt watchers. The
+`tools-hub` scaffold covers the Link contract Tools relies on (registry,
+`describe.methods`, `app.shortcuts.set` rebinding, unsupported methods); an
+unknown or empty group selection now fails instead of passing. They do not
+certify Tools' product UI, fleet tray rendering or real first-run dialogs;
+the full hub flows (catalog, bundles, rollback, adopt, self-update,
+diagnostics, backup) live in Tools' own lifecycle tests. Those checks follow app
 adoption; the historical ecosystem measurements above remain historical.
 PR #3 is pushed for owner review; merge and the v0.3.0 tag are owner actions.

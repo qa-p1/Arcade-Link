@@ -122,3 +122,29 @@ def sibling_app_docs_and_catalog_sheets_validate(s):
         assert result.returncode == 0, f"{path}: {result.stdout}{result.stderr}"
     assert files or sheets, "no sibling shortcut documents or catalog sheets found"
     return f"{len(files)} app docs + {len(sheets)} catalog sheets passed Rust/Python; missing app docs: {missing}"
+
+
+@check("tools-hub")
+def hub_contract_against_mock_peers(s):
+    """What Arcade Tools relies on from every peer, without real apps: the live
+    registry, advertised optional methods, rebinding a shortcut through
+    app.shortcuts.set, and a clear answer for a method a peer lacks."""
+    for app in APPS:
+        s.start(app)
+    listing = s.cli("ls", check=True).stdout
+    assert listing.count("running") == len(APPS), listing
+    for app in APPS:
+        described = json.loads(s.cli("call", app, "describe", check=True).stdout)
+        methods = described.get("methods")
+        assert isinstance(methods, list) and "app.shortcuts.set" in methods, (app, methods)
+    shortcuts = json.loads(s.cli("shortcuts", check=True).stdout)
+    find = next(entry for entry in shortcuts if entry["app"] == "arcade.find")
+    applied = json.loads(s.cli("call", "arcade.find", "app.shortcuts.set", "--params",
+                               json.dumps({"id": find["id"], "accelerator": "alt+ctrl+k"}), check=True).stdout)
+    assert applied.get("applied") is True, applied
+    rebound = json.loads(s.cli("shortcuts", check=True).stdout)
+    entry = next(e for e in rebound if e["app"] == "arcade.find" and e["id"] == find["id"])
+    assert entry["canonical"] == "Ctrl+Alt+K", entry
+    missing = s.cli("call", "arcade.find", "app.not-a-method")
+    assert missing.returncode != 0 and "doesn't support this method" in missing.stderr + missing.stdout, missing
+    return f"{len(APPS)} mock peers listed, advertised methods, rebound {find['id']} to Ctrl+Alt+K, unsupported reported"
