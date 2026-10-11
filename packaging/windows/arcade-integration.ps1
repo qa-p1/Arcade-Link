@@ -174,4 +174,5 @@ if ($Action -eq 'Install') {
     } else { exit 10 } # No receipt means no proof of shared ownership.
     Update-UserPath $false
     [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree('Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $Id, $false)
+    exit 0
 }

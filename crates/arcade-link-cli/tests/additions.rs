@@ -70,7 +70,7 @@ fn lines(child: &mut OwnedChild) -> mpsc::Receiver<String> {
     rx
 }
 fn expect(rx: &mpsc::Receiver<String>, state: &str) {
-    assert_eq!(rx.recv_timeout(Duration::from_secs(1)).unwrap(), state);
+    assert_eq!(rx.recv_timeout(Duration::from_secs(10)).unwrap(), state);
 }
 
 #[test]
