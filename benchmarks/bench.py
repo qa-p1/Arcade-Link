@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from e2e_support import tray_handback
+from e2e_support import LinesProcess, tray_handback
 
 CODING = Path(__file__).resolve().parents[3]
 BOX = CODING / "Rust/Arcade Box"
@@ -323,6 +323,48 @@ def compare(now: dict, base: dict, tolerance: float) -> list[str]:
     return problems
 
 
+MOCK_OVERLAY = [sys.executable, "-u", "-c", "import sys\nprint('ready', flush=True)\nfor line in sys.stdin:\n if line.strip() == 'trigger': print('frame', flush=True)"]
+
+
+def frame_latency(command: list[str], env: dict, runs: int) -> list[float]:
+    """Instrumentation contract: ready, then trigger → first painted frame.
+
+    The Phase 1 mock acknowledges without painting. A later Tools adapter must
+    emit frame only from its first-frame callback. Process startup is excluded.
+    """
+    samples = []
+    with LinesProcess(command[0], command[1:], env) as overlay:
+        overlay.expect("ready")
+        for _ in range(runs):
+            started = time.perf_counter()
+            overlay.send("trigger")
+            at = overlay.expect("frame")
+            samples.append(round((at - started) * 1000, 3))
+    return samples
+
+
+def hub_scaffold(cli: Path, env: dict, args) -> dict:
+    """Mock-host idle counters and an overlay instrumentation scaffold."""
+    with LinesProcess(cli, ["tray", "host"], env) as host:
+        host.expect("ready")
+        pid = host.process.pid
+        cpu = tree_cpu_ms(pid)
+        rss = tree_rss_kib(pid)
+        time.sleep(args.idle_seconds)
+        idle_cpu = tree_cpu_ms(pid) - cpu
+    samples = frame_latency(args.overlay_command or MOCK_OVERLAY, env, args.runs)
+    return {"probe": "Phase 1 mock Tools host and overlay instrumentation scaffold",
+            "tools_host": {"implementation": "Rust CLI fake host; excludes webview/UI",
+                           "idle_seconds": args.idle_seconds, "idle_rss_kib": rss,
+                           "idle_cpu_ms": idle_cpu},
+            "overlay": {"implementation": "supplied instrumented command" if args.overlay_command else "mock trigger acknowledgement; no painted frame",
+                        "samples_ms": samples,
+                        "p95_ms": sorted(samples)[max(0, int(len(samples) * .95 + .999) - 1)]},
+            "production_budgets": {"tools_idle_rss_mib": 40, "tools_idle_cpu_ticks_30s": 0,
+                                   "overlay_first_frame_p95_ms": 80},
+            "production_budgets_verified": False}
+
+
 def inner(args) -> int:
     xvfb = subprocess.Popen(["Xvfb", ":97", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -370,15 +412,31 @@ def main() -> int:
     p.add_argument("--compare")
     p.add_argument("--tolerance", type=float, default=0.05)
     p.add_argument("--trayhost", action="store_true", help="measure crate-backed SIGKILL → own latency without GUI apps")
+    p.add_argument("--hub-scaffold", action="store_true", help="probe fake-host idle counters and mock overlay instrumentation")
+    p.add_argument("--idle-seconds", type=float, default=30, help="idle counter window for --hub-scaffold")
+    p.add_argument("--overlay-command", nargs=argparse.REMAINDER, help="instrumented overlay argv: emits ready; accepts trigger; emits frame on first paint")
     args = p.parse_args()
     if args.runs < 1:
         p.error("--runs must be positive")
-    if args.trayhost:
+    if args.idle_seconds <= 0:
+        p.error("--idle-seconds must be positive")
+    if args.trayhost and args.hub_scaffold:
+        p.error("choose one of --trayhost and --hub-scaffold")
+    if args.hub_scaffold and not sys.platform.startswith("linux"):
+        p.error("the idle counters require Linux /proc")
+    if args.trayhost or args.hub_scaffold:
         cli = Path(__file__).resolve().parents[1] / "target/debug/arcade-link"
         if not cli.is_file():
             p.error("build arcade-link-cli before the tray-host probe")
         with tempfile.TemporaryDirectory(prefix="arcade-bench-tray-") as directory:
             env = isolated_env(Path(directory))
+            if args.hub_scaffold:
+                result = hub_scaffold(cli, env, args)
+                text = json.dumps(result, indent=2)
+                if args.json:
+                    Path(args.json).write_text(text + "\n", encoding="utf-8")
+                print(text)
+                return 0
             samples = tray_handback(cli, env, args.runs)
         result = {"date": time.strftime("%Y-%m-%d %H:%M"), "runs": args.runs,
                   "probe": "Rust crate CLI watcher; SIGKILL → own, excludes process startup",

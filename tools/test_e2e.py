@@ -2,6 +2,7 @@ import importlib.util
 import os
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest import mock
 import e2e
@@ -47,3 +48,16 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(len(module.APPS), 7)
         base = {"apps": {"find": {"startup_ms_median": 20}}}
         self.assertTrue(module.compare({"apps": {"find": {"startup_ms_median": 50}}}, base, .05))
+
+    def test_frame_probe_waits_for_the_instrumented_frame(self):
+        spec = importlib.util.spec_from_file_location("arcade_bench_frames", e2e.LINK / "benchmarks/bench.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        command = [sys.executable, "-u", "-c", "import sys,time\nprint('ready', flush=True)\nfor line in sys.stdin:\n time.sleep(.02)\n print('frame', flush=True)"]
+        with tempfile.TemporaryDirectory() as root:
+            env = module.isolated_env(Path(root))
+            samples = module.frame_latency(command, env, 2)
+            self.assertEqual(len(samples), 2)
+            self.assertTrue(all(sample >= 15 for sample in samples), samples)
+            with self.assertRaisesRegex(AssertionError, "expected 'frame'"):
+                module.frame_latency([sys.executable, "-u", "-c", "import sys\nprint('ready',flush=True)\ninput()\nprint('wrong',flush=True)"], env, 1)
