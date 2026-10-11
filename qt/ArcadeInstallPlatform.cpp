@@ -39,6 +39,9 @@ struct RegistryKey {
     *kind = REG_EXPAND_SZ;
     auto code = RegQueryValueExW(key, L"Path", nullptr, kind, nullptr, &size);
     if (code == ERROR_FILE_NOT_FOUND) {
+      // The API may clear lpType even on failure. A new Path must be a
+      // string, or the next shim installation cannot read its own value.
+      *kind = REG_EXPAND_SZ;
       value->clear();
       return true;
     }

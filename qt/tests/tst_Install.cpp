@@ -363,8 +363,10 @@ private slots:
     QVERIFY2(installer.writeWindowsShim(QStringLiteral("arcade-first"), exe,
                                         &first, &error),
              qPrintable(error));
-    QVERIFY(installer.writeWindowsShim(QStringLiteral("arcade-first"), exe));
-    QVERIFY(installer.writeWindowsShim(QStringLiteral("arcade-second"), exe));
+    QVERIFY2(installer.writeWindowsShim(QStringLiteral("arcade-first"), exe,
+                                        nullptr, &error), qPrintable(error));
+    QVERIFY2(installer.writeWindowsShim(QStringLiteral("arcade-second"), exe,
+                                        nullptr, &error), qPrintable(error));
     QVERIFY(get(first).contains("%*"));
     const auto readPath = [&] {
       HKEY key = nullptr;
@@ -375,8 +377,14 @@ private slots:
               KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
         wchar_t bytes[8192]{};
         DWORD size = sizeof(bytes);
-        RegQueryValueExW(key, L"Path", nullptr, nullptr,
-                         reinterpret_cast<BYTE *>(bytes), &size);
+        DWORD type = REG_NONE;
+        const auto result = RegQueryValueExW(key, L"Path", nullptr, &type,
+                                             reinterpret_cast<BYTE *>(bytes), &size);
+        if (result != ERROR_SUCCESS || type != REG_EXPAND_SZ) {
+          RegCloseKey(key);
+          QTest::qFail("isolated Path must retain REG_EXPAND_SZ", __FILE__, __LINE__);
+          return QString();
+        }
         value = QString::fromWCharArray(bytes);
         RegCloseKey(key);
       }
