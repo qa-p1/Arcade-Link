@@ -175,6 +175,15 @@ fn relative_install_environment_is_refused_before_writing() {
     assert!(!e.home.exists());
 }
 
+#[test]
+fn windows_isolated_path_identity_matches_installer_vectors() {
+    let text = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spec/vectors/windows-path-identity.json")).unwrap();
+    let vectors: serde_json::Value = serde_json::from_str(&text).unwrap();
+    for case in vectors["cases"].as_array().unwrap() {
+        assert_eq!(isolated_environment_key(Path::new(case["root"].as_str().unwrap())), case["key"].as_str().unwrap());
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn foreign_integration_is_skipped_reported_and_survives_uninstall() {

@@ -587,6 +587,15 @@ An install receipt `<installs>/<arcade-id>.json` is atomic and private
 (0600 on Unix; per-user ACLs in the Windows installers). Readers ignore
 unknown fields. See [`spec/receipt.schema.json`](spec/receipt.schema.json):
 
+With `ARCADE_HOME` set on Windows, filesystem integration and PATH use an
+isolated HKCU `Software\ArcadeLink\Isolated\<hash>` key. Rust, Qt and the
+installer helpers use the same identity: convert backslashes to `/`, remove
+trailing `/`, lowercase ASCII A–Z only, encode as UTF-8, compute FNV-1a with
+offset `0xcbf29ce484222325` and prime `0x100000001b3` modulo 2^64, then format
+the low 48 bits as 12 lowercase hexadecimal digits. This identity is not
+path validation. Fixed vectors are in `spec/vectors/windows-path-identity.json`.
+Native installs use HKCU `Environment` and are unaffected by this test key.
+
 ```json
 {
   "schema":1,"id":"arcade.find","version":"0.3.0","channel":"stable",

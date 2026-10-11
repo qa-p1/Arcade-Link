@@ -48,7 +48,7 @@ impl Environment {
             local_app_data: root.join("AppData/Local"),
             locations: Locations::under(root),
             path: None,
-            windows_environment_key: format!("Software\\ArcadeLink\\Isolated\\{}", crate::transport::short_hash(&root.to_string_lossy())),
+            windows_environment_key: isolated_environment_key(root),
         }
     }
     pub fn discover() -> io::Result<Self> {
@@ -86,6 +86,14 @@ impl Environment {
         }
         Ok(())
     }
+}
+
+/// Shared with Qt and the installer helper. This is a Windows test-key
+/// identity, not a filesystem path normalization or an ownership check.
+pub fn isolated_environment_key(root: &Path) -> String {
+    let spelling = root.to_string_lossy().replace('\\', "/");
+    let spelling = spelling.trim_end_matches('/').to_ascii_lowercase();
+    format!("Software\\ArcadeLink\\Isolated\\{}", crate::transport::short_hash(&spelling))
 }
 
 #[derive(Debug, Clone)]

@@ -103,4 +103,6 @@ jobs:
         # Use Windows PowerShell 5.1, the same host invoked by the installers.
         shell: powershell
         working-directory: packaging/windows/samples
-        run: .\verify.ps1
+        run: |
+          .\verify-identity.ps1
+          .\verify.ps1

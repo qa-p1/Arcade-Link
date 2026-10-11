@@ -62,11 +62,34 @@ function Same-PathEntry([string]$Entry) {
     return [string]::Equals($expanded, $bin.TrimEnd('\','/'), [StringComparison]::OrdinalIgnoreCase)
 }
 
+function Isolated-EnvironmentKey([string]$Root) {
+    if (-not ('ArcadePathIdentity' -as [type])) {
+        Add-Type @'
+using System;
+using System.Text;
+using System.Globalization;
+public static class ArcadePathIdentity {
+  public static string Key(string root) {
+    var bytes = Encoding.UTF8.GetBytes(root.Replace('\\','/').TrimEnd('/'));
+    ulong hash = 0xcbf29ce484222325UL;
+    unchecked {
+      foreach (byte input in bytes) {
+        byte value = input >= 65 && input <= 90 ? (byte)(input + 32) : input;
+        hash = (hash ^ value) * 0x100000001b3UL;
+      }
+    }
+    return @"Software\ArcadeLink\Isolated\" + (hash & 0xffffffffffffUL).ToString("x12", CultureInfo.InvariantCulture);
+  }
+}
+'@
+    }
+    return [ArcadePathIdentity]::Key($Root)
+}
+
 function Update-UserPath([bool]$Add) {
     $environmentKey = 'Environment'
     if ($env:ARCADE_HOME) {
-        $hash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($utf8.GetBytes($root))).Replace('-','')
-        $environmentKey = 'Software\ArcadeLink\Isolated\' + $hash
+        $environmentKey = Isolated-EnvironmentKey $root
     }
     $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($environmentKey)
     try {
