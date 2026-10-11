@@ -11,7 +11,8 @@ immutable tag; a new tag never changes the wire format.
 - Adds opt-in tray hosting: OS registry watch, blocked subscription reads,
   immediate fallback on host loss, 300 ms startup and 5 s restart grace,
   exclusions and clean Tools shutdown. Windows named-pipe deadlines use
-  cancellable OS event waits. Qt port follows separately.
+  cancellable OS event waits. Qt's watcher uses background socket/registry
+  work and queued GUI-thread signals, with the same shared state vectors.
 - Adds canonical accelerator normalize/display/conflicts, app shortcut docs
   and third-party sheets, JSON schemas, vectors and a stdlib Python validator
   and Markdown generator, including XKB/Hyprland input aliases.
@@ -23,6 +24,17 @@ immutable tag; a new tag never changes the wire format.
   tray/shortcuts commands, install/tray diagnostics and Tools fixtures.
 - Adds shared per-user Inno/NSIS includes and a Windows silent-install CI
   job, release installArgs and portable asset metadata. Protocol/schema stay 1.
+- Ports optional methods, accelerators, shortcut validation, receipts and
+  install/platform helpers to Qt; adds Rust interop and complete checksum
+  vendoring. Covers launcher ownership, native path preflight, backup
+  collisions, symlink rollback, desktop Exec parsing, tray recovery, sheet
+  globals/alternative conflicts and successor-safe Windows uninstall.
+- Uses the same FNV-1a isolated Windows PATH identity in Rust, Qt and
+  PowerShell, pinned by shared vectors.
+- Adds isolated presence/tray/install/shortcut e2e scaffolds, tray hand-back
+  benchmarks and native-size PNG renders for all eight family glyphs.
+  Keeps existing fleet checks and benchmarks, fixes Shelf's checkout path,
+  and mirrors the shared new-app brief.
 
 ## 0.2.0 — 2026-10-10
 

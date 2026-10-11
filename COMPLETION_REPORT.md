@@ -161,3 +161,16 @@ signing/plugin-registry work remain release gates in
 [Box's release notes](https://github.com/qa-p1/Arcade-box/blob/arcade/link/docs/release.md).
 The ecosystem completion statement does not certify every feature envisioned
 in the original app product plans or imply that application releases were published.
+
+## Tools hub: Link Phase 1 (2026-10-11)
+
+Link v0.3.0 supplies optional control methods, tray hosting, shortcuts,
+receipts/install logic, Qt parity, installer includes and shared assets for
+seven independent apps. The [current implementation report](docs/V0.3_REPORT.md)
+records the review regressions and Linux/native CI evidence.
+
+The new isolated e2e groups and tray hand-back probe exercise mock peers and
+crate/Qt watchers. They do not certify Tools' product UI, fleet tray rendering,
+real first-run dialogs or the full `tools-hub` group. Those checks follow app
+adoption; the historical ecosystem measurements above remain historical.
+PR #3 is pushed for owner review; merge and the v0.3.0 tag are owner actions.

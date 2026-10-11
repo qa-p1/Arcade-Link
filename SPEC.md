@@ -10,8 +10,8 @@ socket. Nothing has to run except the two apps in a conversation.
 
 Implementations: the Rust crate in `crates/arcade-link` (Box, Lens, Look,
 Clipboard's core, Find, Tools) and the Qt module in `qt/` (Wheel and Shelf).
-Both share the v0.2 conformance vectors. The additive v0.3 APIs described
-below are implemented in Rust; their Qt port follows separately.
+Both implementations share the original and additive v0.3 conformance
+vectors. Protocol and manifest schema remain 1.
 
 ## 1. Principles
 
@@ -462,6 +462,12 @@ Tools quits by sending `hosted:false` to every subscriber before closing
 the connections. Restart/self-update sends `restarting:true` first. Hosting
 is not application lifecycle management: apps are independent processes.
 The Rust watcher callback runs on a background thread; marshal it to the UI.
+Qt's `ArcadeTrayHost` performs registry/socket work on a background thread
+and delivers `startupReady` and `stateChanged` through queued signals on the
+object's owning thread. Neither watcher's startup waits on the GUI thread.
+Tools must attach its hosting helper before accepting subscriptions and
+publishing an enabled manifest. After a failed subscription, a registry or
+manifest change allows another attempt, including an identical manifest rewrite.
 Idle uses blocked reads and OS watchers only, with no polling or timers.
 The only hosting deadlines are startup 300 ms and restart 5 s.
 
@@ -578,7 +584,7 @@ one OS: linux `{class:[…]}`, windows `{exe:[…]}`, macos `{bundle:[…]}`).
 Matches are case-insensitive. `rebindable` is forbidden, including false.
 In sheets, context `global` is reserved for `windows-system` and
 `macos-system`; ordinary app-wide groups use `app`.
-The Rust module and stdlib-only `tools/validate_shortcuts.py` enforce the
+The Rust and Qt modules and stdlib-only `tools/validate_shortcuts.py` enforce the
 same semantic rules in addition to schema shape validation.
 
 ### 8.6 Install standard
@@ -747,7 +753,15 @@ with a query, a folder scope (`in:`), or one file selected ("Reveal in Find").
 `spec/vectors/` holds wire messages and version negotiation (`wire.json`),
 content matching and file kinds (`content.json`), standard error messages
 (`errors.json`), manifests (`manifest.json`) and accelerator normalization
-(`accelerators.json`). The Rust crate (`cargo test`) and the Qt module
-(`qt/tests`, also vendored into Wheel's test suite) run all of them.
+(`accelerators.json`). Additions cover optional requests/results/errors
+(`methods.json`), tray-host crash/restart/startup/exclusion/Link-off sequences
+(`trayhost.json`), valid/invalid receipts (`receipts.json`), shortcut documents,
+sheets and Markdown (`shortcuts.json`), and Windows isolated PATH identity
+(`windows-path-identity.json`). Rust (`cargo test`) and Qt (`qt/tests`) run
+all of them; the stdlib Python validator runs the shortcut/accelerator vectors.
+Qt also tests native receipt/install helpers, bidirectional optional-method
+interop with Rust, and its watcher against the Rust fake Tools host. Installer
+CI exercises Inno and NSIS silently, including uninstalling an old copy after
+a successor install. These tests use temporary paths and isolated registry keys.
 `arcade-link mock` is a scriptable fake app for testing a consumer without
 building any other app.

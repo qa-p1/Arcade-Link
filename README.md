@@ -24,8 +24,10 @@ and a small library, not a process.
   methods and feature defaults remain source compatible.
 - [`crates/arcade-link-cli`](crates/arcade-link-cli): `arcade-link`, the debug
   CLI and mock peer.
-- [`qt/`](qt): `ArcadeLink.{h,cpp}` for Arcade Wheel (vendored into Wheel's
-  `src/link/`), with its own tests.
+- [`qt/`](qt/README.md): the C++20/Qt 6.8 port for Wheel and Shelf, including
+  optional methods, `ArcadeTrayHost`, `ArcadeInstall`, accelerator and shortcut
+  helpers, with shared-vector and Rust interop tests. Use
+  [`tools/vendor_qt.py`](tools/vendor_qt.py) for complete commit/checksum pins.
 - [`spec/vectors/`](spec/vectors): conformance vectors both implementations
   run.
 - [`fixtures/`](fixtures): mock-peer fixtures for each app.
@@ -56,6 +58,7 @@ arcade-link shortcuts validate docs/user/shortcuts.json --manifest manifest.json
 arcade-link shortcuts markdown docs/user/shortcuts.json
 arcade-link settings find
 arcade-link restart find
+arcade-link call find app.menu --params '{}'
 ```
 
 Every command honors `ARCADE_HOME`, so tests and experiments never touch the
@@ -70,7 +73,8 @@ arcade-link invoke box box:arcade.text.structured --preset format-json --text '{
 `ls` also shows receipt/install method and live tray state (unknown if an
 older app omits it). The fake host accepts `hosted true`, `hosted false`,
 `restarting`, `exclude arcade.find`, `include arcade.find`, `quit`, and
-`crash` on stdin. The app-side `tray` command accepts `link off`, `link on`
+`crash` on stdin; `subscribers` reports connected app IDs for deterministic
+test synchronization. The app-side `tray` command accepts `link off`, `link on`
 and `quit`. Mock fixtures accept `menu`, `methods` (restrict optional
 methods), and `mockMethods` (script a method's `result` or `error`). Menu
 toggles and shortcut changes update the manifest; export/import use private
@@ -124,15 +128,19 @@ New APIs are opt-in:
 - With `trayhost`, `TrayHostWatcher::start(config, callback)` is nonblocking.
   Callbacks arrive on a background worker. Use state for app.status, and
   set_link_enabled for the app switch. Keep the tray object and hide/show it.
-  Tools attaches a `TrayHostServer` to `Server` before advertising hosting,
+  Tools uses `Server::start_with_tray_host` to attach a `TrayHostServer`
+  before accepting subscribers or advertising hosting,
   uses set_hosted/set_excluded/announce_restarting, and calls shutdown on quit.
   Only the 300 ms startup and 5 s restart deadlines use timers; idle blocks.
 
 There are no default features. `trayhost` enables `watch`; `install`,
 `watch` and `engines` can each be enabled independently. Installation never
 launches implicitly; the app owns consent, version comparison, UI and the
-restart successor's old-process wait. The Qt port of these v0.3 APIs is a
-separate task; its existing module and conformance runner remain unchanged.
+restart successor's old-process wait. Qt mirrors the same JSON and state
+transitions; its watcher emits queued signals on the object's owning thread.
+Qt server callbacks run on that thread, so apps must dispatch long operations
+to workers. Client calls and install file operations belong on worker threads.
+See [the Qt API and vendoring guide](qt/README.md).
 
 ## Testing
 
@@ -155,17 +163,24 @@ D-Bus, Xvfb, temporary HOME/XDG/`ARCADE_HOME`), never on the real desktop:
 ```sh
 python3 tools/e2e.py                          # every app's checks (74 on 2026-10-08)
 python3 tools/e2e.py --only lens,box          # some groups
+python3 tools/e2e.py --only presence,trayhost,install,shortcuts # headless Phase 1 scaffold
 python3 tools/e2e.py run -- python3 tools/stress.py   # concurrency, kill mid-burst, memory
 python3 tools/e2e.py run -- python3 tools/leak.py     # ten rounds of load, RSS per round
 python3 benchmarks/bench.py --json now.json --compare benchmarks/baseline.json
+python3 benchmarks/bench.py --trayhost --runs 10 --json tray-handback.json
+python3 benchmarks/bench.py --hub-scaffold --runs 10 --json hub-scaffold.json
 ```
 
 ## Status
 
-The v0.3 implementation is verified locally on Linux; Windows/macOS native
-tests and the new Windows installer job await GitHub CI. Rust 1.88 is the CI
-toolchain; this host uses system Rust 1.99. Interactive app install/tray
-flows remain a later app task. See [current status](docs/STATUS.md) and the
+Rust, Qt, Python and the headless Phase 1 e2e scaffold are verified locally on
+Linux. The Rust 1.88/Qt three-OS matrix and silent Windows installers run in
+[PR #3's CI](https://github.com/qa-p1/Arcade-Link/pull/3/checks); this host uses
+system Rust 1.99. The new e2e selection uses mock presence, crate-backed tray
+watchers, a temporary install harness and sibling shortcut documents/sheets.
+Existing real-app groups remain available; their binaries are checked for
+missing/stale builds before use. Interactive app install/tray flows and the
+`tools-hub` group belong to app/Tools adoption. See [current status](docs/STATUS.md) and the
 [v0.3 implementation report](docs/V0.3_REPORT.md) for evidence and limits.
 
 The apps currently use the published `v0.2.0` git tag (see the [changelog](CHANGELOG.md));
