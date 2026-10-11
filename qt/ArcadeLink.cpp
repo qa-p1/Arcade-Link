@@ -1,5 +1,6 @@
 // Arcade Link for Qt. See ArcadeLink.h and SPEC.md.
 #include "ArcadeLink.h"
+#include "ArcadeAccelerator.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -14,6 +15,7 @@
 #include <QStandardPaths>
 #include <QThread>
 #include <QTimer>
+#include <cmath>
 
 #ifdef Q_OS_UNIX
 #include <sys/stat.h>
@@ -920,7 +922,9 @@ void Server::handle(QLocalSocket *socket, const QJsonObject &m)
     } else if (method == u"app.restart" && restart) {
         const QString mode = params.value(QStringLiteral("mode")).toString(QStringLiteral("normal"));
         Error error;
-        if (mode != u"normal" && mode != u"force") error = Error::make(QStringLiteral("denied"), QStringLiteral("invalid restart mode"));
+        if ((params.contains(QStringLiteral("mode")) && !params.value(QStringLiteral("mode")).isString()) ||
+            (mode != u"normal" && mode != u"force"))
+            error = Error::make(QStringLiteral("denied"), QStringLiteral("invalid_mode"), QStringLiteral("invalid_mode"));
         else if (busy() && mode != u"force") error = Error::make(QStringLiteral("busy"), QStringLiteral("jobs are running"));
         else if (restartReady) error = restartReady(mode);
         if (error.isError()) socket->write(errorLine(id, error));
@@ -941,17 +945,55 @@ void Server::handle(QLocalSocket *socket, const QJsonObject &m)
             socket->write(errorLine(id, Error::make(QStringLiteral("unsupported"), QStringLiteral("unknown method %1").arg(method), QStringLiteral("unsupported_method"))));
             return;
         }
+        const auto deny = [&](const QString &reason) {
+            socket->write(errorLine(id, Error::make(QStringLiteral("denied"), reason, reason)));
+        };
+        QJsonObject validated = params;
         if (method == u"app.menu.invoke" && params.value(QStringLiteral("id")).toString().isEmpty()) {
-            socket->write(errorLine(id, Error::make(QStringLiteral("denied"), QStringLiteral("menu id is required"))));
+            deny(QStringLiteral("invalid_params"));
             return;
         }
-        if (method == u"app.shortcuts.set" && (params.value(QStringLiteral("id")).toString().isEmpty() || !params.value(QStringLiteral("accelerator")).isString())) {
-            socket->write(errorLine(id, Error::make(QStringLiteral("denied"), QStringLiteral("shortcut id and accelerator are required"))));
-            return;
+        if (method == u"app.shortcuts.set") {
+            const auto accelerator = params.value(QStringLiteral("accelerator")).toString();
+            if (accelerator.isEmpty()) {
+                deny(QStringLiteral("invalid_params"));
+                return;
+            }
+            const auto normalized = Accelerator::normalize(accelerator);
+            if (normalized.isEmpty()) {
+                deny(QStringLiteral("invalid_accelerator"));
+                return;
+            }
+            if (params.value(QStringLiteral("id")).toString().isEmpty()) {
+                deny(QStringLiteral("invalid_params"));
+                return;
+            }
+            validated.insert(QStringLiteral("accelerator"), normalized);
         }
-        if (method == u"app.settings.import" && !params.value(QStringLiteral("inputs")).isArray()) {
-            socket->write(errorLine(id, Error::make(QStringLiteral("denied"), QStringLiteral("inputs must be an array"))));
-            return;
+        if (method == u"app.settings.import") {
+            bool valid = params.value(QStringLiteral("inputs")).isArray() &&
+                         !params.value(QStringLiteral("inputs")).toArray().isEmpty();
+            for (const auto &input : params.value(QStringLiteral("inputs")).toArray()) {
+                const auto file = input.toObject();
+                valid &= input.isObject() && file.value(QStringLiteral("type")) == QJsonValue(QStringLiteral("file/any")) &&
+                         file.value(QStringLiteral("path")).isString();
+                for (const auto &key : {QStringLiteral("text"), QStringLiteral("html"), QStringLiteral("owner"), QStringLiteral("name")})
+                    valid &= !file.contains(key) || file.value(key).isNull() || file.value(key).isString();
+                for (const auto &key : {QStringLiteral("paths"), QStringLiteral("hints")}) {
+                    if (file.contains(key)) {
+                        valid &= file.value(key).isArray();
+                        for (const auto &value : file.value(key).toArray()) valid &= value.isString();
+                    }
+                }
+                const auto size = file.value(QStringLiteral("size"));
+                if (!size.isUndefined() && !size.isNull())
+                    valid &= size.isDouble() && size.toDouble(-1) >= 0 &&
+                             size.toDouble() < 18446744073709551616.0 && std::floor(size.toDouble()) == size.toDouble();
+            }
+            if (!valid) {
+                deny(QStringLiteral("invalid_inputs"));
+                return;
+            }
         }
         Responder r;
         r.d = std::make_shared<Responder::State>();
@@ -960,7 +1002,7 @@ void Server::handle(QLocalSocket *socket, const QJsonObject &m)
         r.d->requestId = id;
         r.d->peerId = socket->property("arcadePeer").toString();
         if (method == u"app.menu.invoke") r.d->onDone = [server = QPointer<Server>(this)] { if (server) server->notifyMenuChanged(); };
-        handler(params, r);
+        handler(validated, r);
     }
 }
 

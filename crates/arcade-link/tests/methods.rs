@@ -6,9 +6,70 @@ use arcade_link::{
 };
 use serde_json::json;
 use std::{
+    sync::atomic::{AtomicUsize, Ordering},
     sync::{Arc, Mutex},
     time::Duration,
 };
+
+#[test]
+fn optional_method_validation_vectors_run_before_callbacks() {
+    #[derive(Default)]
+    struct ValidatingApp {
+        calls: AtomicUsize,
+        accelerator: Mutex<String>,
+    }
+    impl Handler for ValidatingApp {
+        fn describe(&self) -> Vec<Action> {
+            vec![]
+        }
+        fn methods(&self) -> Vec<String> {
+            method::OPTIONAL.iter().map(|s| (*s).into()).collect()
+        }
+        fn invoke(&self, _: InvokeRequest, _: &InvokeContext) -> Result<Reply, LinkError> {
+            unreachable!()
+        }
+        fn restart_ready(&self, _: &str) -> Result<(), LinkError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        fn menu_invoke(&self, _: &str) -> Result<(), LinkError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        fn shortcuts_set(&self, _: &str, accelerator: &str) -> Result<ShortcutSetResult, LinkError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            *self.accelerator.lock().unwrap() = accelerator.into();
+            Ok(ShortcutSetResult { applied: true, via: ShortcutVia::Native, hint: None })
+        }
+        fn settings_import(&self, _: &[Content]) -> Result<ImportResult, LinkError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(ImportResult { imported: true, restart_required: false })
+        }
+    }
+    let root = std::env::temp_dir().join(format!("al-validation-{}", arcade_link::endpoint::new_token().unwrap()));
+    let loc = Locations::under(&root);
+    let app = Arc::new(ValidatingApp::default());
+    let server =
+        Server::start(ServerConfig { locations: loc.clone(), app: PeerInfo { id: "arcade.test".into(), version: "0.3".into() } }, app.clone()).unwrap();
+    let mut client = Client::connect(&loc, "arcade.test", &PeerInfo::default()).unwrap();
+    let vectors: serde_json::Value = serde_json::from_str(include_str!("../../../spec/vectors/methods.json")).unwrap();
+    for case in vectors["validation"].as_array().unwrap() {
+        let before = app.calls.load(Ordering::SeqCst);
+        let result = client.call(case["request"]["method"].as_str().unwrap(), case["request"]["params"].clone());
+        if let Some(error) = case["response"].get("error") {
+            let actual = result.unwrap_err();
+            assert_eq!(serde_json::to_value(actual).unwrap(), *error, "{}", case["name"]);
+            assert_eq!(app.calls.load(Ordering::SeqCst), before, "{}", case["name"]);
+        } else {
+            assert_eq!(result.unwrap(), case["response"]["result"], "{}", case["name"]);
+            assert_eq!(app.calls.load(Ordering::SeqCst), before + 1);
+            assert_eq!(*app.accelerator.lock().unwrap(), case["normalized"].as_str().unwrap());
+        }
+    }
+    drop(client);
+    drop(server);
+    std::fs::remove_dir_all(root).unwrap();
+}
 #[derive(Default)]
 struct App {
     new: bool,

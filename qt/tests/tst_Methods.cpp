@@ -120,6 +120,51 @@ private slots:
       }
     }
   }
+  void optionalMethodValidationVectorsRunBeforeCallbacks() {
+    QFile file(QStringLiteral(ARCADE_LINK_VECTORS "/methods.json"));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const auto cases = QJsonDocument::fromJson(file.readAll()).object()
+                           .value(QStringLiteral("validation")).toArray();
+    QVERIFY(!cases.isEmpty());
+    QTemporaryDir root;
+    const auto loc = Locations::under(root.path());
+    Server server(Ids::Find, QStringLiteral("0.3.0"), loc);
+    int calls = 0;
+    QString accelerator;
+    const auto handler = [&](const QJsonObject &params, const Responder &r) {
+      ++calls;
+      accelerator = params.value(QStringLiteral("accelerator")).toString();
+      r.done({{QStringLiteral("applied"), true}, {QStringLiteral("via"), QStringLiteral("native")}});
+    };
+    server.menuInvoke = handler;
+    server.shortcutsSet = handler;
+    server.settingsImport = handler;
+    server.restartReady = [&](const QString &) { ++calls; return Error{}; };
+    server.restart = [](const QString &) {};
+    QVERIFY(server.start());
+    for (const auto &value : cases) {
+      const auto item = value.toObject();
+      const auto request = item.value(QStringLiteral("request")).toObject();
+      const auto response = item.value(QStringLiteral("response")).toObject();
+      const auto before = calls;
+      QJsonValue result;
+      Error error;
+      worker([&] {
+        auto client = Client::connect(loc, Ids::Find, Ids::Tools, QStringLiteral("1"), 10000, &error);
+        if (client) result = client->call(request.value(QStringLiteral("method")).toString(),
+                                          request.value(QStringLiteral("params")).toObject(), &error, 10000);
+      });
+      if (response.contains(QStringLiteral("error"))) {
+        QCOMPARE(error.toJson(), response.value(QStringLiteral("error")).toObject());
+        QCOMPARE(calls, before);
+      } else {
+        QVERIFY2(!error.isError(), qPrintable(error.message));
+        QCOMPARE(result, response.value(QStringLiteral("result")));
+        QCOMPARE(calls, before + 1);
+        QCOMPARE(accelerator, item.value(QStringLiteral("normalized")).toString());
+      }
+    }
+  }
   void callbacksHelpersMenuNotificationsAndBusyRestart() {
     QTemporaryDir root;
     const auto loc = Locations::under(root.path());
