@@ -128,6 +128,33 @@ fn stale_receipt_cannot_rewrite_or_delete_foreign_integration() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn repair_refuses_traversal_before_changing_entries_or_receipt() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"v1").unwrap();
+    let r = runtime(source);
+    let first = install(&e, find_options(&app, &r, "1")).unwrap();
+    let moved = e.applications.join("Moved-Find.AppImage");
+    fs::write(&moved, b"moved copy").unwrap();
+    let traversal = e.applications.join("../Arcade/Moved-Find.AppImage");
+    assert!(traversal.is_file());
+    let launcher = first.integration.desktop_entry.as_ref().unwrap();
+    let before = fs::read(launcher).unwrap();
+    let receipt_before = fs::read(e.receipts().path(&app.id).unwrap()).unwrap();
+    assert!(repair(&e, &app, Some(&traversal)).unwrap_err().to_string().contains("parent traversal"));
+    assert_eq!(fs::read(launcher).unwrap(), before);
+    assert_eq!(fs::read(e.receipts().path(&app.id).unwrap()).unwrap(), receipt_before);
+    assert_eq!(fs::read_link(first.integration.cli.as_ref().unwrap()).unwrap(), first.path);
+    let repaired = repair(&e, &app, Some(&moved)).unwrap();
+    repaired.validate_native_paths().unwrap();
+    uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap();
+    assert!(!moved.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn duplicate_cleanup_decodes_desktop_escaping_and_exec_quoting() {
     let root = Root::new();
     let mut e = Environment::under(&root.0);

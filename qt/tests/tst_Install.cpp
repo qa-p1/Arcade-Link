@@ -307,6 +307,35 @@ private slots:
       QCOMPARE(QFileInfo(cli).symLinkTarget(), QStringLiteral("/foreign/program"));
     }
   }
+  void repairRefusesTraversalBeforeChangingEntriesOrReceipt() {
+    QTemporaryDir root;
+    const auto e = ArcadeInstall::Environment::under(root.path());
+    ArcadeInstall installer(e);
+    const auto source = root.filePath(QStringLiteral("download.AppImage"));
+    put(source, "v1");
+    auto opts = options(source, QStringLiteral("1"));
+    QJsonObject receipt;
+    QString error;
+    QVERIFY2(installer.install(opts, &receipt, &error), qPrintable(error));
+    const auto integration = receipt.value(QStringLiteral("integration")).toObject();
+    const auto launcher = integration.value(QStringLiteral("desktopEntry")).toString();
+    const auto before = get(launcher);
+    const auto receiptBefore = get(e.receipts().path(opts.app.id));
+    const auto moved = QDir(e.applications).filePath(QStringLiteral("Moved-Find.AppImage"));
+    put(moved, "moved copy");
+    const auto traversal = QDir(e.applications).filePath(QStringLiteral("../Arcade/Moved-Find.AppImage"));
+    QVERIFY(QFileInfo(traversal).isFile());
+    QVERIFY(!installer.repair(opts.app, traversal, &receipt, &error));
+    QVERIFY(error.contains(QStringLiteral("parent traversal")));
+    QCOMPARE(get(launcher), before);
+    QCOMPARE(get(e.receipts().path(opts.app.id)), receiptBefore);
+    QCOMPARE(QFileInfo(integration.value(QStringLiteral("cli")).toString()).symLinkTarget(),
+             receipt.value(QStringLiteral("path")).toString());
+    QVERIFY2(installer.repair(opts.app, moved, &receipt, &error), qPrintable(error));
+    QVERIFY(validateNativeReceiptPaths(receipt));
+    QVERIFY(installer.uninstall(opts.app.id, {}, nullptr, &error));
+    QVERIFY(!QFileInfo::exists(moved));
+  }
   void foreignIntegrationAndPreviousSurvive() {
     QTemporaryDir root;
     const auto e = ArcadeInstall::Environment::under(root.path());

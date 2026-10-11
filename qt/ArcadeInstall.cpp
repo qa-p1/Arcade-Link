@@ -1236,11 +1236,15 @@ bool ArcadeInstall::repair(const AppInfo &app, const QString &movedTo,
     return false;
   const auto conflicts = integrationConflicts(receipt);
   if (!movedTo.isEmpty()) {
-    if (!QDir::isAbsolutePath(movedTo) || !QFileInfo(movedTo).isFile())
+    if (!nativeAbsolute(movedTo, error))
+      return false;
+    if (!QFileInfo(movedTo).isFile())
       return fail(
           error, QStringLiteral("moved installation must be an absolute file"));
-    receipt.insert(QStringLiteral("path"), movedTo);
+    receipt.insert(QStringLiteral("path"), canonical(movedTo));
   }
+  if (!validateNativeReceiptPaths(receipt, error))
+    return false;
   const auto exe = receipt.value(QStringLiteral("path")).toString();
   if (!QFileInfo(exe).isFile())
     return fail(error, QStringLiteral("installed executable is missing"));

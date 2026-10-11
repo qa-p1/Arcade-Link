@@ -814,11 +814,13 @@ pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>)
     validate_integration_roots(environment, &receipt)?;
     let conflicts = integration_conflicts(&receipt)?;
     if let Some(path) = moved_to {
-        if !path.is_absolute() || !path.is_file() {
+        crate::receipt::native_absolute(path)?;
+        if !path.is_file() {
             return Err(input("moved installation must be an absolute file"));
         }
-        receipt.path = path.into();
+        receipt.path = fs::canonicalize(path)?;
     }
+    receipt.validate_native_paths()?;
     if !receipt.path.is_file() {
         return Err(input("installed executable is missing"));
     }
