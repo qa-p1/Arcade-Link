@@ -11,7 +11,10 @@ param(
     [string]$ExePath = '',
     [string]$DesktopEntry = '',
     [string]$Autostart = '',
-    [string]$Uninstaller = ''
+    [string]$Uninstaller = '',
+    [string]$Name = '',
+    [string]$Homepage = 'https://github.com/qa-p1/Arcade-catalog',
+    [string]$QuietUninstallArgs = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
 )
 $ErrorActionPreference = 'Stop'
 $root = Join-Path $env:LOCALAPPDATA 'Arcade'
@@ -26,6 +29,7 @@ if ($Autostart -eq '-') { $Autostart = '' }
 function Write-Atomic([string]$Path, [string]$Text, [bool]$Private = $false) {
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path)) | Out-Null
     $stage = $Path + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+    $backup = $stage + '.backup'
     try {
         $stream = New-Object IO.FileStream($stage, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
         try { $bytes = $utf8.GetBytes($Text); $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) }
@@ -41,9 +45,14 @@ function Write-Atomic([string]$Path, [string]$Text, [bool]$Private = $false) {
             }
             [IO.File]::SetAccessControl($stage, $acl)
         }
-        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($stage, $Path, $null) }
+        # Windows PowerShell 5.1 may bind a null string argument as an empty
+        # path in File.Replace. A uniquely owned backup works on both .NETs.
+        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($stage, $Path, $backup, $true) }
         else { [IO.File]::Move($stage, $Path) }
-    } finally { if ([IO.File]::Exists($stage)) { [IO.File]::Delete($stage) } }
+    } finally {
+        if ([IO.File]::Exists($stage)) { [IO.File]::Delete($stage) }
+        if ([IO.File]::Exists($backup)) { [IO.File]::Delete($backup) }
+    }
 }
 
 function Same-PathEntry([string]$Entry) {
@@ -114,17 +123,29 @@ if ($Action -eq 'Install') {
     }
     Write-Atomic $receiptPath ($receipt | ConvertTo-Json -Depth 5) $true
     Update-UserPath $true
+    if ($Name) {
+        $metadata = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $Id)
+        try {
+            foreach ($entry in @(@('DisplayName',$Name),@('DisplayVersion',$Version),@('Publisher','qa-p1'),@('URLInfoAbout',$Homepage),@('InstallLocation',[IO.Path]::GetDirectoryName($ExePath)),@('DisplayIcon',$ExePath),@('UninstallString',('"' + $Uninstaller + '"')))) {
+                $metadata.SetValue($entry[0],$entry[1],[Microsoft.Win32.RegistryValueKind]::String)
+            }
+            $metadata.SetValue('NoModify',1,[Microsoft.Win32.RegistryValueKind]::DWord)
+            $metadata.SetValue('NoRepair',1,[Microsoft.Win32.RegistryValueKind]::DWord)
+            $metadata.SetValue('QuietUninstallString',('"' + $Uninstaller + '" ' + $QuietUninstallArgs),[Microsoft.Win32.RegistryValueKind]::String)
+        } finally { $metadata.Dispose() }
+    }
 } else {
     # Match ownership before removing a shim, so uninstalling an old copy
     # cannot remove a successor installation's shim/receipt.
     if ([IO.File]::Exists($receiptPath)) {
         $receipt = Get-Content -Raw -LiteralPath $receiptPath -Encoding UTF8 | ConvertFrom-Json
         if ($receipt.id -ne $Id) { throw 'Receipt id differs from filename.' }
-        if ($ExePath -and -not [string]::Equals($receipt.path, [IO.Path]::GetFullPath($ExePath), [StringComparison]::OrdinalIgnoreCase)) { exit 0 }
+        if (-not $ExePath -or -not [string]::Equals($receipt.path, [IO.Path]::GetFullPath($ExePath), [StringComparison]::OrdinalIgnoreCase)) { exit 10 }
         foreach ($entry in @($receipt.integration.cli, $receipt.integration.desktopEntry, $receipt.integration.autostart)) {
             if ($entry -and [IO.File]::Exists($entry)) { [IO.File]::Delete($entry) }
         }
         [IO.File]::Delete($receiptPath)
-    }
+    } else { exit 10 } # No receipt means no proof of shared ownership.
     Update-UserPath $false
+    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree('Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $Id, $false)
 }

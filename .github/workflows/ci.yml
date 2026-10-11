@@ -91,10 +91,14 @@ jobs:
           if (-not (Test-Path $inno)) { $inno = (Get-Command ISCC.exe).Source }
           & $inno sample.iss
           if ($LASTEXITCODE -ne 0) { throw 'Inno compilation failed' }
+          & $inno /DARCADE_VERSION=0.3.1 /DARCADE_SETUP_FILENAME=sample-inno-newer sample.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Newer Inno compilation failed' }
           $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
           if (-not (Test-Path $nsis)) { $nsis = (Get-Command makensis.exe).Source }
           & $nsis /V4 sample.nsi
           if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed' }
+          & $nsis /V4 /DARCADE_VERSION=0.3.1 /DARCADE_SETUP_FILENAME=sample-nsis-newer.exe sample.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'Newer NSIS compilation failed' }
       - name: Verify silent install and uninstall
         # Use Windows PowerShell 5.1, the same host invoked by the installers.
         shell: powershell

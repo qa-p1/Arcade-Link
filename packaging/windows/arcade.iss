@@ -23,6 +23,9 @@ DefaultGroupName={#ARCADE_NAME}
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#ARCADE_EXE}
+; Shared Apps & features metadata is receipt-owned, rather than unconditionally
+; removed by an old Inno uninstall log after a successor changes directories.
+CreateUninstallRegKey=no
 
 [Tasks]
 Name: "arcade_desktop"; Description: "Create a desktop shortcut"; Flags: unchecked
@@ -36,11 +39,25 @@ Name: "arcade_startup"; Description: "Start at login"; Flags: unchecked
 Source: "{#ArcadeHelper}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{userprograms}\{#ARCADE_NAME}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"
-Name: "{userdesktop}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"; Tasks: arcade_desktop
-Name: "{userstartup}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"; Parameters: "--background"; Tasks: arcade_startup
+Name: "{userprograms}\{#ARCADE_NAME}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"; Flags: uninsneveruninstall
+Name: "{userdesktop}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"; Tasks: arcade_desktop; Flags: uninsneveruninstall
+Name: "{userstartup}\{#ARCADE_NAME}"; Filename: "{app}\{#ARCADE_EXE}"; Parameters: "--background"; Tasks: arcade_startup; Flags: uninsneveruninstall
+
+[UninstallDelete]
+Type: files; Name: "{userdesktop}\{#ARCADE_NAME}.lnk"; Check: ArcadeOwnsSharedIntegration
+Type: files; Name: "{userprograms}\{#ARCADE_NAME}\{#ARCADE_NAME}.lnk"; Check: ArcadeOwnsSharedIntegration
+Type: files; Name: "{userstartup}\{#ARCADE_NAME}.lnk"; Check: ArcadeOwnsSharedIntegration
+Type: dirifempty; Name: "{userprograms}\{#ARCADE_NAME}"; Check: ArcadeOwnsSharedIntegration
 
 [Code]
+var
+  ArcadeUninstallOwnsIntegration: Boolean;
+
+function ArcadeOwnsSharedIntegration: Boolean;
+begin
+  Result := ArcadeUninstallOwnsIntegration;
+end;
+
 function ArcadeQuote(Value: String): String;
 begin
   Result := '"' + Value + '"';
@@ -62,6 +79,8 @@ begin
       ' -ManagedBy ' + ArcadeQuote(ExpandConstant('{param:ARCADEMANAGEDBY|self}')) +
       ' -DesktopEntry ' + ArcadeQuote(ExpandConstant('{userprograms}\{#ARCADE_NAME}\{#ARCADE_NAME}.lnk')) +
       ' -Autostart ' + ArcadeQuote(Autostart) +
+      ' -Name ' + ArcadeQuote('{#ARCADE_NAME}') +
+      ' -Homepage ' + ArcadeQuote('{#ARCADE_HOMEPAGE}') +
       ' -Uninstaller ' + ArcadeQuote(ExpandConstant('{uninstallexe}'));
   end else
     Params := Params + ' -Action Uninstall';
@@ -71,6 +90,10 @@ begin
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params,
       '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
     RaiseException('Could not start Arcade installation integration.');
+  if not Installing then begin
+    ArcadeUninstallOwnsIntegration := ExitCode = 0;
+    if ExitCode = 10 then Exit;
+  end;
   if ExitCode <> 0 then
     RaiseException('Arcade installation integration failed (exit ' + IntToStr(ExitCode) + ').');
 end;

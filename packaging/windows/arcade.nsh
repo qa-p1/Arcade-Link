@@ -120,16 +120,21 @@ Var ArcadeIntegrationOutput
   nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "$INSTDIR\arcade-integration.ps1" -Action Uninstall -Id "${ARCADE_ID}" -CliName "${ARCADE_CLI}" -ExePath "$INSTDIR\${ARCADE_EXE}"'
   Pop $ArcadeExitCode
   Pop $ArcadeIntegrationOutput
-  ${If} $ArcadeExitCode != 0
+  ${If} $ArcadeExitCode == 10
+    ; An old copy may remove its private payload, never successor integration.
+    DetailPrint "Shared integration belongs to a successor; leaving it intact."
+  ${ElseIf} $ArcadeExitCode != 0
     SetErrorLevel $ArcadeExitCode
     Abort "Arcade uninstall integration failed."
   ${EndIf}
-  Delete "$DESKTOP\${ARCADE_NAME}.lnk"
-  Delete "$SMPROGRAMS\${ARCADE_NAME}\${ARCADE_NAME}.lnk"
-  RMDir "$SMPROGRAMS\${ARCADE_NAME}"
-  Delete "$SMSTARTUP\${ARCADE_NAME}.lnk"
+  ${If} $ArcadeExitCode == 0
+    Delete "$DESKTOP\${ARCADE_NAME}.lnk"
+    Delete "$SMPROGRAMS\${ARCADE_NAME}\${ARCADE_NAME}.lnk"
+    RMDir "$SMPROGRAMS\${ARCADE_NAME}"
+    Delete "$SMSTARTUP\${ARCADE_NAME}.lnk"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${ARCADE_ID}"
+  ${EndIf}
   Delete "$INSTDIR\arcade-integration.ps1"
   Delete "$INSTDIR\arcade-integration-error.log"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${ARCADE_ID}"
 !macroend
 !endif

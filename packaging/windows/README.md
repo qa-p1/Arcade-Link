@@ -35,6 +35,9 @@ Define these before including either file:
 Names/values must be trusted compile-time strings without quotes or newlines.
 Keep existing installer identities: Inno's optional `ARCADE_INSTALLER_ID`
 defaults to `ARCADE_ID`; override it with the app's current `AppId`.
+The include disables Inno's automatic uninstall registry key and writes
+receipt-owned HKCU Apps & features metadata under `ARCADE_ID`. Apps migrating
+an older `_is1` key should remove that legacy key only while they own it.
 
 For Inno, include `arcade.iss`, then supply the app's `[Files]` and build
 directives. Existing Pascal event handlers define `ARCADE_CUSTOM_EVENTS`
@@ -57,6 +60,13 @@ choice and must not recursively remove a data-bearing install directory.
 verification script. The `windows-installers` CI job builds and runs both,
 checks repeated installs, two simultaneous shims, metadata, receipts, and
 last-one-out removal. This job has not been run locally on Linux.
+It also installs version 0.3.1 in a different directory and runs the old
+0.3.0 uninstaller, checking that the successor's shortcuts, shim, receipt,
+PATH entry and metadata survive. The shared helper returns exit 10 when the
+receipt belongs to another executable (or is missing); both includes treat
+that as a successful private uninstall and skip every shared cleanup.
+Custom Inno uninstall handlers must still call `ArcadeIntegration(False)`
+at `usUninstall` so the guarded `[UninstallDelete]` entries know ownership.
 
 Implementation references: [Inno Pascal support functions](https://jrsoftware.org/ishelp/topic_scriptfunctions.htm),
 [NSIS scripting reference](https://nsis.sourceforge.io/Docs/Chapter4.html).

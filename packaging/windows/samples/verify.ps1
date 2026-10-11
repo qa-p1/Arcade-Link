@@ -26,9 +26,12 @@ function PathCount {
     $raw = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
     return @($raw.Split(';') | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ieq $bin.TrimEnd('\') }).Count
 }
-function Installed($Case) { return Join-Path $env:LOCALAPPDATA ('Programs\' + $Case.Name) }
-function Uninstall($Case) {
-    $dir = Installed $Case
+function Installed($Case) {
+    if ($Case.ActiveDir) { return $Case.ActiveDir }
+    return Join-Path $env:LOCALAPPDATA ('Programs\' + $Case.Name)
+}
+function Uninstall($Case, [string]$Directory = '') {
+    $dir = if ($Directory) { $Directory } else { Installed $Case }
     $exe = Join-Path $dir $Case.Uninstaller
     if (-not (Test-Path -LiteralPath $exe)) { return }
     # NSIS normally forks a temporary uninstaller and returns early. _?=
@@ -55,9 +58,34 @@ try {
         Assert (Test-Path -LiteralPath $r.integration.desktopEntry) 'missing Start menu entry'
         Assert (Test-Path -LiteralPath $r.integration.autostart) 'missing start-at-login entry'
         Assert (Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Desktop')) ($case.Name + '.lnk'))) 'missing optional desktop shortcut'
-        $metadata = Get-ItemProperty ('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $(if ($case.Id -eq 'arcade.ci-inno') { $case.Id + '_is1' } else { $case.Id }))
+        $metadataPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $case.Id
+        $metadata = Get-ItemProperty $metadataPath
         Assert ($metadata.Publisher -eq 'qa-p1' -and $metadata.DisplayVersion -eq '0.3.0') 'invalid Apps & features metadata'
         Write-Host "$($case.Id): silent install, repeat install, receipt, shim, tasks and metadata passed"
+        # Regression: a newer copy in a different directory replaces shared
+        # integration, then the *old* native uninstaller must leave it intact.
+        $case.OldDir = Installed $case
+        $successor = $case.OldDir + ' successor'
+        $nextArgs = @($case.Args)
+        if ($case.Id -eq 'arcade.ci-inno') { $nextArgs += ('/DIR="' + $successor + '"') }
+        else { $nextArgs += ('/D=' + $successor) } # NSIS /D must be last.
+        $newerSetup = $case.Setup.Replace('.exe','-newer.exe')
+        Run (Join-Path $PSScriptRoot $newerSetup) $nextArgs
+        $case.ActiveDir = $successor
+        $newReceipt = Get-Content -Raw -LiteralPath $receipt -Encoding UTF8 | ConvertFrom-Json
+        Assert ($newReceipt.version -eq '0.3.1' -and $newReceipt.path -eq (Join-Path $successor 'sample.exe')) 'successor receipt was not installed'
+        $shared = @($receipt,$shim,$newReceipt.integration.desktopEntry,$newReceipt.integration.autostart,(Join-Path ([Environment]::GetFolderPath('Desktop')) ($case.Name + '.lnk')))
+        $before = @{}
+        foreach ($entry in $shared) { $before[$entry] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($entry)) }
+        Uninstall $case $case.OldDir
+        foreach ($entry in $shared) {
+            Assert (Test-Path -LiteralPath $entry) ('old uninstall removed successor entry: ' + $entry)
+            Assert ([Convert]::ToBase64String([IO.File]::ReadAllBytes($entry)) -eq $before[$entry]) ('old uninstall changed successor entry: ' + $entry)
+        }
+        $metadata = Get-ItemProperty $metadataPath
+        Assert ($metadata.DisplayVersion -eq '0.3.1' -and $metadata.InstallLocation -eq $successor) 'old uninstall removed or changed successor metadata'
+        Assert ((PathCount) -eq 1) 'old uninstall changed shared Path'
+        Write-Host "$($case.Id): uninstall old copy after newer install preserved all successor integration"
     }
     Uninstall $cases[0]
     Assert ((PathCount) -eq 1) 'uninstall removed shared Path while another shim exists'
@@ -67,12 +95,15 @@ try {
         Assert (-not (Test-Path -LiteralPath (Join-Path $bin ($case.Cli + '.cmd')))) 'shim remained after uninstall'
         Assert (-not (Test-Path -LiteralPath (Join-Path $root ('installs\' + $case.Id + '.json')))) 'receipt remained after uninstall'
         Assert (-not (Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Startup')) ($case.Name + '.lnk')))) 'autostart remained after uninstall'
+        Assert (-not (Test-Path -LiteralPath ('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $case.Id))) 'Apps & features metadata remained after uninstall'
+        Assert (-not (Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Desktop')) ($case.Name + '.lnk')))) 'desktop shortcut remained after uninstall'
     }
     Write-Host 'Both silent uninstalls and last-one-out Path removal passed'
 } finally {
     foreach ($case in $cases) {
         try { Uninstall $case } catch { Write-Warning $_ }
         Remove-Item -LiteralPath (Installed $case) -Recurse -Force -ErrorAction SilentlyContinue
+        if ($case.OldDir) { Remove-Item -LiteralPath $case.OldDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
     if ($hadPath) { $key.SetValue('Path', $oldPath, $oldKind) } else { $key.DeleteValue('Path', $false) }
     $key.Dispose()
