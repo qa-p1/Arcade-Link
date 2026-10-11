@@ -1,11 +1,16 @@
 //! Headless e2e adapter. Every operation requires an explicit disposable root.
+#[cfg(target_os = "linux")]
 use arcade_link::{
     install::{self, AppInfo, Environment, Icon, IconSize, InstallOptions, Runtime, UninstallOptions},
     receipt::ManagedBy,
 };
-use serde_json::{json, Value};
+#[cfg(target_os = "linux")]
+use serde_json::json;
+use serde_json::Value;
+#[cfg(target_os = "linux")]
 use std::{env, path::PathBuf};
 
+#[cfg(target_os = "linux")]
 fn run() -> Result<Value, Box<dyn std::error::Error>> {
     let args: Vec<_> = env::args().collect();
     let root = PathBuf::from(args.get(1).ok_or("needs an absolute root and operation")?);
@@ -55,6 +60,10 @@ fn run() -> Result<Value, Box<dyn std::error::Error>> {
         "uninstall" => json!({"removed": install::uninstall(&environment, &app.id, UninstallOptions {remove_data:false,data_folders:&[]})?}),
         _ => return Err("unknown harness operation".into()),
     })
+}
+#[cfg(not(target_os = "linux"))]
+fn run() -> Result<Value, Box<dyn std::error::Error>> {
+    Err("the AppImage e2e harness requires Linux; use native receipt/PATH/bundle helpers on this OS".into())
 }
 fn main() {
     match run() {
