@@ -96,7 +96,12 @@ private slots:
     QCOMPARE(watcher.state(), QStringLiteral("hosted"));
     host = std::make_unique<RustHost>(root.path(), cli());
     QTRY_VERIFY_WITH_TIMEOUT(host->saw("ready"), 5000);
-    QTest::qWait(200);
+    // Hosted can still mean the old host's grace. Observe the successor's
+    // actual subscription before asking it to restart a second time.
+    QTRY_VERIFY_WITH_TIMEOUT(([&] {
+      host->send("subscribers");
+      return host->saw("subscribers arcade.wheel");
+    })(), 4000);
     QCOMPARE(states.count(), 0);
     QCOMPARE(watcher.state(), QStringLiteral("hosted"));
     QElapsedTimer elapsed;
@@ -104,10 +109,12 @@ private slots:
     host->send("restarting");
     QTRY_VERIFY(host->saw("ok restarting"));
     host.reset();
-    QTest::qWait(4650);
+    QTest::qWait(1000);
     QCOMPARE(watcher.state(), QStringLiteral("hosted"));
-    QTRY_COMPARE_WITH_TIMEOUT(watcher.state(), QStringLiteral("own"), 850);
-    QVERIFY(elapsed.elapsed() >= 4900 && elapsed.elapsed() < 5600);
+    QTRY_COMPARE_WITH_TIMEOUT(watcher.state(), QStringLiteral("own"), 6500);
+    QVERIFY(elapsed.elapsed() >= 4900);
+    // Shared vectors separately check the exact 4999/5000 boundary with a
+    // controllable clock. Scheduler delays must not fail this live I/O test.
   }
   void startupGateIsBoundedAndRecoversAfterSameTokenRewrite() {
     QTemporaryDir root;

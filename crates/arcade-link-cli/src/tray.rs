@@ -74,6 +74,11 @@ pub(crate) fn commands(loc: &Locations, host: &TrayHostServer, doc: &mut Manifes
         let line = line.map_err(|e| e.to_string())?;
         let words: Vec<_> = line.split_whitespace().collect();
         match words.as_slice() {
+            ["subscribers"] => {
+                println!("subscribers {}", host.subscribers().join(" "));
+                io::stdout().flush().map_err(|e| e.to_string())?;
+                continue;
+            }
             ["hosted", value @ ("true" | "false")] => {
                 host.set_hosted(*value == "true");
                 doc.additions.tray_host.as_mut().unwrap().enabled = *value == "true";

@@ -30,6 +30,7 @@ foreach(test_name IN ITEMS Vectors Server Install TrayHost Methods)
         ARCADE_LINK_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../spec/vectors"
         ARCADE_LINK_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures"
         ARCADE_LINK_INSTALL_STRINGS="${CMAKE_CURRENT_SOURCE_DIR}/../assets/strings/install.json")
-    add_test(NAME ${test_name} COMMAND tst_${test_name})
+    # Windows QtTest may otherwise select debugger output instead of stdout.
+    add_test(NAME ${test_name} COMMAND tst_${test_name} -o -,txt)
 endforeach()
 endif()

@@ -128,7 +128,7 @@ private slots:
     QProcess child;
     child.setProcessEnvironment(env);
     child.start(QCoreApplication::applicationFilePath(),
-                {QStringLiteral("environmentChild")});
+                {QStringLiteral("environmentChild"), QStringLiteral("-o"), QStringLiteral("-,txt")});
     QVERIFY(child.waitForFinished(10000));
     QVERIFY2(child.exitCode() == 0, child.readAllStandardOutput().constData());
   }
