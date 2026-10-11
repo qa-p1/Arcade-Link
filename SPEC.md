@@ -565,6 +565,8 @@ Unknown fields are ignored; malformed recognized keys are errors.
 when a manifest is supplied, true IDs must match its `shortcuts[].id`.
 Conflicting bindings (including alternatives) in the same context for the
 same OS are errors, across group boundaries as well as within a group.
+Alternatives within each keys value must also be distinct and free of
+prefix conflicts, even when OS overrides make that value ineffective.
 Generate `shortcuts.md` as one Action | Linux | Windows | macOS table per
 group, with display strings, `<br>` between alternatives and `—` unavailable.
 
@@ -574,6 +576,8 @@ the same groups but replaces app/version with kebab-case `id`, `name`,
 `checkedVersion`, `sources` (at least one https URL), and `match` (at least
 one OS: linux `{class:[…]}`, windows `{exe:[…]}`, macos `{bundle:[…]}`).
 Matches are case-insensitive. `rebindable` is forbidden, including false.
+In sheets, context `global` is reserved for `windows-system` and
+`macos-system`; ordinary app-wide groups use `app`.
 The Rust module and stdlib-only `tools/validate_shortcuts.py` enforce the
 same semantic rules in addition to schema shape validation.
 
@@ -602,6 +606,9 @@ unknown fields. See [`spec/receipt.schema.json`](spec/receipt.schema.json):
 Methods: appimage, windows-installer, macos-bundle, tarball, manual, dev;
 managedBy: self or tools (update owner). Paths are absolute. `previous` is
 optional; timestamps are UTC RFC3339 seconds, updatedAt ≥ installedAt.
+Portable parsing accepts absolute paths from other operating systems;
+filesystem mutations require natively absolute paths without `..` traversal.
+Integration paths must remain inside the explicitly configured roots.
 Dev builds never write receipts, and advertise install `dev`: executable
 under a `.git` directory/file ancestor, under target/build of a source
 tree, or `ARCADE_DEV_BUILD=1`. Install detection reports runningFrom,
@@ -616,6 +623,11 @@ with Settings/Quit/Uninstall actions and `X-Arcade-Id=<id>`, and a
 create it only when requested, preserving other options such as Hidden.
 Keep a replaced binary in `.previous/` and record it. Write the receipt
 after integration succeeds; on failure restore the prior installation.
+Only replace receipt-owned or validated app/legacy entries. Leave foreign
+files and links intact and report them in `integration.skipped` as
+`{path, reason}`; these diagnostic entries are never owned or removed.
+Reuse or remove a previous binary only when the old receipt records it;
+otherwise choose an unused path. Rollback restores saved links atomically.
 Desktop/icon cache refresh commands, when available, are non-fatal.
 Re-exec from the installed path with original args only when launch policy
 requests it. Uninstall reverses receipt paths only, plus caller-supplied
