@@ -12,5 +12,6 @@
     { "id": "lens.pin", "title": "Pin", "verb": "pin", "accepts": ["file/image"], "effects": ["opens-ui"], "interactive": true }
   ],
   "menu": [{"id": "capture-text", "title": "Capture text", "kind": "action", "enabled": true}, {"id": "pick-color", "title": "Pick color", "kind": "action", "enabled": true}],
-  "docs": {"version": "0.0.0-mock"}
+  "docs": {"version": "0.0.0-mock"},
+  "methods": ["app.settings", "app.restart", "app.menu", "app.menu.invoke", "app.shortcuts.set", "app.settings.export", "app.settings.import"]
 }

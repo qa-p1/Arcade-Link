@@ -14,5 +14,6 @@
       "enabled": true,
       "excluded": []
     }
-  }
+  },
+  "methods": ["app.settings", "app.restart", "app.menu", "app.menu.invoke", "app.shortcuts.set", "app.settings.export", "app.settings.import"]
 }

@@ -12,5 +12,6 @@
       "mock": { "result": { "outputs": [{ "type": "structured/devices", "data": [{ "name": "Phone", "platform": "ios", "online": true }] }] } } }
   ],
   "menu": [{"id": "private", "title": "Private mode", "kind": "toggle", "enabled": true, "checked": false}, {"id": "pause", "title": "Pause sync", "kind": "toggle", "enabled": true, "checked": false}],
-  "docs": {"version": "0.0.0-mock"}
+  "docs": {"version": "0.0.0-mock"},
+  "methods": ["app.settings", "app.restart", "app.menu", "app.menu.invoke", "app.shortcuts.set", "app.settings.export", "app.settings.import"]
 }
