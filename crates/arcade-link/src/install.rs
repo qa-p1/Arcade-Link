@@ -277,6 +277,14 @@ fn symlink(path: &Path, target: &Path) -> io::Result<()> {
             return Err(io::Error::new(io::ErrorKind::AlreadyExists, "CLI path is an existing regular file"));
         }
     }
+    replace_symlink(path, target)
+}
+
+// Rollback owns the replacement at this path, including a regular launcher.
+// A staged symlink plus rename restores the saved link atomically.
+#[cfg(unix)]
+fn replace_symlink(path: &Path, target: &Path) -> io::Result<()> {
+    fs::create_dir_all(path.parent().ok_or_else(|| input("no symlink parent"))?)?;
     let tmp = path.with_extension(format!("{}.link", crate::endpoint::new_token()?));
     std::os::unix::fs::symlink(target, &tmp)?;
     fs::rename(&tmp, path).inspect_err(|_| {
@@ -478,7 +486,7 @@ impl Drop for InstallRollback {
                     }
                 }
                 SavedEntry::Symlink(target) => {
-                    let _ = symlink(path, target);
+                    let _ = replace_symlink(path, target);
                 }
             }
         }

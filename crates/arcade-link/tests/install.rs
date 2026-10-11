@@ -138,6 +138,35 @@ fn update_preserves_an_unowned_previous_file() {
     assert!(!owned.exists());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn rollback_atomically_restores_a_launcher_symlink_over_the_generated_file() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    let r = runtime(source.clone());
+    fs::write(&source, b"v1").unwrap();
+    let mut first = install(&e, find_options(&app, &r, "1")).unwrap();
+    let launcher = first.integration.desktop_entry.as_ref().unwrap();
+    let target = root.0.join("launcher-original.desktop");
+    fs::rename(launcher, &target).unwrap();
+    std::os::unix::fs::symlink(&target, launcher).unwrap();
+    let original = fs::read(&target).unwrap();
+    let autostart = e.config.join("autostart/arcade-find.desktop");
+    fs::create_dir_all(autostart.parent().unwrap()).unwrap();
+    fs::write(&autostart, b"[Desktop Entry]\nHidden=true\n").unwrap();
+    first.integration.autostart = Some(autostart);
+    e.receipts().write(&first).unwrap();
+    fs::write(&source, b"v2").unwrap();
+    assert!(install(&e, find_options(&app, &r, "2")).is_err());
+    assert!(fs::symlink_metadata(launcher).unwrap().file_type().is_symlink());
+    assert_eq!(fs::read_link(launcher).unwrap(), target);
+    assert_eq!(fs::read(launcher).unwrap(), original);
+    assert_eq!(fs::read(&first.path).unwrap(), b"v1");
+    assert_eq!(e.receipts().read(&app.id).unwrap().unwrap(), first);
+}
+
 #[test]
 fn relative_install_environment_is_refused_before_writing() {
     let e = Environment::under(Path::new("relative-install-root"));
