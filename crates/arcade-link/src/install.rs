@@ -5,7 +5,7 @@
 use crate::{
     manifest,
     paths::Locations,
-    receipt::{ManagedBy, Receipt, Store},
+    receipt::{ManagedBy, Receipt, SkippedEntry, Store},
 };
 #[cfg(target_os = "linux")]
 use crate::{
@@ -401,6 +401,78 @@ fn desktop_executable(text: &str) -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "linux")]
+fn desktop_owned(path: &Path, app: &AppInfo, recorded: bool) -> bool {
+    let Ok(text) = fs::read_to_string(path) else { return false };
+    let marker = entry_value(&text, "X-Arcade-Id");
+    if marker.is_some_and(|id| id != app.id) {
+        return false;
+    }
+    if recorded {
+        return true;
+    }
+    let Some(executable) = desktop_executable(&text) else { return false };
+    if entry_value(&text, "Type") != Some("Application") || !executable.is_absolute() {
+        return false;
+    }
+    if marker == Some(&app.id) {
+        return true;
+    }
+    let known_id = path.file_stem().is_some_and(|id| {
+        id == app.desktop_id.as_str() || id == app.autostart_id.as_str() || app.legacy_desktop_ids.iter().any(|legacy| id == legacy.as_str())
+    });
+    known_id && executable.file_name().is_some_and(|name| name == app.filename.as_str() || name == app.cli_name.as_str())
+}
+
+#[cfg(target_os = "linux")]
+fn available_entry(path: &Path, owned: bool) -> io::Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) => Ok(owned && (meta.is_file() || meta.file_type().is_symlink())),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(true),
+        Err(e) => Err(e),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn skipped(integration: &mut Integration, path: PathBuf) {
+    integration.skipped.push(SkippedEntry { path, reason: "existing entry belongs to another installation".into() });
+}
+
+#[cfg(target_os = "linux")]
+fn within_root(path: &Path, root: &Path) -> io::Result<()> {
+    crate::receipt::native_absolute(path)?;
+    // Resolve the nearest existing parent, including symlinked directories.
+    let parent = path.parent().ok_or_else(|| input("entry has no parent"))?;
+    let existing = parent.ancestors().find(|p| p.exists()).ok_or_else(|| input("entry has no existing ancestor"))?;
+    let expected = root.ancestors().find(|p| p.exists()).ok_or_else(|| input("root has no existing ancestor"))?;
+    let resolved_parent = canonical(existing).join(parent.strip_prefix(existing).map_err(|_| input("invalid entry root"))?);
+    let resolved_root = canonical(expected).join(root.strip_prefix(expected).map_err(|_| input("invalid configured root"))?);
+    if !path.starts_with(root) || !resolved_parent.starts_with(resolved_root) {
+        return Err(input("integration path escapes its configured root"));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn validate_integration_roots(environment: &Environment, receipt: &Receipt) -> io::Result<()> {
+    for p in &receipt.integration.icons {
+        within_root(p, &environment.data.join("icons"))?;
+    }
+    if let Some(p) = &receipt.integration.desktop_entry {
+        within_root(p, &environment.data.join("applications"))?;
+    }
+    if let Some(p) = &receipt.integration.autostart {
+        within_root(p, &environment.config.join("autostart"))?;
+    }
+    if let Some(p) = &receipt.integration.cli {
+        within_root(p, &environment.bin)?;
+    }
+    if let Some(p) = &receipt.previous {
+        within_root(&p.path, &environment.applications.join(".previous"))?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
 fn cleanup_duplicates(environment: &Environment, app: &AppInfo, main: &Path, executable: &Path) -> io::Result<()> {
     let dir = environment.data.join("applications");
     for entry in fs::read_dir(&dir)?.flatten() {
@@ -409,8 +481,7 @@ fn cleanup_duplicates(environment: &Environment, app: &AppInfo, main: &Path, exe
             continue;
         }
         let Ok(text) = fs::read_to_string(&path) else { continue };
-        let owned = text.lines().any(|line| line == format!("X-Arcade-Id={}", app.id))
-            || path.file_stem().is_some_and(|id| app.legacy_desktop_ids.iter().any(|s| id == s.as_str()));
+        let owned = desktop_owned(&path, app, false);
         let Some(entry_executable) = desktop_executable(&text) else { continue };
         let same = canonical(&entry_executable) == canonical(executable);
         if owned && !same {
@@ -515,14 +586,27 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     let old = detected.receipt;
     if let Some(receipt) = &old {
         receipt.validate_native_paths()?;
+        validate_integration_roots(environment, receipt)?;
     }
     let same = canonical(&source) == canonical(&dest);
     let mut previous = old.as_ref().and_then(|r| r.previous.clone());
-    let mut integration = Integration {
-        desktop_entry: Some(environment.data.join("applications").join(format!("{}.desktop", opts.app.desktop_id))),
-        cli: Some(environment.bin.join(&opts.app.cli_name)),
-        ..Integration::default()
-    };
+    let mut integration = Integration::default();
+    let desktop_entry = environment.data.join("applications").join(format!("{}.desktop", opts.app.desktop_id));
+    within_root(&desktop_entry, &environment.data.join("applications"))?;
+    let recorded = old.as_ref().is_some_and(|r| r.integration.desktop_entry.as_ref() == Some(&desktop_entry));
+    if available_entry(&desktop_entry, desktop_owned(&desktop_entry, opts.app, recorded))? {
+        integration.desktop_entry = Some(desktop_entry.clone());
+    } else {
+        skipped(&mut integration, desktop_entry.clone());
+    }
+    let cli = environment.bin.join(&opts.app.cli_name);
+    within_root(&cli, &environment.bin)?;
+    let cli_owned = fs::read_link(&cli).is_ok_and(|p| p == dest || old.as_ref().is_some_and(|r| p == r.path));
+    if available_entry(&cli, cli_owned)? {
+        integration.cli = Some(cli);
+    } else {
+        skipped(&mut integration, cli);
+    }
     let mut prepared_icons = Vec::new();
     for icon in opts.icons {
         let size = match icon.size {
@@ -535,22 +619,32 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
             IconSize::Scalable => "svg",
         };
         let target = environment.data.join("icons/hicolor").join(size).join("apps").join(format!("{}.{ext}", opts.app.desktop_id));
+        within_root(&target, &environment.data.join("icons"))?;
+        if !available_entry(&target, old.as_ref().is_some_and(|r| r.integration.icons.contains(&target)))? {
+            skipped(&mut integration, target);
+            continue;
+        }
         let bytes = fs::read(&icon.source)?;
         prepared_icons.push((target.clone(), bytes));
         integration.icons.push(target);
     }
     if let Some(old) = &old {
         for icon in &old.integration.icons {
-            if !integration.icons.contains(icon) {
+            if !integration.icons.contains(icon) && !integration.skipped.iter().any(|s| &s.path == icon) {
                 integration.icons.push(icon.clone());
             }
         }
     }
-    let cli = integration.cli.as_ref().unwrap();
-    if fs::symlink_metadata(cli).is_ok_and(|m| !m.file_type().is_symlink()) {
-        return Err(io::Error::new(io::ErrorKind::AlreadyExists, "CLI path is an existing regular file"));
-    }
     let autostart = environment.config.join("autostart").join(format!("{}.desktop", opts.app.autostart_id));
+    within_root(&autostart, &environment.config.join("autostart"))?;
+    if fs::symlink_metadata(&autostart).is_ok() || opts.start_at_login {
+        let recorded = old.as_ref().is_some_and(|r| r.integration.autostart.as_ref() == Some(&autostart));
+        if available_entry(&autostart, desktop_owned(&autostart, opts.app, recorded))? {
+            integration.autostart = Some(autostart.clone());
+        } else {
+            skipped(&mut integration, autostart.clone());
+        }
+    }
     let staged = dest.with_extension(format!("{}.stage", crate::endpoint::new_token()?));
     let mut rollback = InstallRollback {
         entries: Vec::new(),
@@ -564,7 +658,7 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     for path in prepared_icons.iter().map(|(p, _)| p).chain(integration.desktop_entry.iter()).chain(integration.cli.iter()) {
         rollback.save(path)?;
     }
-    if autostart.exists() || opts.start_at_login {
+    if integration.autostart.is_some() {
         rollback.save(&autostart)?;
     }
     // Duplicate cleanup is reversible too, including legacy launchers.
@@ -572,9 +666,7 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
         for entry in entries {
             let path = entry?.path();
             if path.extension().is_some_and(|e| e == "desktop") {
-                let text = fs::read_to_string(&path)?;
-                let owned = text.lines().any(|line| line == format!("X-Arcade-Id={}", opts.app.id))
-                    || path.file_stem().is_some_and(|id| opts.app.legacy_desktop_ids.iter().any(|s| id == s.as_str()));
+                let owned = desktop_owned(&path, opts.app, false);
                 if owned {
                     rollback.save(&path)?;
                 }
@@ -624,12 +716,18 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     for (path, bytes) in prepared_icons {
         write(&path, &bytes)?;
     }
-    write(integration.desktop_entry.as_ref().unwrap(), desktop(opts.app, &dest).as_bytes())?;
-    symlink(integration.cli.as_ref().unwrap(), &dest)?;
-    if repair_autostart(&autostart, opts.app, &dest, opts.start_at_login)? {
-        integration.autostart = Some(autostart);
+    if let Some(path) = &integration.desktop_entry {
+        write(path, desktop(opts.app, &dest).as_bytes())?;
     }
-    cleanup_duplicates(environment, opts.app, integration.desktop_entry.as_ref().unwrap(), &dest)?;
+    if let Some(path) = &integration.cli {
+        symlink(path, &dest)?;
+    }
+    if let Some(path) = &integration.autostart {
+        repair_autostart(path, opts.app, &dest, opts.start_at_login)?;
+    }
+    if integration.desktop_entry.is_some() {
+        cleanup_duplicates(environment, opts.app, &desktop_entry, &dest)?;
+    }
     let now = manifest::now_rfc3339();
     let receipt = Receipt {
         schema: 1,
@@ -664,6 +762,7 @@ pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>)
     app.validate()?;
     let mut receipt = environment.receipts().read(&app.id)?.ok_or_else(|| input("no receipt"))?;
     receipt.validate_native_paths()?;
+    validate_integration_roots(environment, &receipt)?;
     if let Some(path) = moved_to {
         if !path.is_absolute() || !path.is_file() {
             return Err(input("moved installation must be an absolute file"));
@@ -704,6 +803,8 @@ pub fn uninstall(environment: &Environment, id: &str, opts: UninstallOptions<'_>
     environment.validate()?;
     let Some(receipt) = environment.receipts().read(id)? else { return Ok(false) };
     receipt.validate_native_paths()?;
+    #[cfg(target_os = "linux")]
+    validate_integration_roots(environment, &receipt)?;
     for path in std::iter::once(&receipt.path).chain(receipt.previous.iter().map(|p| &p.path)) {
         if path.is_dir() && (receipt.method != crate::receipt::InstallMethod::MacosBundle || path.extension().is_none_or(|e| e != "app")) {
             return Err(input("refusing a directory as an installed executable"));
@@ -775,6 +876,7 @@ pub struct IntegrationStatus {
     pub entries: Vec<EntryStatus>,
     pub bin_on_path: bool,
     pub path_hint: Option<String>,
+    pub skipped: Vec<SkippedEntry>,
 }
 pub fn path_hint(bin: &Path, shell: &str) -> String {
     let quoted = format!("'{}'", bin.to_string_lossy().replace('\'', "'\\''"));
@@ -801,7 +903,8 @@ pub fn integration_status(environment: &Environment, id: &str, shell: &str) -> i
         }
     }
     let bin_on_path = environment.path.as_ref().is_some_and(|p| env::split_paths(p).any(|p| canonical(&p) == canonical(&environment.bin)));
-    Ok(IntegrationStatus { receipt, entries, bin_on_path, path_hint: (!bin_on_path).then(|| path_hint(&environment.bin, shell)) })
+    let skipped = receipt.as_ref().map_or_else(Vec::new, |r| r.integration.skipped.clone());
+    Ok(IntegrationStatus { receipt, entries, bin_on_path, path_hint: (!bin_on_path).then(|| path_hint(&environment.bin, shell)), skipped })
 }
 
 /// Replaces this process on Unix, or starts a successor on Windows. The

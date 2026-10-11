@@ -175,6 +175,77 @@ fn relative_install_environment_is_refused_before_writing() {
     assert!(!e.home.exists());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn foreign_integration_is_skipped_reported_and_survives_uninstall() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"app").unwrap();
+    let r = runtime(source);
+    let desktop = e.data.join("applications/arcade-find.desktop");
+    let icon = e.data.join("icons/hicolor/256x256/apps/arcade-find.png");
+    let autostart = e.config.join("autostart/arcade-find.desktop");
+    let cli = e.bin.join("arcade-find");
+    let victim = root.0.join("foreign-program");
+    fs::write(&victim, b"foreign executable").unwrap();
+    for p in [&desktop, &icon, &autostart, &cli] {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+    }
+    fs::write(&desktop, "[Desktop Entry]\nType=Application\nExec=/unrelated/program\n").unwrap();
+    fs::write(&autostart, "[Desktop Entry]\nType=Application\nExec=/unrelated/program --background\n").unwrap();
+    fs::write(&icon, b"foreign icon").unwrap();
+    std::os::unix::fs::symlink(&victim, &cli).unwrap();
+    let png = root.0.join("find.png");
+    fs::write(&png, b"app icon").unwrap();
+    let icons = [Icon { source: png, size: IconSize::Pixels(256) }];
+    let mut opts = find_options(&app, &r, "1");
+    opts.icons = &icons;
+    opts.start_at_login = true;
+    let receipt = install(&e, opts).unwrap();
+    assert!(receipt.integration.desktop_entry.is_none());
+    assert!(receipt.integration.cli.is_none());
+    assert!(receipt.integration.autostart.is_none());
+    assert!(receipt.integration.icons.is_empty());
+    assert_eq!(receipt.integration.skipped.len(), 4);
+    let status = integration_status(&e, &app.id, "fish").unwrap();
+    assert_eq!(status.skipped, receipt.integration.skipped);
+    repair(&e, &app, None).unwrap();
+    uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap();
+    assert_eq!(fs::read(&icon).unwrap(), b"foreign icon");
+    assert_eq!(fs::read_link(&cli).unwrap(), victim);
+    assert!(fs::read_to_string(&desktop).unwrap().contains("/unrelated/program"));
+    assert!(fs::read_to_string(&autostart).unwrap().contains("/unrelated/program"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn integration_symlinked_parent_cannot_escape_its_root() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"app").unwrap();
+    let r = runtime(source);
+    let foreign = e.data.join("unrelated");
+    fs::create_dir_all(&foreign).unwrap();
+    std::os::unix::fs::symlink(&foreign, e.data.join("applications")).unwrap();
+    // The explicitly configured applications root is resolved consistently,
+    // but a child symlink escaping an icons root must be refused.
+    let icons_root = e.data.join("icons/hicolor");
+    fs::create_dir_all(&icons_root).unwrap();
+    std::os::unix::fs::symlink(&foreign, icons_root.join("256x256")).unwrap();
+    let png = root.0.join("find.png");
+    fs::write(&png, b"icon").unwrap();
+    let icons = [Icon { source: png, size: IconSize::Pixels(256) }];
+    let mut opts = find_options(&app, &r, "1");
+    opts.icons = &icons;
+    assert!(install(&e, opts).is_err());
+    assert!(!foreign.join("apps/arcade-find.png").exists());
+    assert!(e.receipts().read(&app.id).unwrap().is_none());
+}
+
 #[test]
 fn dev_detection_appimage_and_prompt_suppression() {
     let root = Root::new();
@@ -253,13 +324,13 @@ fn install_update_repair_uninstall_are_isolated_and_receipt_driven() {
     for name in ["stale", "old-find", "unrelated"] {
         fs::write(
             launchers.join(format!("{name}.desktop")),
-            format!("[Desktop Entry]\nExec=/old/executable\n{}", if name == "stale" { "X-Arcade-Id=arcade.find\n" } else { "" }),
+            format!("[Desktop Entry]\nType=Application\nExec=/old/arcade-find\n{}", if name == "stale" { "X-Arcade-Id=arcade.find\n" } else { "" }),
         )
         .unwrap();
     }
     let autostart = e.config.join("autostart/arcade-find.desktop");
     fs::create_dir_all(autostart.parent().unwrap()).unwrap();
-    fs::write(&autostart, "[Desktop Entry]\nExec=/old/find --background\nHidden=true\n").unwrap();
+    fs::write(&autostart, "[Desktop Entry]\nType=Application\nX-Arcade-Id=arcade.find\nExec=/old/find --background\nHidden=true\n").unwrap();
     let receipt = install(&e, options("0.3.0", false)).unwrap();
     assert_eq!(receipt.method, InstallMethod::Appimage);
     assert!(source.exists());
@@ -292,18 +363,17 @@ fn install_update_repair_uninstall_are_isolated_and_receipt_driven() {
     let cli = receipt.integration.cli.as_ref().unwrap();
     fs::remove_file(cli).unwrap();
     fs::write(cli, b"a command owned by someone else").unwrap();
-    assert!(install(&e, options("0.3.1", true)).is_err());
-    assert_eq!(fs::read(&receipt.path).unwrap(), b"version 1", "preflight failures preserve the working installation");
-    assert_eq!(e.receipts().read(&app.id).unwrap().unwrap().version, "0.3.0");
-    assert!(source.exists());
+    let skipped = install(&e, options("0.3.0", false)).unwrap();
+    assert!(skipped.integration.cli.is_none());
+    assert!(skipped.integration.skipped.iter().any(|s| &s.path == cli));
+    assert_eq!(fs::read(cli).unwrap(), b"a command owned by someone else");
     fs::remove_file(cli).unwrap();
-    repair(&e, &app, None).unwrap();
     let updated = install(&e, options("0.3.1", true)).unwrap();
     assert!(!source.exists());
     assert_eq!(fs::read(&updated.path).unwrap(), b"version 2");
     let previous = updated.previous.as_ref().unwrap();
     assert_eq!(previous.version, "0.3.0");
-    assert_eq!(fs::read(&previous.path).unwrap(), b"version 1");
+    assert_eq!(fs::read(&previous.path).unwrap(), b"version 2");
     let moved = e.applications.join("Moved Find % $.AppImage");
     fs::rename(&updated.path, &moved).unwrap();
     fs::remove_file(updated.integration.desktop_entry.as_ref().unwrap()).unwrap();
@@ -370,7 +440,7 @@ fn integration_failure_restores_current_previous_receipt_and_launchers() {
     fs::write(&source, b"v1").unwrap();
     install(&e, opts("1")).unwrap();
     fs::write(&source, b"v2").unwrap();
-    let current = install(&e, opts("2")).unwrap();
+    let mut current = install(&e, opts("2")).unwrap();
     let desktop = current.integration.desktop_entry.as_ref().unwrap();
     let original_desktop = fs::read(desktop).unwrap();
     // This valid file lacks a main Exec. Failure occurs after the new binary,
@@ -378,6 +448,8 @@ fn integration_failure_restores_current_previous_receipt_and_launchers() {
     let autostart = e.config.join("autostart/arcade-find.desktop");
     fs::create_dir_all(autostart.parent().unwrap()).unwrap();
     fs::write(&autostart, b"[Desktop Entry]\nHidden=true\n").unwrap();
+    current.integration.autostart = Some(autostart.clone());
+    e.receipts().write(&current).unwrap();
     fs::write(&source, b"v3").unwrap();
     assert!(install(&e, opts("3")).is_err());
     assert_eq!(fs::read(&current.path).unwrap(), b"v2");

@@ -43,6 +43,16 @@ pub struct Integration {
     pub autostart: Option<PathBuf>,
     #[serde(default)]
     pub uninstaller: Option<PathBuf>,
+    /// Conflicting entries left untouched. These are diagnostic paths, never
+    /// owned paths and never inputs to repair or uninstall.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped: Vec<SkippedEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkippedEntry {
+    pub path: PathBuf,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
