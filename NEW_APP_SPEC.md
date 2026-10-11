@@ -133,6 +133,107 @@ architectures and minimum OS versions based on dependencies and actual builds.
   Isolate all app data, locks and registrations in tests; one override alone
   may not isolate the OS keyring or clipboard.
 
+### Standard CLI and integration commands
+
+Implement the shared CLI contract in addition to the base flags above. These
+management flags are part of the target standard; list a flag as supported only
+after its behavior is implemented and checked:
+
+| Flag | Contract |
+|---|---|
+| `--restart` | Ask the resident instance to restart. A successor must safely take over before the old process exits. |
+| `--install [--silent] [--no-launch] [--channel C]` | Linux AppImage and macOS bundle self-install. `--silent` suppresses the app dialog for an explicitly requested install or a confirmed Tools handoff; it does not silently accept an unsolicited install. |
+| `--uninstall [--silent] [--remove-data]` | Uninstall using the receipt only. Preserve app data unless `--remove-data` was explicitly selected. |
+| `--repair` | Recreate integration entries from the receipt and current installed executable. |
+| `--integration-status` | Print JSON describing the receipt and integration state; make no changes. |
+
+Windows uses its per-user installer interface and native silent switches
+(`/VERYSILENT` for Inno or `/S` for NSIS), with the same receipt and integration
+effects as the interactive path. Silent install and uninstall paths must be
+tested for parity. Do not invent a second Windows CLI installer if the package
+already owns that flow.
+
+### Tray hosting and hand-back
+
+Tools may host the standard tray menu; it does not broker app actions. Each app
+keeps working standalone and keeps its own tray icon available. The app-side
+`TrayHostWatcher` observes Link registry notifications (never a timer or idle
+poll), connects to `arcade.tools` when its manifest advertises
+`settings.trayHost.enabled`, then subscribes to `tray.host`:
+
+- On `hosted: true`, hide the app's already-constructed icon. On
+  `hosted: false` or a closed connection, show it immediately.
+- If Tools reports `restarting: true`, hold the app icon for up to five seconds
+  while Tools restarts, then show it if Tools has not returned.
+- At startup, wait at most 300 ms for the first host answer before showing the
+  app icon. This avoids a flash when Tools is already hosting without delaying
+  standalone startup indefinitely.
+- If Link is disabled in the app, keep its own icon visible. Expose
+  `status.tray` as `own`, `hosted` or `none` for diagnostics.
+- Hand the icon back within one second after Tools exits or crashes. While
+  hosted, a blocked socket read is allowed; idle polling and repeated timers
+  are not.
+
+Measure and test host start-after-app, app start-after-host, Tools restart,
+Tools crash, Link disabled and per-app host opt-out. Tools quitting must not
+change the app's settings, jobs or other behavior.
+
+### Standard Link methods and manifest fields
+
+Implement the methods supported by the pinned Link version and list optional
+ones in `describe.methods`. The v0.3 app standard includes:
+
+| Method | Required behavior |
+|---|---|
+| `app.settings` | Open the app's settings, equivalent to `--settings`. |
+| `app.restart` | Safely restart the running instance; return `busy` while work runs unless the supported request explicitly forces it. |
+| `app.menu` / `app.menu.invoke` | Return and invoke app-specific tray extras. Standard tray entries are implied; extras use `action`, `toggle` or `separator` items and changes emit `app.changed`. |
+| `app.shortcuts.set` | Validate a global shortcut, apply it live, persist it and rewrite the manifest. Return the registration method (`native`, `portal`, `hyprland-runtime` or `manual`) and a user-facing hint for manual binding. Reject invalid or reserved accelerators. |
+| `app.settings.export` / `app.settings.import` | Export portable settings and import only validated settings. Import backs up current settings and applies atomically; export excludes secrets, device identity and data the app does not promise to migrate. |
+
+The shared manifest remains schema 1 and may include cached app-specific `menu`
+items, a `logs` directory, the carried `docs` version, and the read-only
+`install` method (`appimage`, `windows-installer`, `macos-bundle`, `tarball`,
+`manual` or `dev`). Tools alone advertises
+`settings.trayHost: {enabled, excluded:[ids]}`. Do not add speculative fields or
+claim a method exists unless the app and its pinned Link implementation support
+it.
+
+Settings export/import requires an explicit per-app allowlist. For example,
+Box exports pipelines, favorites and presets but not history; Clipboard never
+exports device keys or history; Find excludes its index. Document the exact
+portable fields, validate schema and size, never export credentials or device
+identity, and leave settings unchanged on a failed import.
+
+### Shared shortcut data and user documentation
+
+Every app ships `docs/user/` with task-focused install/first-run, primary-flow,
+settings, shortcut, privacy/data, troubleshooting and platform-limit guidance.
+Keep versioned behavior and screenshots accurate; take UI screenshots in the
+isolated test session. Each app also ships:
+
+- `docs/user/shortcuts.json`, schema 1, identifying the app and documentation
+  version and grouping shortcuts by context. Each shortcut has a stable `id`,
+  `title`, OS-specific `keys`, and optional `rebindable`.
+- Generated `docs/user/shortcuts.md`, readable without a shortcut browser.
+  Regenerate it from JSON and fail CI when it is stale.
+
+Use the shared accelerator schema and vectors. Canonical modifiers are ordered
+`Ctrl`, `Alt`, `Shift`, `Super`; key sequences are chords separated by spaces
+(for example `Ctrl+K Ctrl+S`). Use canonical key names, not localized display
+names (`Super` represents Cmd on macOS and Alt represents Option there). A
+`keys` value may be one string, an array of alternatives or `null` for an
+unsupported OS; use the OS-specific value when present, otherwise `default`.
+Two bindings conflict when equal or when one is a strict prefix of the other.
+`rebindable: true` is allowed only for a global shortcut whose `id` matches a
+manifest `shortcuts[].id`; never mark third-party shortcut sheets rebindable.
+In-app shortcuts stay in the versioned docs snapshot, not in the app manifest.
+
+Validate `shortcuts.json` against the shared JSON Schema and vectors in the
+app's CI and Link conformance suite. Validate documentation links and the
+generated Markdown in CI as well. The manifest contains only effective global
+shortcuts; Tools reads in-app shortcut data from the versioned docs snapshot.
+
 Do not block UI events on disk access, IPC, networking, helper probes or process
 launches. Use workers and dispatch UI work back to the UI thread. Debounce active
 work when useful; avoid periodic idle polling. Measure actual idle behavior.
@@ -141,11 +242,13 @@ work when useful; avoid periodic idle polling. Measure actual idle behavior.
 
 Use canonical ID `arcade.<lowercase-name>` and stable platform bundle IDs. New
 actions normally use `<name>.<verb>`; keep the frozen v1 wire contract compatible.
-Depend on a published immutable Link tag or exact commit and lock it. At the time
-of writing the existing apps use `v0.2.0`:
+Depend on a published immutable Link tag or exact commit and lock it. Use the
+latest released tag; while a required Link change is under review, pin its exact
+reviewed candidate commit and do not ship a branch dependency. Never assume an
+unreleased tag exists:
 
 ```toml
-arcade-link = { git = "https://github.com/qa-p1/Arcade-Link", tag = "v0.2.0", features = ["watch"] }
+arcade-link = { git = "https://github.com/qa-p1/Arcade-Link", tag = "<released-tag>", features = ["watch"] }
 ```
 
 Add `engines` only if needed. There is no `tokio` feature in this version.
@@ -189,8 +292,9 @@ these where the user's repository scope permits:
 |---|---|
 | Link | Rust and Qt IDs, `ids::APPS`, display names/pitches/release URLs, glyph and accent tokens, fixtures, action/shortcut catalog, conformance tests, e2e and benchmark app lists |
 | Tools | The pinned Link app list/allowlist, per-platform install/executable/data/autostart mappings and release-source behavior; test installation, update and removal of the new app |
+| Arcade catalog | Add the app, supported assets/channels, optional engines, release URL, docs and shortcut metadata in a reviewable catalog PR. Run the catalog validator and CI before treating the listing as onboarded. |
 | Existing consumers | Explicit peer lists in Rust/C++/frontends, policy defaults, meaningful new actions and tests; bump pinned shared code when needed |
-| New app | Exposed and consumed actions, Connected apps, isolated e2e group, packaging metadata and documentation |
+| New app | Exposed and consumed actions, Connected apps, isolated e2e group, packaging metadata, `docs/user/`, generated shortcut sheet and documentation |
 
 Do not silently change protocol v1 or move an existing tag. Prepare shared
 changes on branches and validate consumers against the exact candidate commit.
