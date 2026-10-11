@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Startup, warm-invoke and idle figures for the five Arcade apps (Linux).
+"""Startup, warm-invoke and idle figures for the seven Arcade apps (Linux).
 
 Every app runs isolated from the desktop: a private D-Bus session, Xvfb,
 temporary HOME/XDG_*/ARCADE_* directories, no Wayland or Hyprland
@@ -32,13 +32,16 @@ import tempfile
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+from e2e_support import tray_handback
+
 CODING = Path(__file__).resolve().parents[3]
 BOX = CODING / "Rust/Arcade Box"
 LENS = CODING / "Rust/Arcade-lens"
 LOOK = CODING / "Rust/arcade-look"
 WHEEL = CODING / "C++/Arcade wheel"
 CLIP = CODING / "App dev/Arcade-clipboard"
-SHELF = Path(os.environ.get("ARCADE_SHELF_REPO", str(Path(__file__).resolve().parents[2] / "Arcade-Shelf")))
+SHELF = Path(os.environ.get("ARCADE_SHELF_REPO", str(CODING / "C++/Arcade-Shelf")))
 FIND = Path(os.environ.get("ARCADE_FIND_REPO", str(Path(__file__).resolve().parents[2] / "Arcade-Find")))
 
 APPS = {
@@ -366,7 +369,26 @@ def main() -> int:
     p.add_argument("--json")
     p.add_argument("--compare")
     p.add_argument("--tolerance", type=float, default=0.05)
+    p.add_argument("--trayhost", action="store_true", help="measure crate-backed SIGKILL → own latency without GUI apps")
     args = p.parse_args()
+    if args.runs < 1:
+        p.error("--runs must be positive")
+    if args.trayhost:
+        cli = Path(__file__).resolve().parents[1] / "target/debug/arcade-link"
+        if not cli.is_file():
+            p.error("build arcade-link-cli before the tray-host probe")
+        with tempfile.TemporaryDirectory(prefix="arcade-bench-tray-") as directory:
+            env = isolated_env(Path(directory))
+            samples = tray_handback(cli, env, args.runs)
+        result = {"date": time.strftime("%Y-%m-%d %H:%M"), "runs": args.runs,
+                  "probe": "Rust crate CLI watcher; SIGKILL → own, excludes process startup",
+                  "tray_handback_ms": samples, "median_ms": round(statistics.median(samples), 3),
+                  "max_ms": max(samples), "target_ms": 200, "limit_ms": 1000}
+        text = json.dumps(result, indent=2)
+        if args.json:
+            Path(args.json).write_text(text + "\n", encoding="utf-8")
+        print(text)
+        return 0 if max(samples) < 1000 else 1
     if os.environ.get("ARCADE_BENCH_INNER") == "1":
         return inner(args)
     for tool in ("Xvfb", "dbus-run-session", "xdotool", "gdbus"):

@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -33,6 +34,16 @@ from pathlib import Path
 LINK = Path(__file__).resolve().parents[1]
 CODING = LINK.parents[1]
 CLI = LINK / "target/debug/arcade-link"
+
+
+def link_app_ids() -> list[str]:
+    source = (LINK / "crates/arcade-link/src/manifest.rs").read_text(encoding="utf-8")
+    constants = dict(re.findall(r'pub const (\w+): &str = "(arcade\.[^"]+)";', source))
+    names = re.search(r'pub const APPS:.*?= \[([^]]+)\]', source).group(1)
+    return [constants[name.strip()] for name in names.split(",") if name.strip()]
+
+
+APP_IDS = link_app_ids()
 
 APPS = {
     "arcade.box": {
@@ -60,7 +71,7 @@ APPS = {
         "build": ["cmake", "--build", "build"],
     },
     "arcade.shelf": {
-        "dir": Path(os.environ.get("ARCADE_SHELF_REPO", str(LINK.parent / "Arcade-Shelf"))),
+        "dir": Path(os.environ.get("ARCADE_SHELF_REPO", str(CODING / "C++/Arcade-Shelf"))),
         "bin": "build/arcade-shelf",
         "args": ["--background"],
         "build": ["cmake", "--build", "build"],
@@ -82,6 +93,25 @@ APPS = {
 STRIP = ("WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP",
          "DESKTOP_SESSION", "SWAYSOCK", "XDG_SESSION_TYPE", "APPIMAGE", "APPDIR", "OWD", "ARGV0",
          "DBUS_SESSION_BUS_ADDRESS", "DISPLAY")
+
+
+def require_current_build(spec: dict) -> Path:
+    """Refuse stale fleet binaries; never rebuild a read-only sibling checkout."""
+    executable = spec["dir"] / spec["bin"]
+    hint = " ".join(spec.get("build") or ["run this app's documented build command"])
+    if not executable.is_file():
+        raise AssertionError(f"missing build: {executable}; rebuild in {spec['dir']}: {hint}")
+    newest = None
+    for directory, dirs, files in os.walk(spec["dir"]):
+        dirs[:] = [d for d in dirs if d not in {".git", "target", "build", "node_modules", ".dart_tool", ".cache", "dist"} and not d.startswith("build-")]
+        for name in files:
+            path = Path(directory) / name
+            if path.suffix in {".rs", ".cpp", ".h", ".hpp", ".qml", ".dart", ".svelte", ".ts", ".toml"} or name in {"CMakeLists.txt", "Cargo.lock", "package.json", "pubspec.yaml"}:
+                if newest is None or path.stat().st_mtime_ns > newest.stat().st_mtime_ns:
+                    newest = path
+    if newest and newest.stat().st_mtime_ns > executable.stat().st_mtime_ns:
+        raise AssertionError(f"stale build: {executable}; newer source: {newest}; rebuild in {spec['dir']}: {hint}")
+    return executable
 
 
 def isolated_env(root: Path) -> dict:
@@ -114,10 +144,14 @@ def isolated_env(root: Path) -> dict:
 class Session:
     """Xvfb + keyring inside the private D-Bus session this process runs in."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, headless: bool = False, mock_peers: bool = False):
         self.root = root
         self.env = isolated_env(root)
         self.procs: dict[str, subprocess.Popen] = {}
+        self.mock_peers = mock_peers
+        self.xvfb = self.keyring = None
+        if headless:
+            return
         # Xvfb picks a free display itself, so several runs can go in parallel.
         rfd, wfd = os.pipe()
         self.xvfb = subprocess.Popen(["Xvfb", "-displayfd", str(wfd), "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
@@ -151,10 +185,12 @@ class Session:
 
     def start(self, app: str, wait: bool = True) -> subprocess.Popen:
         spec = APPS[app]
-        exe = spec["dir"] / spec["bin"]
+        exe = CLI if self.mock_peers else require_current_build(spec)
+        args = ["mock", "--as", app.removeprefix("arcade."), "--actions", str(LINK / "fixtures" / (app.removeprefix("arcade.") + ".json"))] if self.mock_peers else spec["args"]
         log = open(self.root / f"{app}.log", "ab")
-        p = subprocess.Popen([str(exe), *spec["args"]], env=self.env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+        p = subprocess.Popen([str(exe), *args], env=self.env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                              start_new_session=True)
+        log.close()
         self.procs[app] = p
         if wait:
             self.wait_running(app)
@@ -236,7 +272,8 @@ class Session:
             self.kill(app, signal.SIGTERM)
         if self.keyring:
             self.keyring.terminate()
-        self.xvfb.terminate()
+        if self.xvfb:
+            self.xvfb.terminate()
 
 
 def parse_invoke(code: int, stdout: str, stderr: str):
@@ -415,13 +452,15 @@ def load_check_modules() -> None:
     for path in sorted((Path(__file__).parent / "e2e_checks").glob("*.py")):
         spec = importlib.util.spec_from_file_location(f"e2e_checks.{path.stem}", path)
         module = importlib.util.module_from_spec(spec)
-        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "CLI": CLI})
+        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "APP_IDS": APP_IDS, "CLI": CLI, "LINK": LINK, "CODING": CODING, "require_current_build": require_current_build})
         spec.loader.exec_module(module)
 
 
-def run_checks(root: Path, only: str | None) -> int:
+def run_checks(root: Path, only: str | None, scaffold: bool = False) -> int:
     load_check_modules()
-    s = Session(root)
+    s = Session(root, headless=scaffold, mock_peers=scaffold)
+    if scaffold:
+        print("Link scaffold: mock peer presence, crate watchers/install harness, sibling shortcut documents")
     failures = 0
     try:
         for group, funcs in CHECKS.items():
@@ -457,15 +496,18 @@ def run_command(root: Path, cmd: list[str]) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--only", help="comma-separated check groups")
+    p.add_argument("--real-apps", action="store_true", help="require current fleet builds for presence, even in a scaffold-only selection")
     p.add_argument("command", nargs="*", help="`run -- CMD…` runs CMD in the isolated session")
     args = p.parse_args()
+    scaffold = bool(args.only and set(args.only.split(",")) <= {"presence", "trayhost", "install", "shortcuts"} and set(args.only.split(",")) & {"trayhost", "install", "shortcuts"} and not args.real_apps)
     if os.environ.get("ARCADE_E2E_INNER") != "1":
-        for tool in ("Xvfb", "dbus-run-session", "xdotool"):
+        for tool in (("dbus-run-session",) if scaffold else ("Xvfb", "dbus-run-session", "xdotool")):
             if not shutil.which(tool):
                 print(f"e2e: {tool} is required (not run)", file=sys.stderr)
                 return 2
-        if not CLI.exists():
-            subprocess.check_call(["cargo", "build", "-p", "arcade-link-cli"], cwd=LINK)
+        subprocess.check_call(["cargo", "build", "-p", "arcade-link-cli", "--locked"], cwd=LINK)
+        if not args.command and (not args.only or "install" in args.only.split(",")):
+            subprocess.check_call(["cargo", "build", "-p", "arcade-link", "--example", "install-harness", "--features", "install", "--locked"], cwd=LINK)
         if not args.only and not args.command:
             # A full run gives every group its own fresh session: groups leave
             # apps running in states (open pickers, toggled settings, held
@@ -478,7 +520,7 @@ def main() -> int:
     root = Path(os.environ["ARCADE_E2E_ROOT"])
     if args.command and args.command[0] == "run":
         return run_command(root, args.command[1:])
-    return run_checks(root, args.only)
+    return run_checks(root, args.only, scaffold)
 
 
 def isolated(argv: list[str]) -> int:
