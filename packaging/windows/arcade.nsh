@@ -12,6 +12,7 @@
 !endif
 !define ARCADE_HELPER "${__FILEDIR__}\arcade-integration.ps1"
 Var ArcadeStartup
+Var ArcadeDesktop
 Var ArcadeChannel
 Var ArcadeManagedBy
 Var ArcadeExitCode
@@ -75,6 +76,10 @@ Var ArcadeIntegrationOutput
   CreateDirectory "$SMPROGRAMS\${ARCADE_NAME}"
   CreateShortcut "$SMPROGRAMS\${ARCADE_NAME}\${ARCADE_NAME}.lnk" "$INSTDIR\${ARCADE_EXE}"
   StrCpy $ArcadeStartup "-"
+  StrCpy $ArcadeDesktop "-"
+  ${If} ${SectionIsSelected} ${ArcadeDesktopTask}
+    StrCpy $ArcadeDesktop "$DESKTOP\${ARCADE_NAME}.lnk"
+  ${EndIf}
   ; Section IDs are resolved after preprocessing; callers place ArcadeTasks
   ; before this section or use the two-stage sample below.
   ${If} ${SectionIsSelected} ${ArcadeStartupTask}
@@ -93,7 +98,7 @@ Var ArcadeIntegrationOutput
   ${IfNot} ${Errors}
     StrCpy $ArcadeManagedBy $1
   ${EndIf}
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "$INSTDIR\arcade-integration.ps1" -Action Install -Id "${ARCADE_ID}" -CliName "${ARCADE_CLI}" -Version "${ARCADE_VERSION}" -Channel "$ArcadeChannel" -ManagedBy "$ArcadeManagedBy" -ExePath "$INSTDIR\${ARCADE_EXE}" -DesktopEntry "$SMPROGRAMS\${ARCADE_NAME}\${ARCADE_NAME}.lnk" -Autostart "$ArcadeStartup" -Uninstaller "$INSTDIR\uninstall.exe"'
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "$INSTDIR\arcade-integration.ps1" -Action Install -Id "${ARCADE_ID}" -CliName "${ARCADE_CLI}" -Version "${ARCADE_VERSION}" -Channel "$ArcadeChannel" -ManagedBy "$ArcadeManagedBy" -ExePath "$INSTDIR\${ARCADE_EXE}" -DesktopEntry "$SMPROGRAMS\${ARCADE_NAME}\${ARCADE_NAME}.lnk" -DesktopShortcut "$ArcadeDesktop" -Autostart "$ArcadeStartup" -Uninstaller "$INSTDIR\uninstall.exe"'
   Pop $ArcadeExitCode
   Pop $ArcadeIntegrationOutput
   ${If} $ArcadeExitCode != 0

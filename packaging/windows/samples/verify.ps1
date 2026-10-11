@@ -33,7 +33,7 @@ function Installed($Case) {
 function Uninstall($Case, [string]$Directory = '') {
     $dir = if ($Directory) { $Directory } else { Installed $Case }
     $exe = Join-Path $dir $Case.Uninstaller
-    if (-not (Test-Path -LiteralPath $exe)) { return }
+    if (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath (Join-Path $dir 'arcade-integration.ps1'))) { return }
     # NSIS normally forks a temporary uninstaller and returns early. _?=
     # runs it in place so Start-Process -Wait observes completion. It must
     # be last and unquoted, even when INSTDIR contains spaces.
@@ -96,7 +96,7 @@ try {
         Assert (-not (Test-Path -LiteralPath (Join-Path $root ('installs\' + $case.Id + '.json')))) 'receipt remained after uninstall'
         Assert (-not (Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Startup')) ($case.Name + '.lnk')))) 'autostart remained after uninstall'
         Assert (-not (Test-Path -LiteralPath ('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $case.Id))) 'Apps & features metadata remained after uninstall'
-        Assert (-not (Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Desktop')) ($case.Name + '.lnk')))) 'desktop shortcut remained after uninstall'
+        Assert (-not (Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Desktop')) ($case.Name + '.lnk')))) ($case.Id + ': desktop shortcut remained after uninstall')
     }
     Write-Host 'Both silent uninstalls and last-one-out Path removal passed'
 } finally {

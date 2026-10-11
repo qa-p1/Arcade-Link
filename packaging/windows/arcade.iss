@@ -65,19 +65,23 @@ end;
 
 procedure ArcadeIntegration(Installing: Boolean);
 var
-  Params, Autostart: String;
+  Params, Autostart, DesktopShortcut: String;
   ExitCode: Integer;
 begin
   Params := '-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File ' +
     ArcadeQuote(ExpandConstant('{app}\arcade-integration.ps1'));
   if Installing then begin
     Autostart := '-';
+    DesktopShortcut := '-';
     if WizardIsTaskSelected('arcade_startup') then
       Autostart := ExpandConstant('{userstartup}\{#ARCADE_NAME}.lnk');
+    if WizardIsTaskSelected('arcade_desktop') then
+      DesktopShortcut := ExpandConstant('{userdesktop}\{#ARCADE_NAME}.lnk');
     Params := Params + ' -Action Install -Version ' + ArcadeQuote('{#ARCADE_VERSION}') +
       ' -Channel ' + ArcadeQuote(ExpandConstant('{param:ARCADECHANNEL|stable}')) +
       ' -ManagedBy ' + ArcadeQuote(ExpandConstant('{param:ARCADEMANAGEDBY|self}')) +
       ' -DesktopEntry ' + ArcadeQuote(ExpandConstant('{userprograms}\{#ARCADE_NAME}\{#ARCADE_NAME}.lnk')) +
+      ' -DesktopShortcut ' + ArcadeQuote(DesktopShortcut) +
       ' -Autostart ' + ArcadeQuote(Autostart) +
       ' -Name ' + ArcadeQuote('{#ARCADE_NAME}') +
       ' -Homepage ' + ArcadeQuote('{#ARCADE_HOMEPAGE}') +

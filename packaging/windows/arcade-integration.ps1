@@ -10,6 +10,7 @@ param(
     [ValidateSet('self','tools')][string]$ManagedBy = 'self',
     [string]$ExePath = '',
     [string]$DesktopEntry = '',
+    [string]$DesktopShortcut = '',
     [string]$Autostart = '',
     [string]$Uninstaller = '',
     [string]$Name = '',
@@ -25,6 +26,7 @@ $receiptPath = Join-Path $receipts ($Id + '.json')
 $shim = Join-Path $bin ($CliName + '.cmd')
 $utf8 = New-Object Text.UTF8Encoding($false)
 if ($Autostart -eq '-') { $Autostart = '' }
+if ($DesktopShortcut -eq '-') { $DesktopShortcut = '' }
 
 function Write-Atomic([string]$Path, [string]$Text, [bool]$Private = $false) {
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path)) | Out-Null
@@ -115,6 +117,7 @@ if ($Action -eq 'Install') {
         method = 'windows-installer'; managedBy = $ManagedBy; path = $ExePath
         integration = [ordered]@{
             desktopEntry = $(if ($DesktopEntry) { $DesktopEntry } else { $null })
+            desktopShortcut = $(if ($DesktopShortcut) { $DesktopShortcut } else { $null })
             icons = @(); cli = $shim
             autostart = $(if ($Autostart) { $Autostart } else { $null })
             uninstaller = $(if ($Uninstaller) { $Uninstaller } else { $null })
@@ -141,7 +144,7 @@ if ($Action -eq 'Install') {
         $receipt = Get-Content -Raw -LiteralPath $receiptPath -Encoding UTF8 | ConvertFrom-Json
         if ($receipt.id -ne $Id) { throw 'Receipt id differs from filename.' }
         if (-not $ExePath -or -not [string]::Equals($receipt.path, [IO.Path]::GetFullPath($ExePath), [StringComparison]::OrdinalIgnoreCase)) { exit 10 }
-        foreach ($entry in @($receipt.integration.cli, $receipt.integration.desktopEntry, $receipt.integration.autostart)) {
+        foreach ($entry in @($receipt.integration.cli, $receipt.integration.desktopEntry, $receipt.integration.desktopShortcut, $receipt.integration.autostart)) {
             if ($entry -and [IO.File]::Exists($entry)) { [IO.File]::Delete($entry) }
         }
         [IO.File]::Delete($receiptPath)
