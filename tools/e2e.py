@@ -28,6 +28,7 @@ import sys
 import struct
 import tempfile
 import time
+import traceback
 import zlib
 from pathlib import Path
 
@@ -156,6 +157,7 @@ def isolated_env(root: Path) -> dict:
         "ARCADE_WHEEL_DISABLE_GLOBAL_SHORTCUT": "1",
         "QT_QPA_PLATFORM": "xcb",
         "GDK_BACKEND": "x11",
+        "WEBKIT_DISABLE_COMPOSITING_MODE": "1",
         "NO_AT_BRIDGE": "1",
         "PATH": f"{CLI.parent}:{os.environ.get('PATH', '')}",
     })
@@ -540,7 +542,7 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: 
                 except Exception as e:  # noqa: BLE001 - report every failure and keep going
                     failures += 1
                     print(f"FAIL {name}: {e}", flush=True)
-                    results.append({"group": group, "check": f.__name__, "passed": False, "seconds": round(time.time() - t0, 3), "detail": str(e)})
+                    results.append({"group": group, "check": f.__name__, "passed": False, "seconds": round(time.time() - t0, 3), "detail": str(e) or type(e).__name__, "traceback": traceback.format_exc()})
     finally:
         s.close()
         if os.environ.get("E2E_KEEP"):

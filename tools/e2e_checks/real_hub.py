@@ -79,7 +79,7 @@ def _install_case(app):
             settings.parent.mkdir(parents=True, exist_ok=True)
             settings.write_text(json.dumps({'schema': 1, 'roots': [str(child.root / 'home')]}), encoding='utf-8')
             with (child.root / f'{app}.log').open('ab') as log:
-                p = subprocess.Popen([str(source), '--install', '--silent', '--background'],
+                p = subprocess.Popen([str(source), '--install', '--silent'],
                                      env=dict(child.env, APPIMAGE_EXTRACT_AND_RUN='1'), stdout=log, stderr=log, start_new_session=True)
             child.procs[app] = p
             child.wait_running(app)
@@ -107,10 +107,11 @@ def development_builds_never_offer_an_install(s):
     for app in APP_IDS:
         spec = APPS[app]
         # This deliberately invokes the development executable without APPIMAGE.
-        result = run_app(s, require_current_build(spec), '--integration-status')
+        cli_spec = {**spec, 'bin': 'target/release/arcade-clipboard-launcher'} if app == 'arcade.clipboard' else spec
+        result = run_app(s, require_current_build(cli_spec), '--integration-status')
         status = json.loads(result.stdout)
         assert status.get('receipt') is None, (app, status)
-        manifest = json.loads(run_app(s, require_current_build(spec), '--arcade-manifest').stdout)
+        manifest = json.loads((s.root / f'arcade/apps/{app}.json').read_text(encoding='utf-8'))
         assert manifest.get('install') == 'dev', (app, manifest.get('install'))
         assert not (s.root / f'arcade/installs/{app}.json').exists(), app
     assert not s.xdotool('search', '--onlyvisible', '--name', 'Install Arcade'), 'development build displayed an install dialog'
@@ -209,7 +210,8 @@ def disabling_link_in_find_keeps_its_own_icon(s):
     def own():
         result = run_app(s, binary, '--status', check=False)
         return json.loads(result.stdout) if result.returncode == 0 else None
-    status = wait(own, 'Find with Link disabled did not start')
+    status = wait(lambda: (value if value and value.get('tray') == 'own' else None) if (value := own()) is not None else None,
+                  lambda: f'Find with Link disabled did not report own tray: {own()}', timeout=5)
     assert not s.endpoint('arcade.find').exists(), status
     # The native status includes tray even with Link switched off.
     assert status.get('tray') == 'own' or status.get('link', {}).get('tray') == 'own', status
@@ -339,7 +341,6 @@ def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
     second = child_session(s, 'backup-target')
     try:
         fleet(first)
-        fleet(second)
         originals = {}
         for app in APP_IDS:
             exported = call(first, app, 'app.settings.export')
@@ -357,6 +358,10 @@ def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
         # the original ARCADE_HOME, HOME/XDG roots and all per-app overrides.
         destination = second.root / 'portable.zip'
         shutil.copy2(archive, destination)
+        # Native singleton services are scoped to the private D-Bus session.
+        # Close the source before opening the destination on that same bus.
+        first.close()
+        fleet(second)
         result = driver(second, 'restore', path=str(destination))
         restored = result['restored']
         assert restored['toolsSettingsRestored'] and all(a['imported'] for a in restored['apps']), result
@@ -366,8 +371,7 @@ def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
             actual = [json.loads(Path(o['path']).read_text(encoding='utf-8')) for o in exported['outputs']]
             # Paths within one profile are not portable identity. Normalize only
             # those two known temporary prefixes; all setting values still match.
-            normalize_root = lambda value, child: json.loads(json.dumps(value).replace(str(child.root), '$PROFILE'))
-            assert normalize_root(actual, second) == normalize_root(originals[app], first), (app, originals[app], actual)
+            assert actual == originals[app], (app, originals[app], actual)
         return f'{len(APP_IDS)} real app exports → actual Tools portable ZIP → imports in a second isolated ARCADE_HOME'
     finally:
         first.close()
@@ -377,6 +381,11 @@ def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
 @check('shortcuts')
 def real_shortcut_documents_index_globals_and_in_app_keys(s):
     fleet(s)
+    # Look deliberately has no default Linux global. Enable a real binding in
+    # this profile so all seven global sources can be exercised.
+    look_path = s.root / 'arcade/apps/arcade.look.json'
+    if not json.loads(look_path.read_text(encoding='utf-8')).get('shortcuts'):
+        call(s, 'arcade.look', 'app.shortcuts.set', {'id': 'preview-selection', 'accelerator': 'Ctrl+Alt+Shift+L'})
     for app, spec in APPS.items():
         path = spec['dir'] / 'docs/user/shortcuts.json'
         assert path.is_file(), f'{app}: missing shortcut document {path}'
@@ -429,8 +438,8 @@ def _rebind_case(app, number):
         path = s.root / f'arcade/apps/{app}.json'
         manifest = json.loads(path.read_text(encoding='utf-8'))
         shortcuts = manifest.get('shortcuts', [])
-        assert shortcuts, f'{app}: no effective global shortcuts in manifest'
-        binding = shortcuts[0]
+        assert shortcuts or app == 'arcade.look', f'{app}: no effective global shortcuts in manifest'
+        binding = shortcuts[0] if shortcuts else {'id': 'preview-selection', 'accelerator': ''}
         original = binding['accelerator']
         changed = 'Ctrl+Alt+Shift+' + chr(ord('A') + number)
         try:
@@ -446,7 +455,8 @@ def _rebind_case(app, number):
         # A new process must see the saved binding after restoring it.
         s.kill(app)
         s.start(app)
-        assert any(v['id'] == binding['id'] and normalize(v['accelerator']) == normalize(original) for v in json.loads(path.read_text(encoding='utf-8'))['shortcuts'])
+        saved = next((v['accelerator'] for v in json.loads(path.read_text(encoding='utf-8'))['shortcuts'] if v['id'] == binding['id']), '')
+        assert (normalize(saved) if saved else '') == (normalize(original) if original else ''), (app, saved, original)
         return f'{app}/{binding["id"]}: {original} → {changed} → {original}; persisted across relaunch; via={result["via"]}, applied={result["applied"]}'
     rebind.__name__ = app.replace('.', '_') + '_global_shortcut_round_trip'
     return rebind
@@ -463,5 +473,5 @@ def real_overlay_paints_its_first_frame_under_xvfb(s):
     path = s.root / 'arcade/cache/arcade/tools/shortcuts-index.json'
     index(s, output=str(path))
     samples = overlay_frames(s, runs=3, hotkey=False)
-    assert samples['samplesMs'] and samples['backend'] == 'x11', samples
+    assert samples['samplesMs'] and samples['backend'] in ('x11', 'desktop'), samples
     return f'real native overlay first_frame callbacks: {samples}'

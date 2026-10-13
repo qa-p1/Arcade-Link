@@ -18,6 +18,14 @@ import e2e
 DRIVER = e2e.LINK / 'target/real-driver/debug/arcade-ecosystem-driver'
 
 
+def driver_inputs():
+    repo = e2e.TOOLS['dir']
+    paths = [repo / 'Cargo.toml', repo / 'Cargo.lock', e2e.LINK / 'tools/real_app_driver.rs']
+    for root in (repo / 'src', repo / 'crates/arcade-shortcuts', repo / 'resources'):
+        paths.extend(p for p in root.rglob('*') if p.is_file() and 'target' not in p.parts and p.suffix in {'.rs', '.toml', '.json'})
+    return {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(set(paths))}
+
+
 def build_driver():
     """Build real Tools libraries from the selected checkout, without editing it."""
     repo = e2e.TOOLS['dir']
@@ -38,15 +46,17 @@ def build_driver():
     lock = repo / 'Cargo.lock'
     if lock.exists():
         shutil.copyfile(lock, project / 'Cargo.lock')
+    inputs = driver_inputs()
     subprocess.run(['cargo', 'build', '--manifest-path', str(project / 'Cargo.toml'),
                     '--target-dir', str(e2e.LINK / 'target/real-driver')], check=True, cwd=e2e.LINK)
+    assert inputs == driver_inputs(), 'stale or missing build: Tools adapter inputs changed during compilation; rebuild'
+    DRIVER.with_suffix('.inputs.json').write_text(json.dumps(inputs), encoding='utf-8')
 
 
 def driver(s, command, **params):
     assert DRIVER.is_file(), f'stale or missing build: {DRIVER}; run tools/e2e.py --real-apps to build the Tools adapter'
-    e2e.require_current_build({**e2e.TOOLS, 'bin': str(DRIVER), 'build': ['python3 tools/e2e.py --real-apps --only shortcuts']})
-    source = e2e.LINK / 'tools/real_app_driver.rs'
-    assert DRIVER.stat().st_mtime_ns >= source.stat().st_mtime_ns, f'stale or missing build: {DRIVER}; newer source: {source}'
+    stamp = DRIVER.with_suffix('.inputs.json')
+    assert stamp.is_file() and json.loads(stamp.read_text(encoding='utf-8')) == driver_inputs(), f'stale or missing build: {DRIVER}; Tools core/shortcut inputs changed; rebuild the adapter'
     result = subprocess.run([str(DRIVER)], input=json.dumps({'command': command, **params}), env=s.env,
                             capture_output=True, text=True, encoding='utf-8', timeout=180)
     (s.root / 'tools-driver.log').open('a', encoding='utf-8').write(result.stderr)

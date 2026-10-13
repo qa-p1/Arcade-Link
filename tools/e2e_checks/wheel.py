@@ -249,7 +249,7 @@ def real_box_pipeline_and_look_preview(s):
                 'nodes': [{'id': 'upper', 'toolId': 'arcade.text.case',
                            'inputs': [{'kind': 'external', 'index': 0}], 'options': {'mode': 'upper'}}],
                 'outputNodes': ['upper']}
-    db = Path(s.env['XDG_DATA_HOME']) / 'dev.arcadebox.app/arcade.sqlite3'
+    db = s.root / 'arcade/dev.arcadebox.app/arcade.sqlite3'
     with sqlite3.connect(db) as conn:
         conn.execute('INSERT OR REPLACE INTO pipelines(id, version, definition_json) VALUES(?, ?, ?)',
                      (pipeline['id'], 1, json.dumps(pipeline)))

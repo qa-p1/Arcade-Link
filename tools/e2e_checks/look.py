@@ -408,7 +408,7 @@ def real_box_image_video_pdf_flagship_flows(s):
                 'nodes':[{'id':'convert','toolId':'arcade.image.convert','inputs':[{'kind':'external','index':0}],
                           'options':{'format':'webp','quality':82}}], 'outputNodes':['convert']}
     from pathlib import Path
-    db = Path(s.env['XDG_DATA_HOME']) / 'dev.arcadebox.app/arcade.sqlite3'
+    db = s.root / 'arcade/dev.arcadebox.app/arcade.sqlite3'
     with sqlite3.connect(db) as connection:
         connection.execute('INSERT OR REPLACE INTO pipelines(id,version,definition_json) VALUES(?,?,?)',
                            (pipeline['id'],1,json.dumps(pipeline)))
