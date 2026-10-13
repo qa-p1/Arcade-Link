@@ -180,6 +180,15 @@ and menu data while hosted, but defer OS tray registration until the app owns
 the icon; when switching from own to hosted, remove the registered icon and
 retain the data needed to recreate it.
 
+On Linux, unregistering means the StatusNotifierWatcher loses the item: drop
+the ksni handle, release the item's bus name (Qt's `setVisible(false)` does),
+or close the private D-Bus connection that carries it. Setting the item's
+Status to Passive is not enough, and neither is removing a Tauri or
+libappindicator tray icon, because Caelestia and Waybar still draw Passive
+items and watchers forget an item only when its bus name goes away. Copy the
+canonical `tests/tray-registration.py` (a real watcher that lists Passive
+items) and run it in Linux CI through Link's `tools/e2e.py run --`.
+
 Measure and test host start-after-app, app start-after-host, Tools restart,
 Tools crash, Link disabled and per-app host opt-out. Tools quitting must not
 change the app's settings, jobs or other behavior.

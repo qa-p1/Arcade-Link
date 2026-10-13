@@ -55,7 +55,8 @@ class RunnerGuards(unittest.TestCase):
         library = self.root / 'libapp.so'
         library.write_bytes(b'old library')
         os.utime(library, ns=(1_000_000_000, 1_000_000_000))
-        spec = {**self.spec, 'components': [{'bin': 'libapp.so', 'source_suffixes': {'.dart'}}]}
+        # As for Clipboard, Dart sources belong to the component, not the runner.
+        spec = {**self.spec, 'source_suffixes': {'.rs'}, 'components': [{'bin': 'libapp.so', 'source_suffixes': {'.dart'}}]}
         with self.assertRaisesRegex(AssertionError, 'stale or missing build.*stale component'):
             e2e.require_current_build(spec)
 

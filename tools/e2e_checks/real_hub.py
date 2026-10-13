@@ -197,6 +197,42 @@ def real_tools_per_app_opt_out_keeps_the_apps_own_icon(s):
 
 
 @check('trayhost')
+def hosted_real_apps_remove_their_status_notifier_items(s):
+    # Caelestia and Waybar draw Passive items, so app.status alone cannot
+    # prove the icon is gone: a real watcher must lose every app's item.
+    from sni_watcher import Watcher, until
+    for app in APP_IDS:
+        s.kill(app)
+    s.kill('arcade.tools')
+    watcher = Watcher()
+    try:
+        tools_preferences(s)
+        fleet(s)
+        apps = {}
+        for app in APP_IDS:
+            until(lambda: tray(s, app) == 'own', f'{app}: expected own tray before Tools')
+            apps[call(s, app, 'app.status')['pid']] = app
+        def owners():
+            return sorted(apps.get(pid, 'arcade.tools' if pid == tools else str(pid)) for pid in watcher.owner_pids())
+        tools = None
+        until(lambda: owners() == sorted(APP_IDS), lambda: f'own: expected one item per app, got {owners()}')
+        s.start('arcade.tools')
+        tools = s.procs['arcade.tools'].pid
+        for app in APP_IDS:
+            until(lambda: tray(s, app) == 'hosted', f'{app}: expected hosted')
+        until(lambda: not set(owners()) & set(APP_IDS),
+              lambda: f'hosted apps still registered (Passive items stay visible): {owners()}', timeout=2)
+        hosted = owners()
+        s.procs['arcade.tools'].kill()  # SIGKILL; only this run's Tools PID.
+        until(lambda: sorted(a for a in owners() if a in APP_IDS) == sorted(APP_IDS),
+              lambda: f'items did not return after Tools SIGKILL: {owners()}', timeout=2)
+        s.kill('arcade.tools')
+        return f'{len(APP_IDS)} real apps: one SNI item each when own, none while hosted ({hosted}), all back after Tools SIGKILL'
+    finally:
+        watcher.close()
+
+
+@check('trayhost')
 def disabling_link_in_find_keeps_its_own_icon(s):
     s.kill('arcade.find')
     path = s.root / 'find/config/settings.json'
