@@ -266,21 +266,32 @@ def tools_updates_rolls_back_and_holds_incompatible_packages(s):
 
 
 @check('tools-hub')
-def tools_adopts_a_manual_appimage_and_self_updates(s):
+def tools_adopts_a_manual_appimage(s):
     child = child_session(s, 'adopt-self')
     try:
         with Releases(child) as server:
             app = 'arcade.lens'
             source = child.root / 'home/Manual-Lens.AppImage'
             shutil.copy2(package(app), source)
-            run_app(child, source, '--install', '--silent', '--no-launch')
-            manifest = json.loads(run_app(child, Path(receipt(child, app)['path']), '--arcade-manifest').stdout)
+            manifest = json.loads(run_app(child, source, '--arcade-manifest').stdout)
             registry = child.root / f'arcade/apps/{app}.json'
             registry.parent.mkdir(parents=True, exist_ok=True)
             registry.write_text(json.dumps(manifest), encoding='utf-8')
-            assert receipt(child, app)['managedBy'] == 'self'
+            assert not (child.root / f'arcade/installs/{app}.json').exists()
+            listed = driver(child, 'list', source=server.url)
+            assert next(a for a in listed if a['id'] == app)['installationClass'] == 'manual', listed
             _operate(child, server, app, 'adopt')
             assert receipt(child, app)['managedBy'] == 'tools'
+            return 'actual Tools adopted a manual Lens AppImage from its real manifest and created a managed receipt'
+    finally:
+        child.close()
+
+
+@check('tools-hub')
+def tools_self_update_stages_and_applies_a_real_appimage(s):
+    child = child_session(s, 'self-update')
+    try:
+        with Releases(child) as server:
             server.publish('arcade.tools')
             _operate(child, server, 'arcade.tools', 'install')
             old = receipt(child, 'arcade.tools')
@@ -293,7 +304,7 @@ def tools_adopts_a_manual_appimage_and_self_updates(s):
             driver(child, 'self-finish', source=server.url, plan=staged['plan'])
             wait(lambda: child.endpoint('arcade.tools').exists(), 'self-update did not restart Tools')
             assert hashlib.sha256(Path(receipt(child, 'arcade.tools')['path']).read_bytes()).hexdigest() != old_hash
-            return 'actual Tools adopted a self-managed Lens AppImage and staged/applied a Tools update in a separate helper process'
+            return 'actual Tools staged/applied a Tools AppImage update in a separate helper process'
     finally:
         child.close()
 
@@ -306,7 +317,7 @@ def diagnostics_zip_contains_real_app_state_and_redacts_secrets(s):
     manifest = json.loads(path.read_text(encoding='utf-8'))
     logs = s.root / 'home/find-logs'
     logs.mkdir(exist_ok=True)
-    (logs / 'e2e.log').write_text(f'home={s.env["HOME"]} token=e2e-token-secret password=e2e-password-secret\n', encoding='utf-8')
+    (logs / 'e2e.log').write_text(f'e2e-log-marker home={s.env["ARCADE_HOME"]} token=e2e-token-secret password=e2e-password-secret\n', encoding='utf-8')
     manifest.update(logs=str(logs), token='e2e-manifest-secret')
     path.write_text(json.dumps(manifest), encoding='utf-8')
     archive = s.root / 'diagnostics.zip'
@@ -315,9 +326,9 @@ def diagnostics_zip_contains_real_app_state_and_redacts_secrets(s):
         names = z.namelist()
         contents = '\n'.join(z.read(name).decode('utf-8', errors='replace') for name in names)
     assert 'diagnostics.json' in names and any('arcade.find' in name for name in names), names
-    for secret in ('e2e-token-secret', 'e2e-password-secret', 'e2e-manifest-secret', s.env['HOME']):
+    for secret in ('e2e-token-secret', 'e2e-password-secret', 'e2e-manifest-secret', s.env['ARCADE_HOME']):
         assert secret not in contents, f'diagnostics leaked {secret}'
-    assert any('e2e.log' in name for name in names), names
+    assert any(name.startswith('logs/arcade.find/') for name in names) and 'e2e-log-marker' in contents, names
     return f'{len(names)} real diagnostics ZIP entries; declared logs included, home/token/password redacted'
 
 
@@ -421,12 +432,14 @@ def _rebind_case(app, number):
         assert shortcuts, f'{app}: no effective global shortcuts in manifest'
         binding = shortcuts[0]
         original = binding['accelerator']
-        changed = 'Ctrl+Alt+F' + str(13 + number)
+        changed = 'Ctrl+Alt+Shift+' + chr(ord('A') + number)
         try:
             result = call(s, app, 'app.shortcuts.set', {'id': binding['id'], 'accelerator': changed})
-            assert result.get('applied') and result.get('via') in ('native', 'portal', 'hyprland-runtime', 'manual'), (app, result)
+            assert isinstance(result.get('applied'), bool) and result.get('via') in ('native', 'portal', 'hyprland-runtime', 'manual'), (app, result)
             if result['via'] == 'manual':
                 assert result.get('hint'), (app, result)
+            else:
+                assert result['applied'], (app, result)
             wait(lambda: any(v['id'] == binding['id'] and normalize(v['accelerator']) == changed for v in json.loads(path.read_text(encoding='utf-8'))['shortcuts']), f'{app}: manifest did not publish rebind')
         finally:
             call(s, app, 'app.shortcuts.set', {'id': binding['id'], 'accelerator': original})
@@ -434,7 +447,7 @@ def _rebind_case(app, number):
         s.kill(app)
         s.start(app)
         assert any(v['id'] == binding['id'] and normalize(v['accelerator']) == normalize(original) for v in json.loads(path.read_text(encoding='utf-8'))['shortcuts'])
-        return f'{app}/{binding["id"]}: {original} → {changed} → {original}; persisted across relaunch'
+        return f'{app}/{binding["id"]}: {original} → {changed} → {original}; persisted across relaunch; via={result["via"]}, applied={result["applied"]}'
     rebind.__name__ = app.replace('.', '_') + '_global_shortcut_round_trip'
     return rebind
 

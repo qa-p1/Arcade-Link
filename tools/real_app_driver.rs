@@ -7,6 +7,7 @@ use arcade_tools_core::{
     manager::{LaunchMode, Manager, Request},
     paths::Paths,
     portable_backup,
+    self_update::StagedSelfUpdate,
     source::Source,
 };
 use serde_json::{json, Value};
@@ -41,7 +42,9 @@ fn run() -> Result<Value, Box<dyn std::error::Error>> {
             }
             json!(results)
         }
-        "diagnostics" => json!(diagnostics_archive::create_archive(&manager.paths, &manager.list(true)?, &PathBuf::from(input["path"].as_str().ok_or("missing path")?))?),
+        "diagnostics" => {
+            json!(diagnostics_archive::create_archive(&manager.paths, &manager.list(true)?, &PathBuf::from(input["path"].as_str().ok_or("missing path")?))?)
+        }
         "backup" => json!(portable_backup::create_archive(&manager, &PathBuf::from(input["path"].as_str().ok_or("missing path")?))?),
         "restore" => {
             let preview = portable_backup::preview_restore(&manager, &PathBuf::from(input["path"].as_str().ok_or("missing path")?))?;
@@ -50,13 +53,18 @@ fn run() -> Result<Value, Box<dyn std::error::Error>> {
             let restored = portable_backup::apply_restore(&manager, &preview.plan_id, &cancel, &mut progress, &mut |enabled| manager.set_link(enabled))?;
             json!({"preview": preview, "restored": restored})
         }
-        "self-stage" => json!(manager.prepare_self_update(LaunchMode::Background, &cancel, &mut progress, &mut |_| Ok(()))?),
+        "self-stage" => json!(manager.prepare_self_update(LaunchMode::Background, &cancel, &mut progress, &mut |_: &StagedSelfUpdate| Ok(()))?),
         "self-finish" => json!({"message": manager.finish_self_update(&serde_json::from_value(input["plan"].clone())?, &cancel, &mut progress)?}),
         "index" => {
             let mut inputs = BuildInputs {
                 registry_dir: Some(manager.paths.link.registry),
                 catalog_dir: input["catalog"].as_str().map(PathBuf::from),
-                arcade_docs: input["docs"].as_array().ok_or("missing docs")?.iter().map(|v| v.as_str().map(PathBuf::from).ok_or("invalid docs path")).collect::<Result<_, _>>()?,
+                arcade_docs: input["docs"]
+                    .as_array()
+                    .ok_or("missing docs")?
+                    .iter()
+                    .map(|v| v.as_str().map(PathBuf::from).ok_or("invalid docs path"))
+                    .collect::<Result<_, _>>()?,
                 ..Default::default()
             };
             let began = Instant::now();
@@ -69,7 +77,9 @@ fn run() -> Result<Value, Box<dyn std::error::Error>> {
             }
             let index = build_index(&inputs);
             let elapsed = began.elapsed().as_secs_f64() * 1000.0;
-            if let Some(path) = input["output"].as_str() { index.write_index(&PathBuf::from(path))?; }
+            if let Some(path) = input["output"].as_str() {
+                index.write_index(&PathBuf::from(path))?;
+            }
             json!({"index": index, "elapsedMs": elapsed})
         }
         _ => return Err("unknown command".into()),
@@ -78,6 +88,9 @@ fn run() -> Result<Value, Box<dyn std::error::Error>> {
 fn main() {
     match run() {
         Ok(result) => println!("{result}"),
-        Err(error) => { eprintln!("{error}"); std::process::exit(1); }
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
     }
 }

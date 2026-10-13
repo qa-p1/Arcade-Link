@@ -44,9 +44,9 @@ def build_driver():
 
 def driver(s, command, **params):
     assert DRIVER.is_file(), f'stale or missing build: {DRIVER}; run tools/e2e.py --real-apps to build the Tools adapter'
-    newest = max([e2e.LINK / 'tools/real_app_driver.rs', *e2e.TOOLS['dir'].glob('src/*.rs'),
-                  *e2e.TOOLS['dir'].glob('crates/arcade-shortcuts/src/**/*.rs')], key=lambda p: p.stat().st_mtime_ns)
-    assert DRIVER.stat().st_mtime_ns >= newest.stat().st_mtime_ns, f'stale or missing build: {DRIVER}; newer source: {newest}'
+    e2e.require_current_build({**e2e.TOOLS, 'bin': str(DRIVER), 'build': ['python3 tools/e2e.py --real-apps --only shortcuts']})
+    source = e2e.LINK / 'tools/real_app_driver.rs'
+    assert DRIVER.stat().st_mtime_ns >= source.stat().st_mtime_ns, f'stale or missing build: {DRIVER}; newer source: {source}'
     result = subprocess.run([str(DRIVER)], input=json.dumps({'command': command, **params}), env=s.env,
                             capture_output=True, text=True, encoding='utf-8', timeout=180)
     (s.root / 'tools-driver.log').open('a', encoding='utf-8').write(result.stderr)
@@ -128,7 +128,7 @@ def tools_preferences(s, **values):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({'hostIcons': True, 'startAtLogin': False, 'shortcutsEnabled': True, **values}), encoding='utf-8')
     # Keep the idle samples away from update-network work.
-    (path.parent / 'preferences.json').write_text(json.dumps({'linkEnabled': True, 'updatesEnabled': False}), encoding='utf-8')
+    (path.parent / 'preferences.json').write_text(json.dumps({'linkEnabled': True, 'updates': {'enabled': False}}), encoding='utf-8')
 
 
 def package(app):
@@ -138,9 +138,22 @@ def package(app):
     candidates = sorted((spec['dir'] / 'dist').glob('*.AppImage'))
     candidates += sorted((spec['dir'] / 'src-tauri/target/release/bundle/appimage').glob('*.AppImage'))
     candidates += sorted((spec['dir'] / 'target/release/bundle/appimage').glob('*.AppImage'))
+    cache = Path(os.environ.get('ARCADE_ARTIFACT_DIR', str(e2e.CODING.parent.parent / '.cache/arcade-orchestrator/artifacts')))
+    slug = app.replace('.', '').replace('-', '')
+    candidates += [p for p in cache.rglob('*.AppImage') if ''.join(c for c in p.name.lower() if c.isalnum()).startswith(slug)]
     path = Path(override).resolve() if override else max(candidates, key=lambda p: p.stat().st_mtime_ns, default=None)
     assert path, f'stale or missing build: {app} AppImage in {spec["dir"]}/dist; build the Linux package or set {prefix}_APPIMAGE'
-    e2e.require_current_build({**spec, 'bin': str(path), 'build': ['build the Linux AppImage']})
+    provenance = path.with_suffix(path.suffix + '.provenance.json')
+    if provenance.is_file():
+        identity = json.loads(provenance.read_text(encoding='utf-8'))
+        assert identity['conclusion'] == 'success', f'stale or missing build: {path}; CI run was not green'
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == identity['sha256'], f'stale or missing build: {path}; CI checksum mismatch'
+        changed = subprocess.run(['git', 'diff', '--name-only', identity['headSha'], '--'], cwd=spec['dir'], capture_output=True, text=True, check=True)
+        inputs = [name for name in changed.stdout.splitlines() if e2e.source_input(Path(name))]
+        assert not inputs, f'stale or missing build: {path}; source changes since CI {identity["headSha"]}: {inputs}'
+        assert os.access(path, os.X_OK), f'stale or missing build: {path}; not executable'
+    else:
+        e2e.require_current_build({**spec, 'bin': str(path), 'build': ['download a green Linux CI AppImage']})
     signature = path.open('rb').read(11)
     assert signature[:4] == b'\x7fELF' and signature[8:11] in (b'AI\x01', b'AI\x02'), f'{path}: expected a real AppImage (shell/mock wrappers are not accepted)'
     return path

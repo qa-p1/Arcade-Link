@@ -103,25 +103,32 @@ STRIP = ("WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE", "XDG_CURRENT_DESKTOP"
          "DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "ARCADE_DEV_BUILD")
 
 
+def source_input(path: Path) -> bool:
+    return path.suffix in {".rs", ".cpp", ".cc", ".c", ".h", ".hpp", ".qml", ".dart", ".svelte", ".ts", ".js", ".toml", ".cmake", ".css", ".html", ".qrc", ".ui"} or path.name in {
+        "CMakeLists.txt", "Cargo.lock", "package.json", "package-lock.json", "pubspec.yaml", "pubspec.lock", "tauri.conf.json"}
+
+
+def source_paths(directory: Path) -> list[Path]:
+    tracked = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=directory, capture_output=True)
+    if tracked.returncode == 0:
+        paths = [directory / os.fsdecode(name) for name in tracked.stdout.split(b"\0") if name]
+    else:
+        paths = []
+        for root, dirs, files in os.walk(directory):
+            dirs[:] = [d for d in dirs if d not in {".git", "target", "build", "node_modules", ".dart_tool", ".tools", "dist"}]
+            paths.extend(Path(root) / name for name in files)
+    return [path for path in paths if path.is_file() and source_input(path)]
+
+
 def require_current_build(spec: dict) -> Path:
     """Refuse missing binaries and builds older than their source inputs."""
     executable = spec["dir"] / spec["bin"]
     hint = " ".join(spec.get("build") or ["run this app's documented build command"])
     message = f"stale or missing build: {executable}; rebuild in {spec['dir']}: {hint}"
-    if not executable.is_file():
-        raise AssertionError(message + " (missing build)")
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise AssertionError(message + " (missing executable build)")
     stamp = executable.stat().st_mtime_ns
-    tracked = subprocess.run(["git", "ls-files", "-z"], cwd=spec["dir"], capture_output=True)
-    if tracked.returncode == 0:
-        paths = [spec["dir"] / os.fsdecode(name) for name in tracked.stdout.split(b"\0") if name]
-    else:
-        paths = []
-        for directory, dirs, files in os.walk(spec["dir"]):
-            dirs[:] = [d for d in dirs if d not in {".git", "target", "build", "node_modules", ".dart_tool", ".tools", "dist"}]
-            paths.extend(Path(directory) / name for name in files)
-    sources = [path for path in paths if path.is_file() and
-               (path.suffix in {".rs", ".cpp", ".c", ".h", ".hpp", ".qml", ".dart", ".svelte", ".ts", ".js", ".toml"}
-                or path.name in {"CMakeLists.txt", "Cargo.lock", "package.json", "package-lock.json", "pubspec.yaml", "pubspec.lock"})]
+    sources = source_paths(spec["dir"])
     newest = max(sources, key=lambda p: p.stat().st_mtime_ns, default=None)
     if newest and newest.stat().st_mtime_ns > stamp:
         raise AssertionError(message + f" (stale build; newer source: {newest})")
@@ -159,6 +166,9 @@ class Session:
     """Xvfb + keyring inside the private D-Bus session this process runs in."""
 
     def __init__(self, root: Path, headless: bool = False, mock_peers: bool = False, real_apps: bool = False):
+        sandbox = os.environ.get("ARCADE_E2E_ROOT")
+        if os.environ.get("ARCADE_E2E_INNER") != "1" or not sandbox or not root.is_relative_to(Path(sandbox)):
+            raise AssertionError("lifecycle runs require tools/e2e.py's isolated session")
         self.root = root
         self.env = isolated_env(root)
         self.procs: dict[str, subprocess.Popen] = {}
@@ -494,9 +504,8 @@ def load_check_modules(real_apps: bool = False) -> None:
         spec.loader.exec_module(module)
 
 
-def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: bool = False) -> int:
+def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: bool = False, names: str | None = None) -> int:
     load_check_modules(real_apps)
-    s = Session(root, headless=scaffold, mock_peers=scaffold, real_apps=real_apps)
     if scaffold:
         print("Link scaffold: mock peer presence, crate watchers/install harness, sibling shortcut documents")
     selected = [g.strip() for g in only.split(",")] if only is not None else None
@@ -504,6 +513,11 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: 
         # A typo or an empty selection must never report success.
         print(f"unknown or empty check group selection {only!r}; known: {', '.join(CHECKS)}")
         return 2
+    selected_names = names.split(",") if names else None
+    if selected_names and not set(selected_names) <= {f.__name__ for group, funcs in CHECKS.items() if selected is None or group in selected for f in funcs}:
+        print(f"unknown check selection {names!r}")
+        return 2
+    s = Session(root, headless=scaffold, mock_peers=scaffold, real_apps=real_apps)
     failures = 0
     ran = 0
     results = []
@@ -512,19 +526,21 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: 
             if selected is not None and group not in selected:
                 continue
             for f in funcs:
+                if selected_names and f.__name__ not in selected_names:
+                    continue
                 ran += 1
                 name = f"{group}: {f.__name__}"
                 t0 = time.time()
                 try:
                     detail = f(s)
                     print(f"PASS {name} ({time.time() - t0:.1f}s)", flush=True)
-                    results.append({"group": group, "check": f.__name__, "passed": True, "detail": str(detail or "")})
+                    results.append({"group": group, "check": f.__name__, "passed": True, "seconds": round(time.time() - t0, 3), "detail": str(detail or "")})
                     if detail and os.environ.get("E2E_VERBOSE"):
                         print("     " + str(detail).replace("\n", "\n     "))
                 except Exception as e:  # noqa: BLE001 - report every failure and keep going
                     failures += 1
                     print(f"FAIL {name}: {e}", flush=True)
-                    results.append({"group": group, "check": f.__name__, "passed": False, "detail": str(e)})
+                    results.append({"group": group, "check": f.__name__, "passed": False, "seconds": round(time.time() - t0, 3), "detail": str(e)})
     finally:
         s.close()
         if os.environ.get("E2E_KEEP"):
@@ -536,8 +552,9 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: 
     report_dir = os.environ.get("ARCADE_E2E_REPORT_DIR")
     if report_dir:
         Path(report_dir).mkdir(parents=True, exist_ok=True)
-        (Path(report_dir) / ((only or "all").replace(",", "-") + ".json")).write_text(
-            json.dumps({"realApps": real_apps, "passed": ran - failures, "failed": failures, "checks": results}, indent=2) + "\n", encoding="utf-8")
+        report_name = (only or "all") + ("-" + names if names else "")
+        (Path(report_dir) / (report_name.replace(",", "-") + ".json")).write_text(
+            json.dumps({"dateUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "realApps": real_apps, "passed": ran - failures, "failed": failures, "checks": results}, indent=2) + "\n", encoding="utf-8")
     return 1 if failures else 0
 
 
@@ -552,6 +569,7 @@ def run_command(root: Path, cmd: list[str]) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--only", help="comma-separated check groups")
+    p.add_argument("--check", help="comma-separated check function names, within --only")
     p.add_argument("--real-apps", action="store_true", help="exercise the real fleet and Tools core; require current builds and AppImages")
     p.add_argument("command", nargs="*", help="`run -- CMD…` runs CMD in the isolated session")
     args = p.parse_args()
@@ -567,7 +585,7 @@ def main() -> int:
             build_driver()
         if not args.command and (args.only is None or "install" in args.only.split(",")):
             subprocess.check_call(["cargo", "build", "-p", "arcade-link", "--example", "install-harness", "--features", "install", "--locked"], cwd=LINK)
-        if args.only is None and not args.command:
+        if args.only is None and not args.command and not args.check:
             # A full run gives every group its own fresh session: groups leave
             # apps running in states (open pickers, toggled settings, held
             # profiles) that the next group must not inherit.
@@ -579,7 +597,7 @@ def main() -> int:
     root = Path(os.environ["ARCADE_E2E_ROOT"])
     if args.command and args.command[0] == "run":
         return run_command(root, args.command[1:])
-    return run_checks(root, args.only, scaffold, args.real_apps)
+    return run_checks(root, args.only, scaffold, args.real_apps, args.check)
 
 
 def isolated(argv: list[str]) -> int:

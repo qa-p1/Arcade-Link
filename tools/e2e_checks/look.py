@@ -98,10 +98,11 @@ def unsupported_url_and_linux_selection(s):
 
 @check("look")
 def look_consumer_boundaries(s):
-    deps = APPS["arcade.look"]["dir"] / "src-tauri/target/link-tests/debug/deps"
+    deps = (APPS["arcade.look"]["dir"] / APPS["arcade.look"]["bin"]).parent / "deps"
     binaries = [p for p in deps.glob("link_consumer-*") if p.is_file() and os.access(p, os.X_OK)]
-    assert binaries, "build Look's consumer tests first: cargo test --test link_consumer --no-run"
+    assert binaries, "stale or missing build: build Look's consumer tests first: cargo test --test link_consumer --no-run"
     binary = max(binaries, key=lambda p: p.stat().st_mtime)
+    require_current_build({**APPS["arcade.look"], "bin": str(binary)})
     r = subprocess.run([str(binary), "--ignored", "--nocapture", "--test-threads=1"], env=s.env,
                        capture_output=True, text=True, timeout=90)
     assert r.returncode == 0, r.stdout + r.stderr
