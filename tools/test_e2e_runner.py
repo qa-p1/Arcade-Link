@@ -50,6 +50,15 @@ class RunnerGuards(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'stale or missing build.*newer source'):
             e2e.require_current_build(self.spec)
 
+    def test_fresh_runner_does_not_hide_a_stale_flutter_component(self):
+        (self.root / 'main.dart').write_text('void main() {}\n')
+        library = self.root / 'libapp.so'
+        library.write_bytes(b'old library')
+        os.utime(library, ns=(1_000_000_000, 1_000_000_000))
+        spec = {**self.spec, 'components': [{'bin': 'libapp.so', 'source_suffixes': {'.dart'}}]}
+        with self.assertRaisesRegex(AssertionError, 'stale or missing build.*stale component'):
+            e2e.require_current_build(spec)
+
     def test_documentation_does_not_make_a_build_stale(self):
         (self.root / 'README.md').write_text('New documentation\n')
         self.assertEqual(e2e.require_current_build(self.spec), self.binary)

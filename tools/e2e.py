@@ -88,6 +88,12 @@ APPS = {
         "bin": "apps/flutter_app/build/linux/x64/release/bundle/clipboard",
         "args": ["--background"],
         "build": ["bash", "scripts/build-linux.sh"],
+        "source_suffixes": {".cpp", ".cc", ".c", ".h", ".hpp"},
+        "source_names": {"CMakeLists.txt"},
+        "components": [
+            {"bin": "apps/flutter_app/build/linux/x64/release/bundle/lib/libapp.so", "source_suffixes": {".dart"}, "source_names": {"pubspec.yaml", "pubspec.lock"}},
+            {"bin": "apps/flutter_app/build/linux/x64/release/bundle/lib/libarcade_core.so", "source_suffixes": {".rs", ".toml"}, "source_names": {"Cargo.lock"}},
+        ],
     },
 }
 
@@ -130,9 +136,17 @@ def require_current_build(spec: dict) -> Path:
         raise AssertionError(message + " (missing executable build)")
     stamp = executable.stat().st_mtime_ns
     sources = source_paths(spec["dir"])
+    if "source_suffixes" in spec:
+        sources = [p for p in sources if p.suffix in spec["source_suffixes"] or p.name in spec.get("source_names", set())]
     newest = max(sources, key=lambda p: p.stat().st_mtime_ns, default=None)
     if newest and newest.stat().st_mtime_ns > stamp:
         raise AssertionError(message + f" (stale build; newer source: {newest})")
+    for component in spec.get("components", []):
+        path = spec["dir"] / component["bin"]
+        assert path.is_file(), message + f" (missing component: {path})"
+        inputs = [p for p in source_paths(spec["dir"]) if p.suffix in component["source_suffixes"] or p.name in component.get("source_names", set())]
+        newest = max(inputs, key=lambda p: p.stat().st_mtime_ns, default=None)
+        assert newest is None or newest.stat().st_mtime_ns <= path.stat().st_mtime_ns, message + f" (stale component: {path}; newer source: {newest})"
     return executable
 
 
@@ -305,7 +319,7 @@ class Session:
                 os.killpg(p.pid, signal.SIGKILL)
                 p.wait()
 
-    def close(self) -> None:
+    def stop_apps(self) -> None:
         if CLI.is_file():
             for endpoint in sorted((self.root / "arcade/run").glob("*.endpoint")):
                 try:
@@ -318,6 +332,9 @@ class Session:
                     pass
         for app in list(self.procs):
             self.kill(app, signal.SIGTERM)
+
+    def close(self) -> None:
+        self.stop_apps()
         if self.keyring:
             self.keyring.terminate()
         if self.xvfb:
@@ -521,6 +538,7 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: 
         return 2
     s = Session(root, headless=scaffold, mock_peers=scaffold, real_apps=real_apps)
     failures = 0
+    not_run = 0
     ran = 0
     results = []
     try:
@@ -536,13 +554,17 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: 
                 try:
                     detail = f(s)
                     print(f"PASS {name} ({time.time() - t0:.1f}s)", flush=True)
-                    results.append({"group": group, "check": f.__name__, "passed": True, "seconds": round(time.time() - t0, 3), "detail": str(detail or "")})
+                    results.append({"group": group, "check": f.__name__, "passed": True, "status": "pass", "seconds": round(time.time() - t0, 3), "detail": str(detail or "")})
                     if detail and os.environ.get("E2E_VERBOSE"):
                         print("     " + str(detail).replace("\n", "\n     "))
                 except Exception as e:  # noqa: BLE001 - report every failure and keep going
-                    failures += 1
-                    print(f"FAIL {name}: {e}", flush=True)
-                    results.append({"group": group, "check": f.__name__, "passed": False, "seconds": round(time.time() - t0, 3), "detail": str(e) or type(e).__name__, "traceback": traceback.format_exc()})
+                    unavailable = "stale or missing build:" in str(e)
+                    if unavailable:
+                        not_run += 1
+                    else:
+                        failures += 1
+                    print(f"{'NOT RUN' if unavailable else 'FAIL'} {name}: {e}", flush=True)
+                    results.append({"group": group, "check": f.__name__, "passed": False, "status": "not_run" if unavailable else "fail", "seconds": round(time.time() - t0, 3), "detail": str(e) or type(e).__name__, "traceback": traceback.format_exc()})
     finally:
         s.close()
         if os.environ.get("E2E_KEEP"):
@@ -550,14 +572,14 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: 
     if not ran:
         print("no checks ran")
         return 1
-    print(f"RESULT {only or 'all'}: {ran - failures} passed, {failures} failed ({ran} checks)", flush=True)
+    print(f"RESULT {only or 'all'}: {ran - failures - not_run} passed, {failures} failed, {not_run} not run ({ran} checks)", flush=True)
     report_dir = os.environ.get("ARCADE_E2E_REPORT_DIR")
     if report_dir:
         Path(report_dir).mkdir(parents=True, exist_ok=True)
         report_name = (only or "all") + ("-" + names if names else "")
         (Path(report_dir) / (report_name.replace(",", "-") + ".json")).write_text(
-            json.dumps({"dateUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "realApps": real_apps, "passed": ran - failures, "failed": failures, "checks": results}, indent=2) + "\n", encoding="utf-8")
-    return 1 if failures else 0
+            json.dumps({"dateUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "realApps": real_apps, "passed": ran - failures - not_run, "failed": failures, "notRun": not_run, "checks": results}, indent=2) + "\n", encoding="utf-8")
+    return 1 if failures or not_run else 0
 
 
 def run_command(root: Path, cmd: list[str]) -> int:

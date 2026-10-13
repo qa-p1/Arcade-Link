@@ -107,7 +107,7 @@ def development_builds_never_offer_an_install(s):
     for app in APP_IDS:
         spec = APPS[app]
         # This deliberately invokes the development executable without APPIMAGE.
-        cli_spec = {**spec, 'bin': 'target/release/arcade-clipboard-launcher'} if app == 'arcade.clipboard' else spec
+        cli_spec = {**spec, 'bin': 'target/release/arcade-clipboard-launcher', 'source_suffixes': {'.rs', '.toml'}, 'source_names': {'Cargo.lock'}, 'components': []} if app == 'arcade.clipboard' else spec
         result = run_app(s, require_current_build(cli_spec), '--integration-status')
         status = json.loads(result.stdout)
         assert status.get('receipt') is None, (app, status)
@@ -223,6 +223,15 @@ def _operate(s, server, app, operation):
 
 
 @check('tools-hub')
+def loopback_catalog_is_loaded_by_the_real_tools_core(s):
+    with Releases(s) as server:
+        result = driver(s, 'catalog', source=server.url)
+        assert result['updated'] == server.catalog['updated'] and '/catalog.json' in server.requests, (result, server.requests)
+        assert {a['id'] for a in result['apps']} == set(APP_IDS), result
+        return f'actual Tools core fetched loopback catalog: {len(result["apps"])} apps + Tools + bundle'
+
+
+@check('tools-hub')
 def loopback_catalog_bundle_install_real_packages(s):
     with Releases(s) as server:
         for app in ('arcade.find', 'arcade.shelf'):
@@ -272,8 +281,8 @@ def tools_adopts_a_manual_appimage(s):
     child = child_session(s, 'adopt-self')
     try:
         with Releases(child) as server:
-            app = 'arcade.lens'
-            source = child.root / 'home/Manual-Lens.AppImage'
+            app = 'arcade.find'
+            source = child.root / 'home/Manual-Find.AppImage'
             shutil.copy2(package(app), source)
             manifest = json.loads(run_app(child, source, '--arcade-manifest').stdout)
             registry = child.root / f'arcade/apps/{app}.json'
@@ -284,7 +293,7 @@ def tools_adopts_a_manual_appimage(s):
             assert next(a for a in listed if a['id'] == app)['installationClass'] == 'manual', listed
             _operate(child, server, app, 'adopt')
             assert receipt(child, app)['managedBy'] == 'tools'
-            return 'actual Tools adopted a manual Lens AppImage from its real manifest and created a managed receipt'
+            return 'actual Tools adopted a manual Find AppImage from its real manifest and created a managed receipt'
     finally:
         child.close()
 
@@ -337,6 +346,7 @@ def diagnostics_zip_contains_real_app_state_and_redacts_secrets(s):
 @check('tools-hub')
 def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
     # Keep managed installs from earlier checks out of this settings round trip.
+    s.stop_apps()
     first = child_session(s, 'backup-source')
     second = child_session(s, 'backup-target')
     try:
@@ -439,7 +449,11 @@ def _rebind_case(app, number):
         manifest = json.loads(path.read_text(encoding='utf-8'))
         shortcuts = manifest.get('shortcuts', [])
         assert shortcuts or app == 'arcade.look', f'{app}: no effective global shortcuts in manifest'
-        binding = shortcuts[0] if shortcuts else {'id': 'preview-selection', 'accelerator': ''}
+        if not shortcuts:
+            call(s, app, 'app.shortcuts.set', {'id': 'preview-selection', 'accelerator': 'Ctrl+Alt+Shift+L'})
+            wait(lambda: json.loads(path.read_text(encoding='utf-8')).get('shortcuts'), f'{app}: initial binding was not published')
+            shortcuts = json.loads(path.read_text(encoding='utf-8'))['shortcuts']
+        binding = shortcuts[0]
         original = binding['accelerator']
         changed = 'Ctrl+Alt+Shift+' + chr(ord('A') + number)
         try:

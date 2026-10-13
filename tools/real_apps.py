@@ -233,7 +233,7 @@ class Releases:
         prefix = f'assets/{app}/{version}/{hashlib.sha256(body).hexdigest()[:12]}/'
         asset = {'os': 'linux', 'arch': 'x64', 'kind': 'appimage', 'file': name,
                  'sha256': hashlib.sha256(body).hexdigest(), 'size': len(body),
-                 'installArgs': ['--install', '--silent', '--no-launch', '--channel', '{channel}']}
+                 'installArgs': ['--install', '--silent']}
         release = {'schema': 1, 'id': app, 'version': version, 'channel': 'stable', 'linkProtocol': protocol or [1],
                    'notes': f'https://github.com/{entry["repo"]}/releases', 'assets': [asset]}
         assets = {name: body, 'arcade-release.json': json.dumps(release).encode(), 'SHA256SUMS.txt': f'{asset["sha256"]}  {name}\n'.encode()}

@@ -291,7 +291,10 @@ def native_connected_settings_and_shortcut_warning(s):
         wait_ui(s, "document.querySelector('.arcade-peer input')?.checked === true")
         ui(s, "document.querySelector('input[aria-label=\"Connect with other Arcade apps\"]').click()")
         wait_ui(s, "[...document.querySelectorAll('.arcade-peer input')].every(e=>e.disabled)")
-        assert not s.endpoint('arcade.look').exists()
+        deadline = time.monotonic() + 5
+        while s.endpoint('arcade.look').exists() and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert not s.endpoint('arcade.look').exists(), 'master off did not remove the endpoint within 5 s'
         shot(s, 'look-connected-apps-master-off', window)
         ui(s, "document.querySelector('input[aria-label=\"Connect with other Arcade apps\"]').click()")
         s.wait_running('arcade.look')

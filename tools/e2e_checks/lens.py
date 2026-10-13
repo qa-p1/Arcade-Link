@@ -418,6 +418,7 @@ def _settings(s):
     r = subprocess.run([str(exe)], env=s.env, capture_output=True, text=True, timeout=15)
     assert r.returncode == 0, r.stderr
     win = _focus(s, "^Arcade Lens Settings$")
+    s.xdotool("windowsize", win, "940", "1020")
     s.xdotool("windowraise", win)
     _ui_click(s, "Connected apps", win)
     _wait(lambda: any(_has(l["text"], "Connect with other Arcade apps") for l in _ui_lines(s, win)),
