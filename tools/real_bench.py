@@ -280,6 +280,7 @@ def main():
         'shortcutIndex': lambda: shortcut_index(s, args.runs),
         'overlay': lambda: overlay_frames(s, args.runs),
         'startup': lambda: json.loads(subprocess.run([str(e2e.LINK / 'target/debug/examples/startup-probe')], env=s.env, capture_output=True, text=True, encoding='utf-8', check=True, timeout=15).stdout),
+        'qtStartup': lambda: json.loads(subprocess.run([str(e2e.LINK / 'qt/build/startup-probe')], env=s.env, capture_output=True, text=True, encoding='utf-8', check=True, timeout=15).stdout),
         'toolsWindow': lambda: warm_window(s, args.runs),
     }
     if args.only:
