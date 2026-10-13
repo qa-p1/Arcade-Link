@@ -540,6 +540,30 @@ which checks passed, what remains incomplete and why. Separate implementation
 completion from release readiness and unverified platforms. Do not call the work
 finished while an authorized, feasible part of the agreed scope remains undone.
 
+### Tools hub delivery checklist
+
+Track implementation and verified delivery separately. Before claiming a new
+app is onboarded, check each item against the exact app and Link commits:
+
+- [ ] A self-installing Linux AppImage, per-user Windows installer and macOS
+  bundle, with isolated silent install/uninstall parity for supported targets.
+- [ ] An atomic install receipt, stable launcher/icon/CLI entries, update,
+  moved-file repair and receipt-owned uninstall; development builds skip prompts.
+- [ ] `docs/user/` and versioned `shortcuts.json`, generated `shortcuts.md`,
+  screenshots and CI validation of sheets and documentation links.
+- [ ] The tray-host watcher, `status.tray`, both startup orders, restart grace,
+  crash hand-back within one second, disabled Link and per-app opt-out.
+- [ ] Advertised `describe.methods`: settings/restart, menu/invoke, live global
+  shortcut rebinding, portable settings export/import with explicit exclusions.
+- [ ] A catalog PR with the app's assets, docs, channels and supported platforms.
+- [ ] Tools mappings and a real-app `tools-hub` e2e entry, plus the `install`,
+  `trayhost` and `shortcuts` groups and existing cross-app checks.
+- [ ] Recorded performance against Tools plan §18: critical-path watcher plus
+  `detect()` ≤5 ms; hand-back ≤1 s (target ≤200 ms); closed-window Tools ≤40 MiB
+  and zero CPU ticks over 30 s; overlay ≤80 ms p95; index rebuild ≤150 ms.
+- [ ] Dated Linux desktop evidence and separate Windows/macOS CI/build evidence;
+  unmeasured hardware-dependent behavior stays labeled as unverified.
+
 ## 11. Suggested implementation order
 
 1. Confirm scope from the idea, inspect references and choose the stack.
