@@ -149,7 +149,8 @@ def counters(pid):
     for child in pids:
         try:
             fields = Path(f'/proc/{child}/stat').read_text().rsplit(')', 1)[1].split()
-            ticks += int(fields[11]) + int(fields[12])
+            # Reaped children transfer their CPU time to the parent counters.
+            ticks += sum(int(fields[i]) for i in (11, 12, 13, 14))
             rss += next(int(line.split()[1]) for line in Path(f'/proc/{child}/status').read_text().splitlines() if line.startswith('VmRSS:'))
         except (OSError, StopIteration):
             pass
@@ -209,11 +210,61 @@ def handback(s, runs):
             'physicalIconPaintMeasured': False}
 
 
+def shortcut_index(s, runs):
+    fleet(s)
+    fixture = e2e.TOOLS['dir'] / 'crates/arcade-shortcuts/tests/fixtures/hypr'
+    catalog = e2e.CODING / 'Rust/Arcade-catalog/shortcuts'
+    assert catalog.is_dir(), f'missing catalog sheets: {catalog}'
+    samples = [index(s, hyprland=str(fixture / 'caelestia/hyprland.lua'),
+                     runtime=str(fixture / 'hyprctl-binds-caelestia.json'))['elapsedMs'] for _ in range(runs)]
+    return {'method': 'actual Tools build_index with seven running manifests, seven app documents, catalog sheets and Hyprland Lua/runtime fixture; separate adapter process excludes process startup',
+            'samplesMs': samples, 'maxMs': max(samples), 'p95Ms': percentile(samples), 'budgetMs': 150, 'budgetMet': max(samples) <= 150}
+
+
+def warm_window(s, runs):
+    trace = s.root / 'tools-window-frames.jsonl'
+    previous = s.env.get('ARCADE_TOOLS_SMOKE_LOG')
+    s.env['ARCADE_TOOLS_SMOKE_LOG'] = str(trace)
+    tools_preferences(s)
+    s.start('arcade.tools')
+    samples = []
+    try:
+        for number in range(runs + 1):
+            trace.write_text('', encoding='utf-8')
+            began = time.perf_counter()
+            call(s, 'arcade.tools', 'app.activate')
+            def rendered():
+                for line in trace.read_text(encoding='utf-8').splitlines():
+                    try:
+                        if json.loads(line).get('event') == 'rendered':
+                            return True
+                    except json.JSONDecodeError:
+                        pass
+                return False
+            wait(rendered, 'Tools did not emit its DOM/requestAnimationFrame callback', timeout=10, interval=.002)
+            elapsed = round((time.perf_counter() - began) * 1000, 3)
+            if number:
+                samples.append(elapsed)
+            close_window(s, s.wait_window('^Arcade Tools$'))
+            wait(lambda: not s.xdotool('search', '--onlyvisible', '--name', '^Arcade Tools$'), 'Tools window did not close')
+        return {'method': 'resident Tools app.activate → native audit of DOM/requestAnimationFrame callback; one warm-up excluded; webview recreated each time',
+                'samplesMs': samples, 'p95Ms': percentile(samples), 'budgetMs': 400,
+                'proxyWithinBudget': percentile(samples) <= 400, 'firstPaintMeasured': False,
+                'realDesktop': 'not measured (needs a real desktop)'}
+    finally:
+        s.kill('arcade.tools')
+        if previous is None:
+            s.env.pop('ARCADE_TOOLS_SMOKE_LOG', None)
+        else:
+            s.env['ARCADE_TOOLS_SMOKE_LOG'] = previous
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runs', type=int, default=20)
     parser.add_argument('--idle-seconds', type=float, default=30)
     parser.add_argument('--json', type=Path, required=True)
+    parser.add_argument('--only', help='comma-separated probe names')
     args = parser.parse_args()
     if os.environ.get('ARCADE_E2E_INNER') != '1':
         parser.error('run through python3 tools/e2e.py run -- python3 tools/real_bench.py ...')
@@ -226,10 +277,16 @@ def main():
     probes = {
         'trayHandback': lambda: handback(s, min(args.runs, 10)),
         'toolsIdle': lambda: idle(s, args.idle_seconds),
-        'shortcutIndex': lambda: {'method': 'actual Tools build_index, real manifest/doc/catalog inputs; worker elapsed excludes adapter startup', 'samplesMs': [index(s)['elapsedMs'] for _ in range(args.runs)], 'budgetMs': 150},
+        'shortcutIndex': lambda: shortcut_index(s, args.runs),
         'overlay': lambda: overlay_frames(s, args.runs),
         'startup': lambda: json.loads(subprocess.run([str(e2e.LINK / 'target/debug/examples/startup-probe')], env=s.env, capture_output=True, text=True, encoding='utf-8', check=True, timeout=15).stdout),
+        'toolsWindow': lambda: warm_window(s, args.runs),
     }
+    if args.only:
+        unknown = set(args.only.split(',')) - probes.keys()
+        if unknown:
+            parser.error(f'unknown probes: {sorted(unknown)}')
+        probes = {name: probe for name, probe in probes.items() if name in args.only.split(',')}
     for name, probe in probes.items():
         print(f'measuring real {name}...', flush=True)
         try:
@@ -240,7 +297,7 @@ def main():
             s.close()
         print(json.dumps({name: result[name]}), flush=True)
         args.json.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
-    return 0 if all('reason' not in result[name] for name in probes) else 1
+    return 0 if all('reason' not in result[name] and result[name].get('budgetMet', True) for name in probes) else 1
 
 
 if __name__ == '__main__':
