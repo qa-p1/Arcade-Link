@@ -26,3 +26,22 @@ Tools' actual closed-webview 40 MiB/zero-tick budget and overlay 80 ms p95
 remain for the Tools implementation and its first-frame instrumentation.
 Use `--idle-seconds` only to shorten scaffold smoke tests; keep 30 s for the
 production idle check.
+
+The real §18 probes live in `tools/real_bench.py`. Build the selected fleet,
+Tools debug binary/overlay and Link's startup probe, then run:
+
+```sh
+. tools/hub-env.sh
+cargo build -p arcade-link --example startup-probe --features install,trayhost --locked
+python3 tools/e2e.py --real-apps --only shortcuts  # also builds the Tools adapter
+python3 tools/e2e.py run -- python3 tools/real_bench.py --runs 20 --idle-seconds 30 --json "$PWD/target/real-bench.json"
+```
+
+Every probe records its method, raw samples, build identities and missing-build
+errors. Tray latency observes real app status over preconnected sockets, not
+icon paint. The hotkey probe captures the real overlay's callback through a
+disposable companion launcher and includes XTest/launcher overhead; Xvfb does
+not measure a physical compositor's display latency. Index timing comes from
+Tools' actual builder and excludes adapter startup. `startup-probe` measures
+Rust `detect()` and watcher construction on the caller's critical path; it does
+not measure worker completion, Qt costs or whole-app startup regressions.

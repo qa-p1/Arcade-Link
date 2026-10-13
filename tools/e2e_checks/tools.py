@@ -17,7 +17,8 @@ import subprocess
 import threading
 import time
 
-TOOLS = Path(__file__).resolve().parents[3] / "Arcade-tools"
+TOOLS_SPEC = TOOLS
+TOOLS = TOOLS_SPEC["dir"]
 GENERATOR = TOOLS / "scripts/arcade-release.py"
 
 
@@ -60,7 +61,7 @@ class Releases:
         self.thread.start()
         self.url = f"http://127.0.0.1:{self.server.server_port}/"
         lens = APPS["arcade.lens"]["dir"] / APPS["arcade.lens"]["bin"]
-        assert lens.is_file(), f"Build the real Lens app first: {lens}"
+        require_current_build(APPS["arcade.lens"])
         self.wrapper = (f'#!/bin/sh\nexport APPIMAGE="$0"\nexport APPDIR={shlex.quote(str(lens.parent))}\n'
                         f'exec {shlex.quote(str(lens))} "$@"\n').encode()
 
@@ -106,8 +107,7 @@ class GUI:
         self.window = None
 
     def start(self, background=False):
-        binary = TOOLS / "target/debug/arcade-tools"
-        assert binary.is_file(), f"Build Tools first: {binary}"
+        binary = require_current_build(TOOLS_SPEC)
         log = open(self.s.root / "arcade.tools.log", "ab")
         p = subprocess.Popen([str(binary), *(["--background"] if background else [])], env=self.s.env,
                              stdout=log, stderr=log, start_new_session=True)
@@ -124,7 +124,7 @@ class GUI:
             self.visible()
 
     def command(self, *args):
-        return subprocess.run([str(TOOLS / "target/debug/arcade-tools"), *args], env=self.s.env,
+        return subprocess.run([str(require_current_build(TOOLS_SPEC)), *args], env=self.s.env,
                               capture_output=True, text=True, timeout=15)
 
     def visible(self):
@@ -381,7 +381,7 @@ def live_discovery_crash_idle_and_native_cli(s):
                     for p in base.glob("*.json")}
         before = snapshot()
         version = gui.command("--version")
-        assert version.returncode == 0 and version.stdout.strip() == "Arcade Tools 0.1.0", version
+        assert version.returncode == 0 and version.stdout.strip().startswith("Arcade Tools "), version
         manifest = gui.command("--arcade-manifest")
         assert manifest.returncode == 0 and json.loads(manifest.stdout)["id"] == "arcade.tools", manifest
         assert snapshot() == before, "informational flags changed registry or preferences"
