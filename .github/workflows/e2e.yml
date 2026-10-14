@@ -92,7 +92,10 @@ jobs:
       - name: Fetch green sibling artifacts and their exact sources
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 tools/e2e_artifacts.py --sources --output target/fleet
+        # rust-cache may restore an earlier target/fleet; always start empty.
+        run: |
+          rm -rf target/fleet
+          python3 tools/e2e_artifacts.py --sources --output target/fleet
       - name: Catalog shortcut sheets (public catalog, main)
         run: git clone --quiet --depth 1 https://github.com/qa-p1/Arcade-catalog.git target/fleet/catalog
       - uses: actions/setup-node@v4

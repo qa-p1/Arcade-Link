@@ -74,8 +74,10 @@ def fetch(app, spec, destination, sources=False):
     if sources and source_run:
         checkout = destination / 'sources'
         if checkout.exists():
-            # Reuse an earlier clone only at exactly the selected commit.
-            head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=checkout, capture_output=True, text=True).stdout.strip()
+            # Reuse an earlier clone only at exactly the selected commit. A
+            # directory without its own .git would resolve an enclosing repo.
+            head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=checkout, capture_output=True, text=True).stdout.strip() \
+                if (checkout / '.git').exists() else ''
             if head != source_run['headSha']:
                 raise ValueError(f'{checkout} exists at {head or "no commit"}, not {source_run["headSha"]}; use a fresh output directory')
         else:
