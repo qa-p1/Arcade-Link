@@ -25,7 +25,15 @@ fn run() -> Result<Value, Box<dyn std::error::Error>> {
     let mut progress = |value| eprintln!("{}", serde_json::to_string(&value).unwrap());
     Ok(match input["command"].as_str().ok_or("missing command")? {
         "catalog" => json!(manager.refresh_catalog()?),
-        "list" => json!(manager.list(true)?),
+        "list" => {
+            let mut apps = manager.list(true)?;
+            if input["includeTools"].as_bool().unwrap_or(false) {
+                if let Some(tools) = manager.tools_view()? {
+                    apps.push(tools);
+                }
+            }
+            json!(apps)
+        }
         "updates" => json!(manager.check_updates()?),
         "operate" => json!({"message": manager.operate(&serde_json::from_value::<Request>(input["request"].clone())?, &cancel, &mut progress)?}),
         "bundle" => {
@@ -68,11 +76,13 @@ fn run() -> Result<Value, Box<dyn std::error::Error>> {
                 ..Default::default()
             };
             let began = Instant::now();
+            let mut runtime_binds = Vec::new();
             if let Some(path) = input["hyprland"].as_str() {
                 let path = PathBuf::from(path);
                 let config = lua::evaluate(&path, &lua::SandboxOptions::new(path.parent().ok_or("missing parent")?));
                 let runtime = input["runtime"].as_str().map(std::fs::read_to_string).transpose()?;
                 let runtime = runtime.as_deref().map(arcade_shortcuts::runtime::parse_json).transpose()?;
+                runtime_binds = runtime.clone().unwrap_or_default();
                 inputs.hyprland = Some(hyprland::merge(arcade_shortcuts::ConfigKind::Lua, config, runtime.as_deref(), &Default::default()));
             }
             let index = build_index(&inputs);
@@ -80,7 +90,7 @@ fn run() -> Result<Value, Box<dyn std::error::Error>> {
             if let Some(path) = input["output"].as_str() {
                 index.write_index(&PathBuf::from(path))?;
             }
-            json!({"index": index, "elapsedMs": elapsed})
+            json!({"index": index, "elapsedMs": elapsed, "runtimeBinds": runtime_binds})
         }
         _ => return Err("unknown command".into()),
     })

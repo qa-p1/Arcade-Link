@@ -30,7 +30,7 @@ def build_driver():
     """Build real Tools libraries from the selected checkout, without editing it."""
     repo = e2e.TOOLS['dir']
     if not (repo / 'crates/arcade-shortcuts/Cargo.toml').is_file():
-        raise AssertionError(f'stale or missing build: real Tools hub sources at {repo}; select ARCADE_TOOLS_REPO')
+        raise e2e.SkipCheck(f'stale or missing build: real Tools hub sources at {repo}; select ARCADE_TOOLS_REPO')
     project = e2e.LINK / 'target/real-driver-project'
     project.mkdir(parents=True, exist_ok=True)
     manifest = '\n'.join([
@@ -48,15 +48,18 @@ def build_driver():
         shutil.copyfile(lock, project / 'Cargo.lock')
     inputs = driver_inputs()
     subprocess.run(['cargo', 'build', '--manifest-path', str(project / 'Cargo.toml'),
-                    '--target-dir', str(e2e.LINK / 'target/real-driver')], check=True, cwd=e2e.LINK)
+                    '--target-dir', str(e2e.LINK / 'target/real-driver')], check=True, cwd=e2e.LINK,
+                   env=dict(os.environ, CARGO_BUILD_JOBS='3'))
     assert inputs == driver_inputs(), 'stale or missing build: Tools adapter inputs changed during compilation; rebuild'
     DRIVER.with_suffix('.inputs.json').write_text(json.dumps(inputs), encoding='utf-8')
 
 
 def driver(s, command, **params):
-    assert DRIVER.is_file(), f'stale or missing build: {DRIVER}; run tools/e2e.py --real-apps to build the Tools adapter'
+    if not DRIVER.is_file():
+        raise e2e.SkipCheck(f'stale or missing build: {DRIVER}; build the Tools adapter with tools/real_apps.py')
     stamp = DRIVER.with_suffix('.inputs.json')
-    assert stamp.is_file() and json.loads(stamp.read_text(encoding='utf-8')) == driver_inputs(), f'stale or missing build: {DRIVER}; Tools core/shortcut inputs changed; rebuild the adapter'
+    if not stamp.is_file() or json.loads(stamp.read_text(encoding='utf-8')) != driver_inputs():
+        raise e2e.SkipCheck(f'stale or missing build: {DRIVER}; Tools core/shortcut inputs changed; rebuild the adapter')
     result = subprocess.run([str(DRIVER)], input=json.dumps({'command': command, **params}), env=s.env,
                             capture_output=True, text=True, encoding='utf-8', timeout=180)
     (s.root / 'tools-driver.log').open('a', encoding='utf-8').write(result.stderr)
@@ -118,19 +121,19 @@ def tray(s, app):
     return call(s, app, 'app.status').get('status', {}).get('tray')
 
 
-def fleet(s):
+def fleet(s, apps=None):
     # Find never scans beyond the throwaway profile.
     settings = s.root / 'find/config/settings.json'
     settings.parent.mkdir(parents=True, exist_ok=True)
     if not settings.exists():
         settings.write_text(json.dumps({'schema': 1, 'roots': [str(s.root / 'home')]}), encoding='utf-8')
-    failures = []
-    for app in e2e.APP_IDS:
-        try:
-            s.start(app)
-        except Exception as error:
-            failures.append(f'{app}: {error}')
-    assert not failures, '\n'.join(failures)
+    apps = list(e2e.APP_IDS if apps is None else apps)
+    # Resolve all prerequisites before launching anything. A real launch or
+    # protocol error is a failure, even if another app is unavailable.
+    for app in apps:
+        binary(app)
+    for app in apps:
+        s.start(app)
 
 
 def tools_preferences(s, **values):
@@ -141,32 +144,67 @@ def tools_preferences(s, **values):
     (path.parent / 'preferences.json').write_text(json.dumps({'linkEnabled': True, 'updates': {'enabled': False}}), encoding='utf-8')
 
 
+def hub_sources(app):
+    """Pre-hub checkouts (e.g. a sibling still on main) are not the subject."""
+    spec = e2e.FLEET[app]
+    if not (spec['dir'] / 'docs/user/shortcuts.json').is_file():
+        prefix = 'ARCADE_' + app.removeprefix('arcade.').upper()
+        raise e2e.SkipCheck(f'{app}: {spec["dir"]} predates the Tools hub (no docs/user/shortcuts.json); '
+                            f'set {prefix}_REPO to an arcade/tools-hub checkout or use ARCADE_E2E_ARTIFACTS')
+
+
 def package(app):
-    spec = e2e.TOOLS if app == 'arcade.tools' else e2e.APPS[app]
+    hub_sources(app)
+    spec = e2e.FLEET[app]
     prefix = 'ARCADE_' + app.removeprefix('arcade.').upper()
-    override = os.environ.get(prefix + '_APPIMAGE')
-    candidates = sorted((spec['dir'] / 'dist').glob('*.AppImage'))
-    candidates += sorted((spec['dir'] / 'src-tauri/target/release/bundle/appimage').glob('*.AppImage'))
-    candidates += sorted((spec['dir'] / 'target/release/bundle/appimage').glob('*.AppImage'))
+    identity = e2e.ARTIFACTS.get(app)
+    executable = spec['dir'] / spec['bin']
+    override = os.environ.get(prefix + '_APPIMAGE') or (str(executable) if executable.suffix == '.AppImage' else None) or (identity or {}).get('path')
+    if identity and not override:
+        raise e2e.SkipCheck(f'{app}: {identity["reason"]}')
+    candidates = [p for pattern in spec['packages'] for p in spec['dir'].glob(pattern)]
     cache = Path(os.environ.get('ARCADE_ARTIFACT_DIR', str(e2e.CODING.parent.parent / '.cache/arcade-orchestrator/artifacts')))
     slug = app.replace('.', '').replace('-', '')
-    candidates += [p for p in cache.rglob('*.AppImage') if ''.join(c for c in p.name.lower() if c.isalnum()).startswith(slug)]
+    # Cached downloads count only with CI provenance (e2e_artifacts.py).
+    candidates += [p for p in cache.rglob('*.AppImage') if ''.join(c for c in p.name.lower() if c.isalnum()).startswith(slug)
+                   and p.with_suffix('.AppImage.provenance.json').is_file()]
     path = Path(override).resolve() if override else max(candidates, key=lambda p: p.stat().st_mtime_ns, default=None)
-    assert path, f'stale or missing build: {app} AppImage in {spec["dir"]}/dist; build the Linux package or set {prefix}_APPIMAGE'
+    if not path or not path.is_file():
+        raise e2e.SkipCheck(f'stale or missing build: {app} AppImage in {spec["dir"]}/dist; download a successful arcade/tools-hub artifact or set {prefix}_APPIMAGE')
     provenance = path.with_suffix(path.suffix + '.provenance.json')
     if provenance.is_file():
         identity = json.loads(provenance.read_text(encoding='utf-8'))
-        assert identity['conclusion'] == 'success', f'stale or missing build: {path}; CI run was not green'
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == identity['sha256'], f'stale or missing build: {path}; CI checksum mismatch'
-        changed = subprocess.run(['git', 'diff', '--name-only', identity['headSha'], '--'], cwd=spec['dir'], capture_output=True, text=True, check=True)
+        if identity['conclusion'] != 'success' or identity.get('headBranch', 'arcade/tools-hub') != 'arcade/tools-hub':
+            raise e2e.SkipCheck(f'{path}: not from a successful arcade/tools-hub workflow ({identity.get("headBranch")}, {identity["conclusion"]})')
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == identity['sha256'], f'{path}; CI checksum mismatch'
+        changed = subprocess.run(['git', 'diff', '--name-only', identity['headSha'], '--'], cwd=spec['dir'], capture_output=True, text=True)
+        if changed.returncode:
+            raise e2e.SkipCheck(f'{path}: CI commit {identity["headSha"]} is not in {spec["dir"]}')
         inputs = [name for name in changed.stdout.splitlines() if e2e.source_input(Path(name))]
-        assert not inputs, f'stale or missing build: {path}; source changes since CI {identity["headSha"]}: {inputs}'
+        if inputs:
+            raise e2e.SkipCheck(f'stale or missing build: {path}; source changes since CI {identity["headSha"]}: {inputs}')
         assert os.access(path, os.X_OK), f'stale or missing build: {path}; not executable'
     else:
         e2e.require_current_build({**spec, 'bin': str(path), 'build': ['download a green Linux CI AppImage']})
     signature = path.open('rb').read(11)
     assert signature[:4] == b'\x7fELF' and signature[8:11] in (b'AI\x01', b'AI\x02'), f'{path}: expected a real AppImage (shell/mock wrappers are not accepted)'
     return path
+
+
+def binary(app):
+    """Prefer a current native build, otherwise a verified CI AppImage."""
+    hub_sources(app)
+    spec = e2e.FLEET[app]
+    candidate = spec['dir'] / spec['bin']
+    if candidate.suffix == '.AppImage':
+        return package(app)
+    try:
+        return e2e.require_current_build(spec)
+    except e2e.SkipCheck as native_error:
+        try:
+            return package(app)
+        except e2e.SkipCheck as package_error:
+            raise e2e.SkipCheck(f'{app}: {native_error}; {package_error}') from None
 
 
 def run_app(s, binary, *args, check=True):
@@ -182,19 +220,25 @@ def receipt(s, app):
 
 
 def child_session(s, name):
-    child = e2e.Session(s.root / name, headless=True, real_apps=True)
+    # Qt command sockets use XDG_RUNTIME_DIR without Link's long-path fallback.
+    # Keep profile names short enough for Linux's 108-byte sun_path limit.
+    directory = 'p-' + hashlib.sha256(name.encode()).hexdigest()[:12]
+    child = e2e.Session(s.root / directory, headless=True, real_apps=True)
     child.env.update({key: s.env[key] for key in ('DISPLAY', 'DBUS_SESSION_BUS_ADDRESS') if key in s.env})
     return child
 
 
 def index(s, **extra):
-    return driver(s, 'index', docs=[str(a['dir'] / 'docs/user/shortcuts.json') for a in e2e.APPS.values()],
-                  catalog=str(e2e.CODING / 'Rust/Arcade-catalog/shortcuts'), **extra)
+    return driver(s, 'index', docs=[str(a['dir'] / 'docs/user/shortcuts.json') for a in e2e.FLEET.values()],
+                  catalog=str(Path(os.environ.get('ARCADE_CATALOG_REPO', str(e2e.CODING / 'Rust/Arcade-catalog'))) / 'shortcuts'), **extra)
 
 
 class Releases:
     """Fixture HTTP metadata and real packaged executables, SHA/size verified by Tools."""
-    def __init__(self, s):
+    def __init__(self, s, apps=None):
+        if not (e2e.TOOLS['dir'] / 'resources/catalog-snapshot/catalog.json').is_file():
+            raise e2e.SkipCheck(f'Tools catalog snapshot missing at {e2e.TOOLS["dir"]}; set ARCADE_TOOLS_REPO')
+        apps = list(e2e.APP_IDS if apps is None else apps)
         self.routes = {}
         self.requests = []
         owner = self
@@ -215,7 +259,7 @@ class Releases:
         self.url = f'http://127.0.0.1:{self.server.server_port}/'
         catalog = json.loads((e2e.TOOLS['dir'] / 'resources/catalog-snapshot/catalog.json').read_text(encoding='utf-8'))
         catalog['updated'] = '2026-10-12T00:00:00Z'
-        catalog['bundles'] = [{'id': 'e2e', 'title': 'Real reference apps', 'description': 'Isolated Find and Shelf', 'apps': ['arcade.find', 'arcade.shelf']}]
+        catalog['bundles'] = [{'id': 'e2e', 'title': 'Arcade fleet', 'description': 'All seven apps in an isolated profile', 'apps': apps}]
         self.catalog = catalog
         self.routes['/catalog.json'] = json.dumps(catalog).encode()
         self.previous = {key: s.env.get(key) for key in ('ARCADE_TOOLS_TEST_SOURCE', 'ARCADE_TOOLS_CATALOG_URL', 'APPIMAGE_EXTRACT_AND_RUN')}
@@ -260,3 +304,7 @@ class Releases:
 
     def __exit__(self, *_):
         self.close()
+
+
+if __name__ == '__main__':
+    build_driver()

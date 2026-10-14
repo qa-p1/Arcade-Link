@@ -17,6 +17,7 @@ import time
 
 import e2e
 from real_apps import Peer, call, fleet, index, tools_preferences, wait
+from e2e_support import LinesProcess, tray_handback
 
 
 def percentile(values, p=.95):
@@ -177,6 +178,32 @@ def idle(s, seconds=30):
             'budgetMet': after['rssKiB'] <= 40 * 1024 and after['cpuTicks'] == before['cpuTicks']}
 
 
+def link_idle(s, seconds=30):
+    """The released Link server, with the CLI's mock action handler only."""
+    s.mock_peers = True
+    p = s.start('arcade.find')
+    time.sleep(3)
+    before = counters(p.pid)
+    began = time.perf_counter()
+    time.sleep(seconds)  # No status or process probes inside the idle window.
+    elapsed = time.perf_counter() - began
+    after = counters(p.pid)
+    assert p.poll() is None and after['cpuTicks'] >= before['cpuTicks'], 'Link idle sample invalid'
+    ticks = after['cpuTicks'] - before['cpuTicks']
+    return {'method': 'released Link server in arcade-link mock --as find; mock action handler, no GUI; process-tree /proc counters after 3 s settle; no probes during idle window',
+            'seconds': round(elapsed, 3), 'rssMiB': round(after['rssKiB'] / 1024, 3),
+            'cpuTicks': ticks, 'clockTicksPerSecond': os.sysconf('SC_CLK_TCK'),
+            'cpuPercent': round(100 * ticks / os.sysconf('SC_CLK_TCK') / elapsed, 4),
+            'before': before, 'after': after, 'productionToolsMeasured': False}
+
+
+def protocol_handback(s, runs):
+    values = tray_handback(e2e.CLI, s.env, runs=runs)
+    return {'method': 'released Rust Link tray watcher and CLI tray host; SIGKILL → own notification, excluding process startup; no real app icons or Tools GUI',
+            'samplesMs': values, 'p95Ms': percentile(values), 'maxMs': max(values),
+            'budgetMet': max(values) <= 1000, 'productionToolsMeasured': False}
+
+
 def handback(s, runs):
     fleet(s)
     tools_preferences(s)
@@ -219,6 +246,15 @@ def shortcut_index(s, runs):
                      runtime=str(fixture / 'hyprctl-binds-caelestia.json'))['elapsedMs'] for _ in range(runs)]
     return {'method': 'actual Tools build_index with seven running manifests, seven app documents, catalog sheets and Hyprland Lua/runtime fixture; separate adapter process excludes process startup',
             'samplesMs': samples, 'maxMs': max(samples), 'p95Ms': percentile(samples), 'budgetMs': 150, 'budgetMet': max(samples) <= 150}
+
+
+def shortcut_fixture_index(s, runs):
+    fixture = e2e.TOOLS['dir'] / 'crates/arcade-shortcuts/tests/fixtures/hypr'
+    samples = [index(s, hyprland=str(fixture / 'caelestia/hyprland.lua'),
+                     runtime=str(fixture / 'hyprctl-binds-caelestia.json'))['elapsedMs'] for _ in range(runs)]
+    return {'method': 'actual Tools builder with eight app shortcut documents, catalog sheets and the Hyprland Lua/runtime fixture; no live app manifests; adapter startup excluded',
+            'samplesMs': samples, 'maxMs': max(samples), 'p95Ms': percentile(samples),
+            'budgetMs': 150, 'budgetMet': max(samples) <= 150, 'completeLiveFleetMeasured': False}
 
 
 def warm_window(s, runs):
@@ -266,6 +302,8 @@ def main():
     parser.add_argument('--json', type=Path, required=True)
     parser.add_argument('--only', help='comma-separated probe names')
     args = parser.parse_args()
+    if args.runs < 1 or args.idle_seconds <= 0:
+        parser.error('--runs and --idle-seconds must be positive')
     if os.environ.get('ARCADE_E2E_INNER') != '1':
         parser.error('run through python3 tools/e2e.py run -- python3 tools/real_bench.py ...')
     s = e2e.Session(Path(os.environ['ARCADE_E2E_ROOT']), headless=True, real_apps=True)
@@ -275,9 +313,12 @@ def main():
         head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=spec['dir'], capture_output=True, text=True)
         result['builds'][app] = {'repo': str(spec['dir']), 'head': head.stdout.strip(), 'binary': str(spec['dir'] / spec['bin'])}
     probes = {
+        'linkIdle': lambda: link_idle(s, args.idle_seconds),
+        'protocolTrayHandback': lambda: protocol_handback(s, args.runs),
         'trayHandback': lambda: handback(s, min(args.runs, 10)),
         'toolsIdle': lambda: idle(s, args.idle_seconds),
         'shortcutIndex': lambda: shortcut_index(s, args.runs),
+        'shortcutFixtureIndex': lambda: shortcut_fixture_index(s, args.runs),
         'overlay': lambda: overlay_frames(s, args.runs),
         'startup': lambda: json.loads(subprocess.run([str(e2e.LINK / 'target/debug/examples/startup-probe')], env=s.env, capture_output=True, text=True, encoding='utf-8', check=True, timeout=15).stdout),
         'qtStartup': lambda: json.loads(subprocess.run([str(e2e.LINK / 'qt/build/startup-probe')], env=s.env, capture_output=True, text=True, encoding='utf-8', check=True, timeout=15).stdout),
@@ -289,6 +330,7 @@ def main():
             parser.error(f'unknown probes: {sorted(unknown)}')
         probes = {name: probe for name, probe in probes.items() if name in args.only.split(',')}
     for name, probe in probes.items():
+        s.mock_peers = False
         print(f'measuring real {name}...', flush=True)
         try:
             result[name] = probe()
@@ -297,6 +339,7 @@ def main():
         finally:
             s.close()
         print(json.dumps({name: result[name]}), flush=True)
+        args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
     return 0 if all('reason' not in result[name] and result[name].get('budgetMet', True) for name in probes) else 1
 
