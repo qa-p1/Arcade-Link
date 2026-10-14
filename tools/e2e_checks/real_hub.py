@@ -557,7 +557,7 @@ def real_shortcut_documents_index_globals_and_in_app_keys(s):
     # this profile so all seven global sources can be exercised.
     look_path = s.root / 'arcade/apps/arcade.look.json'
     if not json.loads(look_path.read_text(encoding='utf-8')).get('shortcuts'):
-        call(s, 'arcade.look', 'app.shortcuts.set', {'id': 'preview-selection', 'accelerator': 'Ctrl+Alt+Shift+F22'})
+        call(s, 'arcade.look', 'app.shortcuts.set', {'id': 'preview-selection', 'accelerator': 'Ctrl+Alt+Shift+F9'})
     for app, spec in FLEET.items():
         path = spec['dir'] / 'docs/user/shortcuts.json'
         assert path.is_file(), f'{app}: missing shortcut document {path}'
@@ -660,6 +660,22 @@ def real_overlay_paints_its_first_frame_under_xvfb(s):
     samples = overlay_frames(s, runs=3, hotkey=False)
     assert samples['samplesMs'] and samples['backend'] in ('x11', 'desktop'), samples
     return f'real native overlay first_frame callbacks: {samples}'
+
+
+def process_tree(root):
+    """root and every descendant PID, from /proc."""
+    children = {}
+    for stat in Path('/proc').glob('[0-9]*/stat'):
+        with contextlib.suppress(OSError, ValueError, IndexError):
+            fields = stat.read_text().rsplit(')', 1)[1].split()
+            children.setdefault(int(fields[1]), []).append(int(stat.parent.name))
+    tree, pending = set(), [root]
+    while pending:
+        pid = pending.pop()
+        if pid not in tree:
+            tree.add(pid)
+            pending.extend(children.get(pid, []))
+    return tree
 
 
 def _shortcut_document(s, app):
@@ -777,7 +793,8 @@ def _link_off(s, app):
     try:
         s.start('arcade.tools')
         process = s.start(app, wait=False)
-        until(lambda: watcher.owner_pids().count(process.pid) == 1,
+        # Under APPIMAGE_EXTRACT_AND_RUN the app is a child of the runtime PID.
+        until(lambda: sum(pid in process_tree(process.pid) for pid in watcher.owner_pids()) == 1,
               lambda: f'{app}: Link-off own icon missing; {s.log(app)}')
         manifest_path = s.root / f'arcade/apps/{app}.json'
         until(lambda: manifest_path.exists() and json.loads(manifest_path.read_text())['settings']['linkEnabled'] is False,
@@ -797,6 +814,9 @@ for _app in APP_IDS:
 
 def _diagnostics_one(s, app):
     fleet(s, [app])
+    # A running app may republish its manifest; stop it so the seeded
+    # declarations below are what Tools reads.
+    s.kill(app)
     path = s.root / f'arcade/apps/{app}.json'
     manifest = json.loads(path.read_text())
     logs = s.root / 'home/logs'
@@ -823,7 +843,8 @@ def _backup_one(s, app):
         manifest = json.loads((first.root / f'arcade/apps/{app}.json').read_text())
         shortcuts = manifest.get('shortcuts', [])
         binding = shortcuts[0]['id'] if shortcuts else 'preview-selection'
-        call(first, app, 'app.shortcuts.set', {'id': binding, 'accelerator': 'Ctrl+Alt+Shift+F23'})
+        # A key every X keymap has (Xvfb maps no F23 keycode).
+        call(first, app, 'app.shortcuts.set', {'id': binding, 'accelerator': 'Ctrl+Alt+Shift+F10'})
         exported = call(first, app, 'app.settings.export')
         assert exported.get('outputs'), (app, exported)
         originals = [export_snapshot(o['path']) for o in exported['outputs']]

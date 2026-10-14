@@ -12,6 +12,7 @@ import socket
 import subprocess
 import threading
 import time
+import urllib.parse
 
 import e2e
 
@@ -244,8 +245,10 @@ class Releases:
         owner = self
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                owner.requests.append(self.path)
-                body = owner.routes.get(self.path)
+                # Package names may contain spaces (e.g. "Arcade Box_0.2.0_amd64.AppImage").
+                path = urllib.parse.unquote(self.path)
+                owner.requests.append(path)
+                body = owner.routes.get(path)
                 self.send_response(200 if body is not None else 404)
                 self.send_header('Content-Length', str(len(body or b'')))
                 self.end_headers()
@@ -285,7 +288,7 @@ class Releases:
         for filename, content in assets.items():
             route = prefix + filename
             self.routes['/' + route] = content
-            api_assets.append({'name': filename, 'browser_download_url': self.url + route})
+            api_assets.append({'name': filename, 'browser_download_url': self.url + urllib.parse.quote(route)})
         self.routes[f'/repos/{entry["repo"]}/releases/latest'] = json.dumps({'tag_name': 'v' + version, 'draft': False, 'prerelease': False, 'assets': api_assets}).encode()
         return release
 

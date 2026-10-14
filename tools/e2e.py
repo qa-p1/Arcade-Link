@@ -121,11 +121,14 @@ ARTIFACT_NAMES = {
     "arcade.clipboard": ("Arcade-clipboard", "Arcade-Clipboard-linux-x64"),
     "arcade.tools": ("Arcade-tools", "tools-installer-ubuntu-*"),
 }
+# Box's installer links its desktop app as arcade-desktop; arcade-box is
+# its separate terminal tool (Box installer.rs CLI_NAME).
+CLI_NAMES = {"arcade.box": "arcade-desktop"}
 ARTIFACTS = json.loads(Path(os.environ["ARCADE_E2E_ARTIFACTS"]).read_text(encoding="utf-8")) if os.environ.get("ARCADE_E2E_ARTIFACTS") else {}
 for app, spec in FLEET.items():
     prefix = "ARCADE_" + app.removeprefix("arcade.").upper()
     repository, artifact = ARTIFACT_NAMES[app]
-    spec.update(id=app, cli=app.replace('.', '-'), repo='qa-p1/' + repository, artifact=artifact,
+    spec.update(id=app, cli=CLI_NAMES.get(app, app.replace('.', '-')), repo='qa-p1/' + repository, artifact=artifact,
                 tray={"own": 1, "hosted": 1 if app == "arcade.tools" else 0,
                       "hostable": app != "arcade.tools"},
                 packages=("dist/*.AppImage", "src-tauri/target/release/bundle/appimage/*.AppImage",

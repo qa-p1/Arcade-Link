@@ -86,7 +86,9 @@ jobs:
       - name: Runtime and adapter dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dbus-x11 xvfb xdotool gnome-keyring python3-dbus python3-gi libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libfuse2 libssl-dev pkg-config libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y dbus-x11 xvfb xdotool gnome-keyring python3-dbus python3-gi libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libfuse2 libssl-dev pkg-config libwayland-dev libxkbcommon-dev \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libegl1 libgl1
       - name: Fetch green sibling artifacts and their exact sources
         env:
           GH_TOKEN: ${{ github.token }}
