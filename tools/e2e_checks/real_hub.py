@@ -255,6 +255,8 @@ def tools_first_restart_and_clean_quit_preserve_real_app_trays(s):
         assert all(v == 'hosted' for v in states.values()), f'tray state flashed during restarting: {states}'
         samples += 1
         time.sleep(.01)
+    # The restarted parent exits by design; follow the successor's endpoint.
+    s.procs.pop('arcade.tools', None)
     s.wait_running('arcade.tools')
     call(s, 'arcade.tools', 'app.quit')
     for app in APP_IDS:
