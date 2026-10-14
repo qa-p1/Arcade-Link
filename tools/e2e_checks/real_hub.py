@@ -329,14 +329,28 @@ def disabling_link_in_find_keeps_its_own_icon(s):
         return json.loads(result.stdout) if result.returncode == 0 else None
     status = wait(lambda: (value if value and value.get('tray') == 'own' else None) if (value := own()) is not None else None,
                   lambda: f'Find with Link disabled did not report own tray: {own()}', timeout=5)
-    assert not s.endpoint('arcade.find').exists(), status
+    # The earlier SIGKILL may leave a stale endpoint file; no live process
+    # (least of all this Find) may own it while Link is disabled.
+    if s.endpoint('arcade.find').exists():
+        owner = json.loads(s.endpoint('arcade.find').read_text())['pid']
+        assert owner != status.get('pid') and not Path(f'/proc/{owner}').exists(), (owner, status)
+    assert status.get('link', {}).get('listening') is False, status
     # The native status includes tray even with Link switched off.
     assert status.get('tray') == 'own' or status.get('link', {}).get('tray') == 'own', status
     return 'real Find, disabled Link: own tray, no Link endpoint while Tools hosts'
 
 
-def _operate(s, server, app, operation):
-    return driver(s, 'operate', source=server.url, request={'id': app, 'operation': operation, 'mode': 'background'})
+def _operate(s, server, app, operation, timeout=60):
+    # Tools correctly refuses to replace an app that reports a running job
+    # (e.g. Find's first index scan right after install); wait it out.
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return driver(s, 'operate', source=server.url, request={'id': app, 'operation': operation, 'mode': 'background'})
+        except AssertionError as error:
+            if 'busy' not in str(error) or time.monotonic() > deadline:
+                raise
+            time.sleep(1)
 
 
 @check('tools-hub')
@@ -467,6 +481,10 @@ def tools_self_update_stages_and_applies_a_real_appimage(s):
 @check('tools-hub')
 def diagnostics_zip_contains_real_app_state_and_redacts_secrets(s):
     fleet(s, FLEET)
+    # Running apps may republish their manifests (Box does); stop them so
+    # the seeded declarations below are what Tools reads.
+    for app in FLEET:
+        s.kill(app)
     # Seed a declared log in this profile; it is never an outbound upload.
     for app in FLEET:
         path = s.root / f'arcade/apps/{app}.json'
