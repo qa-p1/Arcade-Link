@@ -1,0 +1,132 @@
+name: Ecosystem e2e
+
+on:
+  push:
+  pull_request:
+    # `labeled`: adding the e2e-real-fleet label runs the opt-in matrix on a PR.
+    types: [opened, synchronize, reopened, labeled]
+  # Nightly: the full real-app matrix against the latest green sibling builds.
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      real_apps:
+        description: Download the latest successful Tools-hub Linux artifacts and exercise the real fleet
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CARGO_BUILD_JOBS: '3'
+
+jobs:
+  contract:
+    name: Isolated Link contracts (deterministic)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Isolation tools
+        run: sudo apt-get update && sudo apt-get install -y dbus-x11 xvfb xdotool
+      - name: Build pinned CLI and install harness
+        run: |
+          cargo build -p arcade-link-cli --locked
+          cargo build -p arcade-link --example install-harness --features install --locked
+      - name: Contract checks in disposable D-Bus/Xvfb/HOME
+        env:
+          ARCADE_E2E_REPORT_DIR: ${{ github.workspace }}/target/e2e-reports
+        run: python3 tools/e2e.py run -- python3 tools/e2e.py --only presence,install,trayhost,tools-hub
+      - name: Real fleet availability is explicitly reported
+        env:
+          ARCADE_E2E_REPORT_DIR: ${{ github.workspace }}/target/e2e-reports
+        # PRs never fetch mutable sibling branches or package heavyweight apps.
+        # Eight per-app results say SKIP instead of pretending to test artifacts.
+        run: python3 tools/e2e.py run -- python3 tools/e2e.py --real-apps --allow-skips --only install
+      - name: Coverage table
+        if: always()
+        run: python3 tools/e2e_coverage.py target/e2e-reports | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-contract-results
+          path: target/e2e-reports/*.json
+
+  real-fleet:
+    name: Real fleet (${{ matrix.group }}, CI X11 only)
+    # Opt-in only (nightly, manual, or a PR labeled e2e-real-fleet); the
+    # contract job above is the deterministic PR gate.
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.real_apps) ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'e2e-real-fleet'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [install, trayhost, tools-hub, shortcuts]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            target/real-driver-project -> ../real-driver
+          key: e2e-tools-driver
+      - name: Runtime and adapter dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dbus-x11 xvfb xdotool gnome-keyring python3-dbus python3-gi libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libfuse2 libssl-dev pkg-config libwayland-dev libxkbcommon-dev
+      - name: Fetch green sibling artifacts and their exact sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/e2e_artifacts.py --sources --output target/fleet
+      - name: Catalog shortcut sheets (public catalog, main)
+        run: git clone --quiet --depth 1 https://github.com/qa-p1/Arcade-catalog.git target/fleet/catalog
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Tools' branch CI publishes no Linux AppImage; build the native debug
+      # binary from the same green commit. If this fails, every Tools-backed
+      # check reports SKIP (missing executable build), never a pass.
+      - name: Build Tools natively from its green commit
+        continue-on-error: true
+        working-directory: target/fleet/arcade.tools/sources
+        run: |
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
+          npm ci
+          npm run build
+          cargo build -p arcade-tools -p arcade-tools-overlay --locked
+      - name: Build the released CLI and the actual Tools core adapter
+        env:
+          ARCADE_E2E_ARTIFACTS: ${{ github.workspace }}/target/fleet/fleet.json
+        run: |
+          cargo build -p arcade-link-cli --locked
+          python3 tools/real_apps.py
+      - name: Isolated real-app checks (unavailable artifacts explicitly skipped)
+        env:
+          ARCADE_E2E_ARTIFACTS: ${{ github.workspace }}/target/fleet/fleet.json
+          ARCADE_CATALOG_REPO: ${{ github.workspace }}/target/fleet/catalog
+          ARCADE_E2E_REPORT_DIR: ${{ github.workspace }}/target/e2e-reports
+          E2E_VERBOSE: '1'
+        run: python3 tools/e2e.py run -- python3 tools/e2e.py --real-apps --allow-skips --only ${{ matrix.group }}
+      - name: Coverage table
+        if: always()
+        run: python3 tools/e2e_coverage.py target/e2e-reports --fleet target/fleet/fleet.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-real-${{ matrix.group }}
+          path: |
+            target/e2e-reports/*.json
+            target/fleet/fleet.json
