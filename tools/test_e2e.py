@@ -32,10 +32,11 @@ class RunnerTests(unittest.TestCase):
             (root / "target").mkdir()
             binary = root / "target/app"
             binary.write_text("binary")
+            binary.chmod(0o755)
             source = root / "app.rs"
             source.write_text("source")
             os.utime(binary, ns=(1, 1))
-            with self.assertRaisesRegex(AssertionError, "stale build.*newer source.*cargo build"):
+            with self.assertRaisesRegex(AssertionError, "cargo build.*stale build.*newer source"):
                 e2e.require_current_build(spec)
             os.utime(binary, ns=(source.stat().st_mtime_ns + 1, source.stat().st_mtime_ns + 1))
             self.assertEqual(e2e.require_current_build(spec), binary)

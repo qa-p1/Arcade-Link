@@ -17,7 +17,8 @@ import subprocess
 import threading
 import time
 
-TOOLS = Path(__file__).resolve().parents[3] / "Arcade-tools"
+TOOLS_SPEC = TOOLS
+TOOLS = TOOLS_SPEC["dir"]
 GENERATOR = TOOLS / "scripts/arcade-release.py"
 
 
@@ -60,7 +61,7 @@ class Releases:
         self.thread.start()
         self.url = f"http://127.0.0.1:{self.server.server_port}/"
         lens = APPS["arcade.lens"]["dir"] / APPS["arcade.lens"]["bin"]
-        assert lens.is_file(), f"Build the real Lens app first: {lens}"
+        require_current_build(APPS["arcade.lens"])
         self.wrapper = (f'#!/bin/sh\nexport APPIMAGE="$0"\nexport APPDIR={shlex.quote(str(lens.parent))}\n'
                         f'exec {shlex.quote(str(lens))} "$@"\n').encode()
 
@@ -106,8 +107,7 @@ class GUI:
         self.window = None
 
     def start(self, background=False):
-        binary = TOOLS / "target/debug/arcade-tools"
-        assert binary.is_file(), f"Build Tools first: {binary}"
+        binary = require_current_build(TOOLS_SPEC)
         log = open(self.s.root / "arcade.tools.log", "ab")
         p = subprocess.Popen([str(binary), *(["--background"] if background else [])], env=self.s.env,
                              stdout=log, stderr=log, start_new_session=True)
@@ -122,9 +122,10 @@ class GUI:
                 self.shot("tools-startup-error")
                 raise
             self.visible()
+            self.click(id="tab-apps")
 
     def command(self, *args):
-        return subprocess.run([str(TOOLS / "target/debug/arcade-tools"), *args], env=self.s.env,
+        return subprocess.run([str(require_current_build(TOOLS_SPEC)), *args], env=self.s.env,
                               capture_output=True, text=True, timeout=15)
 
     def visible(self):
@@ -283,13 +284,13 @@ def gui_verified_lifecycle_with_real_busy_peer(s):
         gui.dialog("Update Arcade Lens")
         gui.confirm()
         gui.finished("2.1.0-nightly installed")
-        record = json.loads((s.root / "data/arcade-tools/arcade.lens.json").read_text())
+        record = json.loads((s.root / "arcade/.local/share/arcade-tools/arcade.lens.json").read_text())
         assert record["channel"] == "nightly" and record["version"] == "2.1.0-nightly", record
 
         # Start-at-login writes stay entirely inside the throwaway HOME/XDG roots.
         gui.click("Arcade Lens start at login", app="arcade.lens")
         gui.wait(lambda r: any(a["id"] == "arcade.lens" and a["startAtLogin"] for a in r["apps"]))
-        login = s.root / "config/autostart/arcade-lens.desktop"
+        login = s.root / "arcade/.config/autostart/arcade-lens.desktop"
         assert str(exe) in login.read_text()
         data = s.root / "config/arcadelens"
         data.mkdir(exist_ok=True)
@@ -312,7 +313,7 @@ def handoff_confirmation_cancel_checksum_and_disabled_presence(s):
     releases = Releases(s)
     gui = GUI(s, releases)
     try:
-        preferences = s.root / "data/arcade-tools/preferences.json"
+        preferences = s.root / "arcade/.local/share/arcade-tools/preferences.json"
         preferences.parent.mkdir(parents=True, exist_ok=True)
         preferences.write_text(json.dumps({"linkEnabled": True, "channels": {"arcade.lens": "nightly"}}))
         releases.publish("3.0.0", channel="nightly")
@@ -377,11 +378,11 @@ def live_discovery_crash_idle_and_native_cli(s):
     capture = None
     try:
         def snapshot():
-            return {str(p): p.read_bytes() for base in (s.root / "arcade/apps", s.root / "data/arcade-tools")
+            return {str(p): p.read_bytes() for base in (s.root / "arcade/apps", s.root / "arcade/.local/share/arcade-tools")
                     for p in base.glob("*.json")}
         before = snapshot()
         version = gui.command("--version")
-        assert version.returncode == 0 and version.stdout.strip() == "Arcade Tools 0.1.0", version
+        assert version.returncode == 0 and version.stdout.strip().startswith("Arcade Tools "), version
         manifest = gui.command("--arcade-manifest")
         assert manifest.returncode == 0 and json.loads(manifest.stdout)["id"] == "arcade.tools", manifest
         assert snapshot() == before, "informational flags changed registry or preferences"

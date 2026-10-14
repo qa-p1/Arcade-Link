@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Arcade Link protocol specification
+    url: https://github.com/qa-p1/Arcade-Link/blob/main/SPEC.md
+    about: Read the current protocol and integration contract.
+  - name: New Arcade app guide
+    url: https://github.com/qa-p1/Arcade-Link/blob/main/NEW_APP_SPEC.md
+    about: Read the instructions for integrating a new app.
+  - name: Arcade ecosystem documentation
+    url: https://github.com/qa-p1/Arcade-catalog/tree/main/docs
+    about: Read documentation shared across the Arcade apps.

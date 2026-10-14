@@ -1,4 +1,5 @@
 # Arcade Ecosystem Plan
+> Tools successor: [ARCADE_TOOLS_PLAN.md](ARCADE_TOOLS_PLAN.md).
 
 > Historical execution plan, written 2026-10-05. Early inventories, proposed
 > dependencies and intermediate verification notes describe that point in the

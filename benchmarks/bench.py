@@ -34,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from e2e_support import LinesProcess, tray_handback
+from e2e import APPS as FLEET, require_current_build
 
 CODING = Path(__file__).resolve().parents[3]
 BOX = CODING / "Rust/Arcade Box"
@@ -83,6 +84,13 @@ APPS = {
         "warm": None,
     },
 }
+
+# Select the same explicit worktree/artifact overrides as the e2e runner.
+for name, app in APPS.items():
+    spec = FLEET['arcade.' + name]
+    app['start'][0] = str(spec['dir'] / spec['bin'])
+    if app['warm']:
+        app['warm'][0] = str(spec['dir'] / (os.environ.get('ARCADE_BOX_CLI_BIN', 'target/release/arcadebox') if name == 'box' else spec['bin']))
 
 READY_TIMEOUT = 20.0
 
@@ -267,7 +275,11 @@ def start(app: dict, root: Path, env: dict) -> tuple[subprocess.Popen, float | N
 def measure(name: str, runs: int) -> dict:
     app = APPS[name]
     if not Path(app["start"][0]).exists():
-        return {"error": f"not built: {app['start'][0]}"}
+        return {"error": f"stale or missing build: {app['start'][0]}"}
+    try:
+        require_current_build(FLEET['arcade.' + name])
+    except AssertionError as error:
+        return {'error': str(error)}
     root = Path(tempfile.mkdtemp(prefix=f"arcade-bench-{name}-"))
     env = isolated_env(root)
     out: dict = {"startup_ms": [], "idle_rss_kib": [], "idle_cpu_ms_5s": []}

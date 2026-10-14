@@ -28,12 +28,22 @@ import sys
 import struct
 import tempfile
 import time
+import traceback
 import zlib
 from pathlib import Path
+
+# Helpers import e2e even when this file is the script entry point. Share the
+# same Session, registry and SkipCheck type instead of importing a second copy.
+if __name__ == '__main__':
+    sys.modules['e2e'] = sys.modules[__name__]
 
 LINK = Path(__file__).resolve().parents[1]
 CODING = LINK.parents[1]
 CLI = LINK / "target/debug/arcade-link"
+
+
+class SkipCheck(AssertionError):
+    """An explicit unavailable prerequisite; never counted as a passing check."""
 
 
 def link_app_ids() -> list[str]:
@@ -50,7 +60,7 @@ APPS = {
         "dir": CODING / "Rust/Arcade Box",
         "bin": "target/release/arcade-desktop",
         "args": ["--background"],
-        "build": ["cargo", "build", "--release", "-p", "arcade-desktop", "-p", "arcadebox"],
+        "build": ["cargo", "build", "--release", "-p", "arcade-desktop", "-p", "arcade-box"],
     },
     "arcade.lens": {
         "dir": CODING / "Rust/Arcade-lens",
@@ -87,30 +97,91 @@ APPS = {
         "bin": "apps/flutter_app/build/linux/x64/release/bundle/clipboard",
         "args": ["--background"],
         "build": ["bash", "scripts/build-linux.sh"],
+        "source_suffixes": {".cpp", ".cc", ".c", ".h", ".hpp"},
+        "source_names": {"CMakeLists.txt"},
+        "components": [
+            {"bin": "apps/flutter_app/build/linux/x64/release/bundle/lib/libapp.so", "source_suffixes": {".dart"}, "source_names": {"pubspec.yaml", "pubspec.lock"}},
+            {"bin": "apps/flutter_app/build/linux/x64/release/bundle/lib/libarcade_core.so", "source_suffixes": {".rs", ".toml"}, "source_names": {"Cargo.lock"}},
+        ],
     },
 }
 
+TOOLS = {"dir": CODING / "Rust/Arcade-tools", "bin": "target/debug/arcade-tools",
+         "args": ["--background"], "build": ["cargo", "build", "-p", "arcade-tools"]}
+FLEET = {**APPS, "arcade.tools": TOOLS}
+# Protocol IDs, CLI names, source trees/binaries, package globs and tray
+# expectations live together in FLEET. APPS retains the seven-peer contract.
+ARTIFACT_NAMES = {
+    "arcade.box": ("Arcade-box", "arcade-box-appimage"),
+    "arcade.lens": ("Arcade-lens", "linux-appimage"),
+    "arcade.look": ("Arcade-look", "arcade-look-linux-x86_64"),
+    "arcade.wheel": ("Arcade-wheel", "ArcadeWheel-Linux-x86_64"),
+    "arcade.shelf": ("Arcade-Shelf", "Arcade-Shelf-ubuntu-*"),
+    "arcade.find": ("Arcade-Find", "package-linux-x64"),
+    "arcade.clipboard": ("Arcade-clipboard", "Arcade-Clipboard-linux-x64"),
+    "arcade.tools": ("Arcade-tools", "tools-installer-ubuntu-*"),
+}
+# Box's installer links its desktop app as arcade-desktop; arcade-box is
+# its separate terminal tool (Box installer.rs CLI_NAME).
+CLI_NAMES = {"arcade.box": "arcade-desktop"}
+ARTIFACTS = json.loads(Path(os.environ["ARCADE_E2E_ARTIFACTS"]).read_text(encoding="utf-8")) if os.environ.get("ARCADE_E2E_ARTIFACTS") else {}
+for app, spec in FLEET.items():
+    prefix = "ARCADE_" + app.removeprefix("arcade.").upper()
+    repository, artifact = ARTIFACT_NAMES[app]
+    spec.update(id=app, cli=CLI_NAMES.get(app, app.replace('.', '-')), repo='qa-p1/' + repository, artifact=artifact,
+                tray={"own": 1, "hosted": 1 if app == "arcade.tools" else 0,
+                      "hostable": app != "arcade.tools"},
+                packages=("dist/*.AppImage", "src-tauri/target/release/bundle/appimage/*.AppImage",
+                          "target/release/bundle/appimage/*.AppImage"))
+    spec["dir"] = Path(os.environ.get(prefix + "_REPO", ARTIFACTS.get(app, {}).get("repoPath", str(spec["dir"])))).resolve()
+    spec["bin"] = os.environ.get(prefix + "_BIN", spec["bin"])
+
+
 STRIP = ("WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP",
          "DESKTOP_SESSION", "SWAYSOCK", "XDG_SESSION_TYPE", "APPIMAGE", "APPDIR", "OWD", "ARGV0",
-         "DBUS_SESSION_BUS_ADDRESS", "DISPLAY")
+         "DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "ARCADE_DEV_BUILD")
+
+
+def source_input(path: Path) -> bool:
+    return path.suffix in {".rs", ".cpp", ".cc", ".c", ".h", ".hpp", ".qml", ".dart", ".svelte", ".ts", ".js", ".toml", ".cmake", ".css", ".html", ".qrc", ".ui"} or path.name in {
+        "CMakeLists.txt", "Cargo.lock", "package.json", "package-lock.json", "pubspec.yaml", "pubspec.lock", "tauri.conf.json"}
+
+
+def source_paths(directory: Path) -> list[Path]:
+    tracked = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=directory, capture_output=True)
+    if tracked.returncode == 0:
+        paths = [directory / os.fsdecode(name) for name in tracked.stdout.split(b"\0") if name]
+    else:
+        paths = []
+        for root, dirs, files in os.walk(directory):
+            dirs[:] = [d for d in dirs if d not in {".git", "target", "build", "node_modules", ".dart_tool", ".tools", "dist"}]
+            paths.extend(Path(root) / name for name in files)
+    return [path for path in paths if path.is_file() and source_input(path)
+            and not {'tests', 'benches', '.github'} & set(path.relative_to(directory).parts)]
 
 
 def require_current_build(spec: dict) -> Path:
-    """Refuse stale fleet binaries; never rebuild a read-only sibling checkout."""
+    """Refuse missing binaries and builds older than their source inputs."""
     executable = spec["dir"] / spec["bin"]
     hint = " ".join(spec.get("build") or ["run this app's documented build command"])
-    if not executable.is_file():
-        raise AssertionError(f"missing build: {executable}; rebuild in {spec['dir']}: {hint}")
-    newest = None
-    for directory, dirs, files in os.walk(spec["dir"]):
-        dirs[:] = [d for d in dirs if d not in {".git", "target", "build", "node_modules", ".dart_tool", ".cache", "dist"} and not d.startswith("build-")]
-        for name in files:
-            path = Path(directory) / name
-            if path.suffix in {".rs", ".cpp", ".h", ".hpp", ".qml", ".dart", ".svelte", ".ts", ".toml"} or name in {"CMakeLists.txt", "Cargo.lock", "package.json", "pubspec.yaml"}:
-                if newest is None or path.stat().st_mtime_ns > newest.stat().st_mtime_ns:
-                    newest = path
-    if newest and newest.stat().st_mtime_ns > executable.stat().st_mtime_ns:
-        raise AssertionError(f"stale build: {executable}; newer source: {newest}; rebuild in {spec['dir']}: {hint}")
+    message = f"stale or missing build: {executable}; rebuild in {spec['dir']}: {hint}"
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise SkipCheck(message + " (missing executable build)")
+    stamp = executable.stat().st_mtime_ns
+    sources = source_paths(spec["dir"])
+    if "source_suffixes" in spec:
+        sources = [p for p in sources if p.suffix in spec["source_suffixes"] or p.name in spec.get("source_names", set())]
+    newest = max(sources, key=lambda p: p.stat().st_mtime_ns, default=None)
+    if newest and newest.stat().st_mtime_ns > stamp:
+        raise SkipCheck(message + f" (stale build; newer source: {newest})")
+    for component in spec.get("components", []):
+        path = spec["dir"] / component["bin"]
+        if not path.is_file():
+            raise SkipCheck(message + f" (missing component: {path})")
+        inputs = [p for p in source_paths(spec["dir"]) if p.suffix in component["source_suffixes"] or p.name in component.get("source_names", set())]
+        newest = max(inputs, key=lambda p: p.stat().st_mtime_ns, default=None)
+        if newest and newest.stat().st_mtime_ns > path.stat().st_mtime_ns:
+            raise SkipCheck(message + f" (stale component: {path}; newer source: {newest})")
     return executable
 
 
@@ -135,22 +206,36 @@ def isolated_env(root: Path) -> dict:
         "ARCADE_WHEEL_DISABLE_GLOBAL_SHORTCUT": "1",
         "QT_QPA_PLATFORM": "xcb",
         "GDK_BACKEND": "x11",
+        "WEBKIT_DISABLE_COMPOSITING_MODE": "1",
         "NO_AT_BRIDGE": "1",
+        "ARCADE_NO_INSTALL_PROMPT": "1",
         "PATH": f"{CLI.parent}:{os.environ.get('PATH', '')}",
     })
+    # Toolchains stay shared: with the temporary HOME, cargo would otherwise
+    # start from an empty registry and rebuild every dependency.
+    for name, default in (("CARGO_HOME", ".cargo"), ("RUSTUP_HOME", ".rustup")):
+        path = os.environ.get(name) or str(Path.home() / default)
+        if Path(path).is_dir():
+            env[name] = path
     return env
 
 
 class Session:
     """Xvfb + keyring inside the private D-Bus session this process runs in."""
 
-    def __init__(self, root: Path, headless: bool = False, mock_peers: bool = False):
+    def __init__(self, root: Path, headless: bool = False, mock_peers: bool = False, real_apps: bool = False):
+        sandbox = os.environ.get("ARCADE_E2E_ROOT")
+        if os.environ.get("ARCADE_E2E_INNER") != "1" or not sandbox or not root.is_relative_to(Path(sandbox)):
+            raise AssertionError("lifecycle runs require tools/e2e.py's isolated session")
         self.root = root
         self.env = isolated_env(root)
         self.procs: dict[str, subprocess.Popen] = {}
         self.mock_peers = mock_peers
+        self.real_apps = real_apps
         self.xvfb = self.keyring = None
         if headless:
+            if os.environ.get('ARCADE_E2E_RUN') == '1':
+                self.env.update({key: os.environ[key] for key in ('DISPLAY', 'DBUS_SESSION_BUS_ADDRESS') if key in os.environ})
             return
         # Xvfb picks a free display itself, so several runs can go in parallel.
         rfd, wfd = os.pipe()
@@ -178,17 +263,26 @@ class Session:
             time.sleep(0.3)
 
     def cli(self, *args: str, timeout: float = 60, check: bool = False) -> subprocess.CompletedProcess:
-        r = subprocess.run([str(CLI), *args], env=self.env, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run([str(CLI), *args], env=self.env, capture_output=True, text=True, encoding="utf-8", timeout=timeout)
         if check and r.returncode != 0:
             raise AssertionError(f"arcade-link {' '.join(args)} failed:\n{r.stdout}{r.stderr}")
         return r
 
     def start(self, app: str, wait: bool = True) -> subprocess.Popen:
-        spec = APPS[app]
-        exe = CLI if self.mock_peers else require_current_build(spec)
+        spec = TOOLS if app == "arcade.tools" else APPS[app]
+        if app in self.procs and self.procs[app].poll() is None:
+            return self.procs[app]
+        if self.mock_peers:
+            exe = CLI
+        elif self.real_apps:
+            from real_apps import binary
+            exe = binary(app)
+        else:
+            exe = require_current_build(spec)
         args = ["mock", "--as", app.removeprefix("arcade."), "--actions", str(LINK / "fixtures" / (app.removeprefix("arcade.") + ".json"))] if self.mock_peers else spec["args"]
         log = open(self.root / f"{app}.log", "ab")
-        p = subprocess.Popen([str(exe), *args], env=self.env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+        env = dict(self.env, APPIMAGE_EXTRACT_AND_RUN="1") if exe.suffix == ".AppImage" else self.env
+        p = subprocess.Popen([str(exe), *args], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                              start_new_session=True)
         log.close()
         self.procs[app] = p
@@ -202,6 +296,8 @@ class Session:
     def wait_running(self, app: str, timeout: float = 20) -> None:
         deadline = time.time() + timeout
         while time.time() < deadline:
+            if 'sni_watcher' in sys.modules:
+                sys.modules['sni_watcher'].pump()
             if self.endpoint(app).exists() and "running" in self.state(app):
                 return
             p = self.procs.get(app)
@@ -218,7 +314,7 @@ class Session:
         cmd = [str(CLI), "invoke", app, action, *args, "--json"]
         if background:
             return subprocess.Popen(cmd, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        r = subprocess.run(cmd, env=self.env, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(cmd, env=self.env, capture_output=True, text=True, encoding="utf-8", timeout=timeout)
         return parse_invoke(r.returncode, r.stdout, r.stderr)
 
     def xdotool(self, *args: str) -> str:
@@ -276,9 +372,22 @@ class Session:
                 os.killpg(p.pid, signal.SIGKILL)
                 p.wait()
 
-    def close(self) -> None:
+    def stop_apps(self) -> None:
+        if CLI.is_file():
+            for endpoint in sorted((self.root / "arcade/run").glob("*.endpoint")):
+                try:
+                    entry = json.loads(endpoint.read_text(encoding="utf-8"))
+                    pid = entry["pid"]
+                    environment = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
+                    if f"ARCADE_HOME={self.env['ARCADE_HOME']}".encode() in environment:
+                        self.cli("quit", endpoint.stem, "--force", timeout=3)
+                except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+                    pass
         for app in list(self.procs):
             self.kill(app, signal.SIGTERM)
+
+    def close(self) -> None:
+        self.stop_apps()
         if self.keyring:
             self.keyring.terminate()
         if self.xvfb:
@@ -368,7 +477,7 @@ def box_one_shot_without_a_running_box(s: Session) -> str:
            "options": {}, "context": {"source": "e2e", "interactive": False, "reason": "test"}}
     # One-shot stdin carries one ordinary `invoke` request message (SPEC §4.4).
     msg = {"v": 1, "id": 1, "method": "invoke", "params": req}
-    r = subprocess.run([str(spec["dir"] / "target/release/arcadebox"), "--arcade-invoke"], input=json.dumps(msg) + "\n",
+    r = subprocess.run([str(require_current_build({**spec, "bin": os.environ.get("ARCADE_BOX_CLI_BIN", "target/release/arcadebox")})), "--arcade-invoke"], input=json.dumps(msg) + "\n",
                        env=s.env, capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
     final = json.loads(r.stdout.strip().splitlines()[-1])
@@ -454,20 +563,26 @@ def clipboard_actions_without_devices(s: Session) -> str:
     return r
 
 
-def load_check_modules() -> None:
+def load_check_modules(real_apps: bool = False) -> None:
     """Per-app check groups live in tools/e2e_checks/<name>.py; each module
     uses `check(group)` and the `Session` helpers from this file."""
     import importlib.util
     for path in sorted((Path(__file__).parent / "e2e_checks").glob("*.py")):
+        if (path.stem == "link_v3" and real_apps) or (path.stem == "real_hub" and not real_apps):
+            continue
         spec = importlib.util.spec_from_file_location(f"e2e_checks.{path.stem}", path)
         module = importlib.util.module_from_spec(spec)
-        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "APP_IDS": APP_IDS, "CLI": CLI, "LINK": LINK, "CODING": CODING, "require_current_build": require_current_build})
+        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "APP_IDS": APP_IDS, "FLEET": FLEET, "SkipCheck": SkipCheck, "CLI": CLI, "LINK": LINK, "CODING": CODING, "TOOLS": TOOLS, "require_current_build": require_current_build})
         spec.loader.exec_module(module)
+        if path.stem == 'real_hub':
+            for group in ('install', 'trayhost', 'tools-hub', 'shortcuts'):
+                for function in CHECKS[group]:
+                    if not hasattr(function, 'apps'):
+                        function.apps = list(FLEET)
 
 
-def run_checks(root: Path, only: str | None, scaffold: bool = False) -> int:
-    load_check_modules()
-    s = Session(root, headless=scaffold, mock_peers=scaffold)
+def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: bool = False, names: str | None = None, allow_skips: bool = False) -> int:
+    load_check_modules(real_apps)
     if scaffold:
         print("Link scaffold: mock peer presence, crate watchers/install harness, sibling shortcut documents")
     selected = [g.strip() for g in only.split(",")] if only is not None else None
@@ -475,24 +590,58 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False) -> int:
         # A typo or an empty selection must never report success.
         print(f"unknown or empty check group selection {only!r}; known: {', '.join(CHECKS)}")
         return 2
+    selected_names = names.split(",") if names else None
+    if selected_names and not set(selected_names) <= {f.__name__ for group, funcs in CHECKS.items() if selected is None or group in selected for f in funcs}:
+        print(f"unknown check selection {names!r}")
+        return 2
+    s = Session(root, headless=scaffold or os.environ.get('ARCADE_E2E_RUN') == '1', mock_peers=scaffold, real_apps=real_apps)
     failures = 0
+    not_run = 0
+    expected = 0
     ran = 0
+    results = []
     try:
         for group, funcs in CHECKS.items():
             if selected is not None and group not in selected:
                 continue
             for f in funcs:
+                if selected_names and f.__name__ not in selected_names:
+                    continue
                 ran += 1
                 name = f"{group}: {f.__name__}"
                 t0 = time.time()
+                # A documented product defect outside Link: its failure is
+                # reported as XFAIL, and an unexpected pass fails the run so
+                # the stale note is removed (strict expected failure).
+                known = getattr(f, "known_bug", None)
+                match = getattr(f, "known_bug_match", None)
                 try:
                     detail = f(s)
-                    print(f"PASS {name} ({time.time() - t0:.1f}s)")
+                    if known:
+                        failures += 1
+                        print(f"XPASS {name}: passed although marked as a known product bug; remove the note: {known}", flush=True)
+                        results.append({"group": group, "check": f.__name__, "apps": getattr(f, "apps", []), "passed": False, "status": "unexpected_pass", "seconds": round(time.time() - t0, 3), "detail": str(detail or ""), "knownBug": known})
+                        continue
+                    print(f"PASS {name} ({time.time() - t0:.1f}s)", flush=True)
+                    results.append({"group": group, "check": f.__name__, "apps": getattr(f, "apps", []), "passed": True, "status": "pass", "seconds": round(time.time() - t0, 3), "detail": str(detail or "")})
                     if detail and os.environ.get("E2E_VERBOSE"):
                         print("     " + str(detail).replace("\n", "\n     "))
                 except Exception as e:  # noqa: BLE001 - report every failure and keep going
-                    failures += 1
-                    print(f"FAIL {name}: {e}")
+                    unavailable = isinstance(e, SkipCheck)
+                    # A known bug excuses only its own documented symptom.
+                    status = "skipped" if unavailable else "expected_failure" if known and (not match or match in str(e)) else "fail"
+                    if unavailable:
+                        not_run += 1
+                    elif status == "expected_failure":
+                        expected += 1
+                    else:
+                        failures += 1
+                    label = {"skipped": "SKIP", "expected_failure": "XFAIL", "fail": "FAIL"}[status]
+                    print(f"{label} {name}: {e}" + (f"\n     known product bug: {known}" if status == "expected_failure" else ""), flush=True)
+                    results.append({"group": group, "check": f.__name__, "apps": getattr(f, "apps", []), "passed": False, "status": status, "seconds": round(time.time() - t0, 3), "detail": str(e) or type(e).__name__, "traceback": traceback.format_exc(), **({"knownBug": known} if known else {})})
+                finally:
+                    if real_apps:
+                        s.stop_apps()
     finally:
         s.close()
         if os.environ.get("E2E_KEEP"):
@@ -500,12 +649,20 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False) -> int:
     if not ran:
         print("no checks ran")
         return 1
-    print(f"{'all checks passed' if not failures else f'{failures} check(s) failed'}")
-    return 1 if failures else 0
+    passed = sum(r["status"] == "pass" for r in results)
+    print(f"RESULT {only or 'all'}: {passed} passed, {failures} failed, {expected} expected failures (known product bugs), {not_run} skipped ({ran} checks)", flush=True)
+    report_dir = os.environ.get("ARCADE_E2E_REPORT_DIR")
+    if report_dir:
+        Path(report_dir).mkdir(parents=True, exist_ok=True)
+        report_name = (only or "all") + ("-" + names if names else "")
+        (Path(report_dir) / (report_name.replace(",", "-") + ".json")).write_text(
+            json.dumps({"dateUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "realApps": real_apps, "passed": passed, "failed": failures, "expectedFailures": expected, "skipped": not_run, "notRun": not_run, "checks": results}, indent=2) + "\n", encoding="utf-8")
+    return 1 if failures or (not_run and not allow_skips) else 0
 
 
 def run_command(root: Path, cmd: list[str]) -> int:
     s = Session(root)
+    s.env['ARCADE_E2E_RUN'] = '1'
     try:
         return subprocess.call(cmd, env=s.env)
     finally:
@@ -515,31 +672,47 @@ def run_command(root: Path, cmd: list[str]) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--only", help="comma-separated check groups")
-    p.add_argument("--real-apps", action="store_true", help="require current fleet builds for presence, even in a scaffold-only selection")
+    p.add_argument("--check", help="comma-separated check function names, within --only")
+    p.add_argument("--real-apps", action="store_true", help="exercise the real fleet and Tools core; require current builds and AppImages")
+    p.add_argument("--allow-skips", action="store_true", help="accept explicitly reported unavailable prerequisites; failures still fail")
     p.add_argument("command", nargs="*", help="`run -- CMD…` runs CMD in the isolated session")
     args = p.parse_args()
+    if args.command == ["run"]:
+        p.error("run needs a command: tools/e2e.py run -- CMD...")
+    if args.command and args.command[0] != "run":
+        if args.only or len(args.command) != 1:
+            p.error("select one group, or use --only with comma-separated groups")
+        args.only = args.command[0]
+        args.command = []
     scaffold = bool(args.only and set(args.only.split(",")) <= {"presence", "trayhost", "install", "shortcuts", "tools-hub"} and set(args.only.split(",")) & {"trayhost", "install", "shortcuts", "tools-hub"} and not args.real_apps)
     if os.environ.get("ARCADE_E2E_INNER") != "1":
-        for tool in (("dbus-run-session",) if scaffold else ("Xvfb", "dbus-run-session", "xdotool")):
+        for tool in ("Xvfb", "dbus-run-session", "xdotool"):
             if not shutil.which(tool):
                 print(f"e2e: {tool} is required (not run)", file=sys.stderr)
                 return 2
-        subprocess.check_call(["cargo", "build", "-p", "arcade-link-cli", "--locked"], cwd=LINK)
+        subprocess.check_call(["cargo", "build", "-p", "arcade-link-cli", "--locked"], cwd=LINK, env=dict(os.environ, CARGO_BUILD_JOBS="3"))
+        if args.real_apps and (args.only is None or set(args.only.split(",")) & {"tools-hub", "shortcuts"}):
+            from real_apps import build_driver
+            try:
+                build_driver()
+            except SkipCheck as error:
+                print(f"SKIP Tools adapter: {error}", flush=True)
         if not args.command and (args.only is None or "install" in args.only.split(",")):
-            subprocess.check_call(["cargo", "build", "-p", "arcade-link", "--example", "install-harness", "--features", "install", "--locked"], cwd=LINK)
-        if args.only is None and not args.command:
+            subprocess.check_call(["cargo", "build", "-p", "arcade-link", "--example", "install-harness", "--features", "install", "--locked"], cwd=LINK, env=dict(os.environ, CARGO_BUILD_JOBS="3"))
+        if args.only is None and not args.command and not args.check:
             # A full run gives every group its own fresh session: groups leave
             # apps running in states (open pickers, toggled settings, held
             # profiles) that the next group must not inherit.
-            load_check_modules()
-            failed = [g for g in CHECKS if isolated(sys.argv[:1] + ["--only", g]) != 0]
+            load_check_modules(args.real_apps)
+            failed = [g for g in CHECKS if isolated(sys.argv[:1] + ['run', '--', sys.executable] + sys.argv[:1] + ["--only", g] + (["--real-apps"] if args.real_apps else []) + (["--allow-skips"] if args.allow_skips else [])) != 0]
             print(f"groups failed: {', '.join(failed)}" if failed else "all groups passed")
             return 1 if failed else 0
-        return isolated(sys.argv)
+        argv = sys.argv if args.command else sys.argv[:1] + ['run', '--', sys.executable] + sys.argv
+        return isolated(argv)
     root = Path(os.environ["ARCADE_E2E_ROOT"])
     if args.command and args.command[0] == "run":
         return run_command(root, args.command[1:])
-    return run_checks(root, args.only, scaffold)
+    return run_checks(root, args.only, scaffold, args.real_apps, args.check, args.allow_skips)
 
 
 def isolated(argv: list[str]) -> int:

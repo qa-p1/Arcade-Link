@@ -179,3 +179,15 @@ the full hub flows (catalog, bundles, rollback, adopt, self-update,
 diagnostics, backup) live in Tools' own lifecycle tests. Those checks follow app
 adoption; the historical ecosystem measurements above remain historical.
 PR #3 is pushed for owner review; merge and the v0.3.0 tag are owner actions.
+
+
+## Tools hub ecosystem verification addendum (2026-10-13, pending runs)
+
+This branch adds real-app adapters and isolated probes for Tools plan §17.2
+and §18. The adapter links the selected Tools core and shortcut libraries;
+loopback release metadata is a test fixture. No real-app or performance result
+is claimed until recorded in [the e2e report](docs/e2e-0.3.md) and
+[the benchmark report](docs/benchmarks-0.3.md).
+
+The released Link v0.3.0 tag is unchanged. Fleet source files and the live
+profile are outside this branch's scope.

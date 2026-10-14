@@ -59,8 +59,9 @@ def find_search_answers_resident_and_one_shot(s):
     assert code == 0 and [r["name"] for r in reply["data"]["results"]] == ["report-2024-q3.pdf"], reply
     # Stopped Find: launch.invoke answers from the saved index, without a resident.
     s.cli("quit", "find", check=True)
-    s.procs.pop("arcade.find", None)
-    time.sleep(0.5)
+    process = s.procs.pop("arcade.find", None)
+    if process:
+        process.wait(timeout=10)
     code, reply = _search(s, "report-cover")
     assert code == 0 and reply["data"]["results"][0]["name"] == "report-cover.png", reply
     assert not s.endpoint("arcade.find").exists(), "one-shot left a resident behind"

@@ -34,6 +34,12 @@ def _start(s):
 
 def _focus(s, name="^Arcade Lens$"):
     deadline = time.monotonic() + 10
+    log = s.root / "arcade.lens.log"
+    # The app can process FocusIn before xdotool returns. Include the latest
+    # overlay-show event, while excluding earlier hidden overlay lifetimes.
+    text = log.read_text(errors="replace")
+    shown = text.rfind("overlay shown on screen")
+    offset = shown if shown >= 0 else len(text)
     while time.monotonic() < deadline:
         wins = s.xdotool("search", "--onlyvisible", "--name", name).splitlines()
         for win in wins:
@@ -54,8 +60,6 @@ def _focus(s, name="^Arcade Lens$"):
                     # processed FocusIn. A harmless modifier event wakes a
                     # frame; wait for the application's focus acknowledgement
                     # before sending Escape (or a palette key).
-                    log = s.root / "arcade.lens.log"
-                    offset = log.stat().st_size
                     s.xdotool("key", "Shift_L")
                     _wait(lambda: "focused=true, visible=true" in log.read_text(errors="replace")[offset:],
                           "Lens did not process FocusIn", timeout=3)
@@ -414,6 +418,7 @@ def _settings(s):
     r = subprocess.run([str(exe)], env=s.env, capture_output=True, text=True, timeout=15)
     assert r.returncode == 0, r.stderr
     win = _focus(s, "^Arcade Lens Settings$")
+    s.xdotool("windowsize", win, "940", "1020")
     s.xdotool("windowraise", win)
     _ui_click(s, "Connected apps", win)
     _wait(lambda: any(_has(l["text"], "Connect with other Arcade apps") for l in _ui_lines(s, win)),
@@ -583,7 +588,7 @@ def command_finding_opens_real_wheel_settings(s):
 
 
 def _box_start_with_pipelines(s):
-    db = Path(s.env["XDG_DATA_HOME"]) / "dev.arcadebox.app/arcade.sqlite3"
+    db = s.root / "arcade/dev.arcadebox.app/arcade.sqlite3"
     if not db.exists():
         exe = APPS["arcade.box"]["dir"] / APPS["arcade.box"]["bin"]
         r = subprocess.run([str(exe), "--arcade-invoke"], env=s.env, capture_output=True, text=True,

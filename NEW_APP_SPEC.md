@@ -180,6 +180,15 @@ and menu data while hosted, but defer OS tray registration until the app owns
 the icon; when switching from own to hosted, remove the registered icon and
 retain the data needed to recreate it.
 
+On Linux, unregistering means the StatusNotifierWatcher loses the item: drop
+the ksni handle, release the item's bus name (Qt's `setVisible(false)` does),
+or close the private D-Bus connection that carries it. Setting the item's
+Status to Passive is not enough, and neither is removing a Tauri or
+libappindicator tray icon, because Caelestia and Waybar still draw Passive
+items and watchers forget an item only when its bus name goes away. Copy the
+canonical `tests/tray-registration.py` (a real watcher that lists Passive
+items) and run it in Linux CI through Link's `tools/e2e.py run --`.
+
 Measure and test host start-after-app, app start-after-host, Tools restart,
 Tools crash, Link disabled and per-app host opt-out. Tools quitting must not
 change the app's settings, jobs or other behavior.
@@ -539,6 +548,30 @@ The completion report states what was built, where the code and packages are,
 which checks passed, what remains incomplete and why. Separate implementation
 completion from release readiness and unverified platforms. Do not call the work
 finished while an authorized, feasible part of the agreed scope remains undone.
+
+### Tools hub delivery checklist
+
+Track implementation and verified delivery separately. Before claiming a new
+app is onboarded, check each item against the exact app and Link commits:
+
+- [ ] A self-installing Linux AppImage, per-user Windows installer and macOS
+  bundle, with isolated silent install/uninstall parity for supported targets.
+- [ ] An atomic install receipt, stable launcher/icon/CLI entries, update,
+  moved-file repair and receipt-owned uninstall; development builds skip prompts.
+- [ ] `docs/user/` and versioned `shortcuts.json`, generated `shortcuts.md`,
+  screenshots and CI validation of sheets and documentation links.
+- [ ] The tray-host watcher, `status.tray`, both startup orders, restart grace,
+  crash hand-back within one second, disabled Link and per-app opt-out.
+- [ ] Advertised `describe.methods`: settings/restart, menu/invoke, live global
+  shortcut rebinding, portable settings export/import with explicit exclusions.
+- [ ] A catalog PR with the app's assets, docs, channels and supported platforms.
+- [ ] Tools mappings and a real-app `tools-hub` e2e entry, plus the `install`,
+  `trayhost` and `shortcuts` groups and existing cross-app checks.
+- [ ] Recorded performance against Tools plan §18: critical-path watcher plus
+  `detect()` ≤5 ms; hand-back ≤1 s (target ≤200 ms); closed-window Tools ≤40 MiB
+  and zero CPU ticks over 30 s; overlay ≤80 ms p95; index rebuild ≤150 ms.
+- [ ] Dated Linux desktop evidence and separate Windows/macOS CI/build evidence;
+  unmeasured hardware-dependent behavior stays labeled as unverified.
 
 ## 11. Suggested implementation order
 

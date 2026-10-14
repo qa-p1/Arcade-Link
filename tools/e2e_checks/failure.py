@@ -117,9 +117,7 @@ def killed_apps_leave_no_live_endpoint_and_restart_cleanly(s):
     and a restart takes the endpoint over."""
     done = []
     for app, spec in APPS.items():
-        if not (spec["dir"] / spec["bin"]).exists():
-            done.append(f"{app}: binary missing (not run)")
-            continue
+        require_current_build(spec)
         s.start(app)
         s.kill(app)
         r = s.cli("status", app)

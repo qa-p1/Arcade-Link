@@ -36,3 +36,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 [[example]]
 name = "install-harness"
 required-features = ["install"]
+
+[[example]]
+name = "startup-probe"
+required-features = ["install", "trayhost"]

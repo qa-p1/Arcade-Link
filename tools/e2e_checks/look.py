@@ -98,10 +98,11 @@ def unsupported_url_and_linux_selection(s):
 
 @check("look")
 def look_consumer_boundaries(s):
-    deps = APPS["arcade.look"]["dir"] / "src-tauri/target/link-tests/debug/deps"
+    deps = (APPS["arcade.look"]["dir"] / APPS["arcade.look"]["bin"]).parent / "deps"
     binaries = [p for p in deps.glob("link_consumer-*") if p.is_file() and os.access(p, os.X_OK)]
-    assert binaries, "build Look's consumer tests first: cargo test --test link_consumer --no-run"
+    assert binaries, "stale or missing build: build Look's consumer tests first: cargo test --test link_consumer --no-run"
     binary = max(binaries, key=lambda p: p.stat().st_mtime)
+    require_current_build({**APPS["arcade.look"], "bin": str(binary)})
     r = subprocess.run([str(binary), "--ignored", "--nocapture", "--test-threads=1"], env=s.env,
                        capture_output=True, text=True, timeout=90)
     assert r.returncode == 0, r.stdout + r.stderr
@@ -290,7 +291,10 @@ def native_connected_settings_and_shortcut_warning(s):
         wait_ui(s, "document.querySelector('.arcade-peer input')?.checked === true")
         ui(s, "document.querySelector('input[aria-label=\"Connect with other Arcade apps\"]').click()")
         wait_ui(s, "[...document.querySelectorAll('.arcade-peer input')].every(e=>e.disabled)")
-        assert not s.endpoint('arcade.look').exists()
+        deadline = time.monotonic() + 5
+        while s.endpoint('arcade.look').exists() and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert not s.endpoint('arcade.look').exists(), 'master off did not remove the endpoint within 5 s'
         shot(s, 'look-connected-apps-master-off', window)
         ui(s, "document.querySelector('input[aria-label=\"Connect with other Arcade apps\"]').click()")
         s.wait_running('arcade.look')
@@ -407,7 +411,7 @@ def real_box_image_video_pdf_flagship_flows(s):
                 'nodes':[{'id':'convert','toolId':'arcade.image.convert','inputs':[{'kind':'external','index':0}],
                           'options':{'format':'webp','quality':82}}], 'outputNodes':['convert']}
     from pathlib import Path
-    db = Path(s.env['XDG_DATA_HOME']) / 'dev.arcadebox.app/arcade.sqlite3'
+    db = s.root / 'arcade/dev.arcadebox.app/arcade.sqlite3'
     with sqlite3.connect(db) as connection:
         connection.execute('INSERT OR REPLACE INTO pipelines(id,version,definition_json) VALUES(?,?,?)',
                            (pipeline['id'],1,json.dumps(pipeline)))
