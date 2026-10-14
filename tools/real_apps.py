@@ -151,7 +151,7 @@ def hub_sources(app):
     if not (spec['dir'] / 'docs/user/shortcuts.json').is_file():
         prefix = 'ARCADE_' + app.removeprefix('arcade.').upper()
         raise e2e.SkipCheck(f'{app}: {spec["dir"]} predates the Tools hub (no docs/user/shortcuts.json); '
-                            f'set {prefix}_REPO to an arcade/tools-hub checkout or use ARCADE_E2E_ARTIFACTS')
+                            f'set {prefix}_REPO to a main checkout or use ARCADE_E2E_ARTIFACTS')
 
 
 def package(app):
@@ -171,12 +171,13 @@ def package(app):
                    and p.with_suffix('.AppImage.provenance.json').is_file()]
     path = Path(override).resolve() if override else max(candidates, key=lambda p: p.stat().st_mtime_ns, default=None)
     if not path or not path.is_file():
-        raise e2e.SkipCheck(f'stale or missing build: {app} AppImage in {spec["dir"]}/dist; download a successful arcade/tools-hub artifact or set {prefix}_APPIMAGE')
+        raise e2e.SkipCheck(f'stale or missing build: {app} AppImage in {spec["dir"]}/dist; download a successful main artifact (tools/e2e_artifacts.py) or set {prefix}_APPIMAGE')
     provenance = path.with_suffix(path.suffix + '.provenance.json')
     if provenance.is_file():
         identity = json.loads(provenance.read_text(encoding='utf-8'))
-        if identity['conclusion'] != 'success' or identity.get('headBranch', 'arcade/tools-hub') != 'arcade/tools-hub':
-            raise e2e.SkipCheck(f'{path}: not from a successful arcade/tools-hub workflow ({identity.get("headBranch")}, {identity["conclusion"]})')
+        branch = os.environ.get('ARCADE_E2E_BRANCH', 'main')
+        if identity['conclusion'] != 'success' or identity.get('headBranch', branch) != branch:
+            raise e2e.SkipCheck(f'{path}: not from a successful {branch} workflow ({identity.get("headBranch")}, {identity["conclusion"]})')
         assert hashlib.sha256(path.read_bytes()).hexdigest() == identity['sha256'], f'{path}; CI checksum mismatch'
         changed = subprocess.run(['git', 'diff', '--name-only', identity['headSha'], '--'], cwd=spec['dir'], capture_output=True, text=True)
         if changed.returncode:
