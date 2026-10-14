@@ -24,14 +24,9 @@ from validate_shortcuts import normalize, validate
 # bugs"). The runner reports XFAIL only when the failure message contains the
 # expected Tools rejection; any other failure, or a pass, still fails the run.
 BACKUP_REJECTED = 'The app settings contained excluded data or exceeded backup limits.'
-BACKUP_BUGS = {
-    'arcade.lens': 'Lens app.settings.export JSON has the key privacy.guard_secrets; Tools portable_backup.rs '
-                   'contains_excluded_data() rejects any key containing "secret" (docs/e2e-0.3.md#known-product-bugs)',
-    'arcade.wheel': 'Wheel app.settings.export output has no "owner" field (src/link/WheelLink.cpp); Tools '
-                    'portable_backup.rs handoff_source() requires owner == app id (docs/e2e-0.3.md#known-product-bugs)',
-    'arcade.shelf': 'Shelf app.settings.export writes a binary ARCADE-SHELF-PORTABLE container; Tools '
-                    'portable_backup.rs accepts JSON settings files only (docs/e2e-0.3.md#known-product-bugs)',
-}
+# Lens, Wheel and Shelf backups were rejected before Arcade Tools 0.2.0 (fixed in
+# qa-p1/Arcade-tools cf8f0c5); every app must now round-trip.
+BACKUP_BUGS: dict[str, str] = {}
 
 
 def known_bug(function, note, match=BACKUP_REJECTED):
@@ -510,7 +505,6 @@ def diagnostics_zip_contains_real_app_state_and_redacts_secrets(s):
 
 
 @check('tools-hub')
-@lambda f: known_bug(f, '; '.join(f'{app}: {note}' for app, note in BACKUP_BUGS.items()))
 def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
     # Keep managed installs from earlier checks out of this settings round trip.
     s.stop_apps()

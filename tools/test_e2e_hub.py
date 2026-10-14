@@ -76,8 +76,9 @@ class HubHarnessTests(unittest.TestCase):
             snapshot = e2e.CHECKS['tools-hub'][0].__globals__['export_snapshot']
             bugs = e2e.CHECKS['tools-hub'][0].__globals__['BACKUP_BUGS']
             flagged = {f.__name__ for f in e2e.CHECKS['tools-hub'] if getattr(f, 'known_bug', None)}
-        self.assertEqual(flagged, {a.replace('.', '_') + '_portable_settings_restore' for a in bugs}
-                         | {'portable_backup_restores_real_app_settings_in_a_second_arcade_home'})
+        # No backup bug is open (fixed in Arcade Tools 0.2.0), so no check may excuse a failure.
+        self.assertEqual(bugs, {})
+        self.assertEqual(flagged, set())
         def shelf(created, payload=b'owned'):
             manifest = json.dumps({'format': 'arcade-shelf-portable', 'createdAt': created, 'items': []}).encode()
             return b'ARCADE-SHELF-PORTABLE\n' + len(manifest).to_bytes(8, 'big') + manifest + payload
@@ -106,7 +107,7 @@ class HubHarnessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.object(e2e_artifacts, 'command', return_value='[]'):
             result = e2e_artifacts.fetch('arcade.tools', e2e.FLEET['arcade.tools'], Path(directory))
         self.assertNotIn('path', result)
-        self.assertIn('no successful arcade/tools-hub', result['reason'])
+        self.assertIn('no successful main', result['reason'])
 
 
     def test_bounded_download_skips_the_app_and_reuses_a_verified_package(self):
