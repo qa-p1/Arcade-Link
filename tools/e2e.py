@@ -208,6 +208,12 @@ def isolated_env(root: Path) -> dict:
         "ARCADE_NO_INSTALL_PROMPT": "1",
         "PATH": f"{CLI.parent}:{os.environ.get('PATH', '')}",
     })
+    # Toolchains stay shared: with the temporary HOME, cargo would otherwise
+    # start from an empty registry and rebuild every dependency.
+    for name, default in (("CARGO_HOME", ".cargo"), ("RUSTUP_HOME", ".rustup")):
+        path = os.environ.get(name) or str(Path.home() / default)
+        if Path(path).is_dir():
+            env[name] = path
     return env
 
 

@@ -22,16 +22,34 @@ def command(argv, timeout=300, **kwargs):
     return subprocess.run(argv, capture_output=True, text=True, check=True, timeout=timeout, **kwargs).stdout
 
 
-def download(argv, packages, attempts=2):
-    """Large AppImage ZIPs; retry once on a reset connection or timeout."""
+class DownloadFailed(Exception):
+    """The app is skipped with this reason; other apps continue."""
+
+
+def download(argv, packages, attempts=2, timeout=300):
+    """Large AppImage ZIPs: 300 s per attempt, one retry at most."""
     for attempt in range(attempts):
         if packages.exists():
             shutil.rmtree(packages)  # Never mix bytes from a partial attempt.
         try:
-            return command(argv, timeout=1500)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            if attempt == attempts - 1:
-                raise
+            return command(argv, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            error = f'timed out after {timeout} s'
+        except subprocess.CalledProcessError as failure:
+            error = (failure.stderr or failure.stdout or '').strip()[:300]
+    shutil.rmtree(packages, ignore_errors=True)
+    raise DownloadFailed(f'artifact download failed ({attempts} attempts): {error}')
+
+
+def reusable(packages, run, artifact):
+    """An earlier verified download of this exact run and artifact, if any."""
+    for provenance in packages.glob('*.AppImage.provenance.json'):
+        identity = json.loads(provenance.read_text())
+        path = provenance.with_name(provenance.name.removesuffix('.provenance.json'))
+        if (identity.get('databaseId') == run['databaseId'] and identity.get('artifact') == artifact['name']
+                and path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == identity.get('sha256')):
+            return path
+    return None
 
 
 def fetch(app, spec, destination, sources=False):
@@ -56,9 +74,13 @@ def fetch(app, spec, destination, sources=False):
     if sources and source_run:
         checkout = destination / 'sources'
         if checkout.exists():
-            raise ValueError(f'{checkout} already exists; use a fresh output directory')
-        command(['git', 'clone', '--quiet', '--no-checkout', f'https://github.com/{repo}.git', str(checkout)])
-        command(['git', 'checkout', '--quiet', '--detach', source_run['headSha']], cwd=checkout)
+            # Reuse an earlier clone only at exactly the selected commit.
+            head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=checkout, capture_output=True, text=True).stdout.strip()
+            if head != source_run['headSha']:
+                raise ValueError(f'{checkout} exists at {head or "no commit"}, not {source_run["headSha"]}; use a fresh output directory')
+        else:
+            command(['git', 'clone', '--quiet', '--no-checkout', f'https://github.com/{repo}.git', str(checkout)])
+            command(['git', 'checkout', '--quiet', '--detach', source_run['headSha']], cwd=checkout)
         result['repoPath'] = str(checkout)
     if chosen is None:
         result['reason'] = (f'no unexpired {spec["artifact"]} AppImage artifact in the latest five successful '
@@ -67,7 +89,15 @@ def fetch(app, spec, destination, sources=False):
         return result
     run, artifact = chosen
     packages = destination / 'packages'
-    download(['gh', 'run', 'download', str(run['databaseId']), '-R', repo, '-n', artifact['name'], '-D', str(packages)], packages)
+    reused = reusable(packages, run, artifact)
+    if reused:
+        result.update(path=str(reused), sha256=hashlib.sha256(reused.read_bytes()).hexdigest(), artifact=artifact['name'], reused=True)
+        return result
+    try:
+        download(['timeout', '300', 'gh', 'run', 'download', str(run['databaseId']), '-R', repo, '-n', artifact['name'], '-D', str(packages)], packages)
+    except DownloadFailed as error:
+        result['reason'] = f'{repo} run {run["databaseId"]}/{artifact["name"]}: {error}'
+        return result
     candidates = sorted(packages.rglob('*.AppImage'))
     if len(candidates) != 1:
         result['reason'] = f'{repo} run {run["databaseId"]}/{artifact["name"]}: expected one Linux AppImage; found {len(candidates)}'

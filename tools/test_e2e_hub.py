@@ -109,5 +109,28 @@ class HubHarnessTests(unittest.TestCase):
         self.assertIn('no successful arcade/tools-hub', result['reason'])
 
 
+    def test_bounded_download_skips_the_app_and_reuses_a_verified_package(self):
+        import hashlib, subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            packages = Path(directory) / 'packages'
+            packages.mkdir()
+            (packages / 'A.AppImage').write_bytes(b'appimage')
+            (packages / 'A.AppImage.provenance.json').write_text(json.dumps(
+                {'databaseId': 7, 'artifact': 'linux', 'sha256': hashlib.sha256(b'appimage').hexdigest()}))
+            self.assertEqual(e2e_artifacts.reusable(packages, {'databaseId': 7}, {'name': 'linux'}), packages / 'A.AppImage')
+            self.assertIsNone(e2e_artifacts.reusable(packages, {'databaseId': 8}, {'name': 'linux'}))
+            (packages / 'A.AppImage').write_bytes(b'tampered')
+            self.assertIsNone(e2e_artifacts.reusable(packages, {'databaseId': 7}, {'name': 'linux'}))
+            calls = []
+            def stalled(argv, timeout):
+                calls.append(timeout)
+                raise subprocess.TimeoutExpired(argv, timeout)
+            with patch.object(e2e_artifacts, 'command', side_effect=stalled):
+                with self.assertRaisesRegex(e2e_artifacts.DownloadFailed, 'artifact download failed'):
+                    e2e_artifacts.download(['gh'], packages)
+            self.assertEqual(calls, [300, 300])
+            self.assertFalse(packages.exists())
+
+
 if __name__ == '__main__':
     unittest.main()
