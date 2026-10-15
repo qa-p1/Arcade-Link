@@ -3,7 +3,7 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
-## 0.3.0 — unreleased
+## 0.3.0 — 2026-10-11
 
 - Adds optional settings, restart, menu, menu invocation, shortcut rebinding
   and settings export/import methods, describe.methods and typed clients.

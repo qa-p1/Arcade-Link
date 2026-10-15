@@ -181,13 +181,30 @@ adoption; the historical ecosystem measurements above remain historical.
 PR #3 is pushed for owner review; merge and the v0.3.0 tag are owner actions.
 
 
-## Tools hub ecosystem verification addendum (2026-10-13, pending runs)
+## Tools hub ecosystem verification addendum (2026-10-13, results 2026-10-15)
 
 This branch adds real-app adapters and isolated probes for Tools plan §17.2
 and §18. The adapter links the selected Tools core and shortcut libraries;
-loopback release metadata is a test fixture. No real-app or performance result
-is claimed until recorded in [the e2e report](docs/e2e-0.3.md) and
+loopback release metadata is a test fixture. Details are in
+[the e2e report](docs/e2e-0.3.md) and
 [the benchmark report](docs/benchmarks-0.3.md).
+
+Results:
+
+- The scheduled Ecosystem e2e run on main
+  ([38698730640](https://github.com/qa-p1/Arcade-Link/actions/runs/38698730640),
+  2026-10-15, `5973c5e`) is green: the real-fleet `install`, `shortcuts`,
+  `tools-hub` and `trayhost` groups (CI X11 only) and the deterministic
+  isolated Link contracts all pass.
+- CI on main ([38614919318](https://github.com/qa-p1/Arcade-Link/actions/runs/38614919318),
+  2026-10-14) is green: Rust and the Qt module on Linux, Windows and macOS,
+  plus the shared Windows installers.
+- Benchmarks (2026-10-14, Xvfb, debug build) meet every Link-side §18 budget:
+  tray watcher + `detect()` startup 0.152 ms p95 (Rust) and 0.232 ms p95 (Qt)
+  against 5 ms, protocol tray hand-back 0.317 ms p95 against 1 s, Link server
+  idle 0 CPU ticks over 30 s, and fixture shortcut index 20.4 ms p95 against
+  150 ms. Whole-product budgets (Tools idle/window, overlay, live-fleet index)
+  remain not measured, as listed in the benchmark report.
 
 The released Link v0.3.0 tag is unchanged. Fleet source files and the live
 profile are outside this branch's scope.
