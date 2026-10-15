@@ -1,9 +1,8 @@
 # Arcade Link status
 
-Updated 2026-10-11 for v0.3.0, protocol 1 and manifest schema 1.
-Work is in `arcade/tools-hub-core`, pushed to `arcade/tools-hub` for
-[PR #3](https://github.com/qa-p1/Arcade-Link/pull/3). Merge and the v0.3.0 tag
-remain owner actions.
+Updated 2026-10-15 for v0.3.0, protocol 1 and manifest schema 1.
+[PR #3](https://github.com/qa-p1/Arcade-Link/pull/3) is merged and v0.3.0 is
+tagged.
 
 ## Implemented
 
@@ -47,12 +46,13 @@ regression test names, focused commits and current CI evidence.
 
 ## Limits
 
-- Application adoption, full Tools product/hub e2e, real desktop dialogs,
-  tray icon painting and production Tools/overlay performance follow later.
-  Main sibling checkouts currently have no `docs/user/shortcuts.json`; the
-  latest optional-doc scan validates 31 available catalog sheets and reports
-  all seven missing app docs. The owner's earlier fleet validator run is
-  separate evidence from the local run recorded here.
+- The real-fleet e2e groups (`install`, `shortcuts`, `tools-hub`,
+  `trayhost`) run on main in the scheduled
+  [Ecosystem e2e](https://github.com/qa-p1/Arcade-Link/actions/runs/38698730640)
+  workflow, under CI X11 only. Every app now ships user docs, including
+  `docs/user/shortcuts.json`. Real desktop dialogs, tray icon painting and
+  production Tools/overlay performance remain owner checks on a real desktop
+  (see [the benchmark report](benchmarks-0.3.md)).
 - One Rust engine-download test is intentionally ignored. Two optional Python
   JSON Schema tests skip without `jsonschema`; semantic/shared-vector tests
   and canonical key schema-regex checks run without extra dependencies.
