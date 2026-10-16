@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download green Tools-hub Linux artifacts; record every unavailable app.
+"""Download green Linux artifacts (main by default); record every unavailable app.
 
 This fetches packages and optionally sources, never builds or installs an app.
 Use ARCADE_E2E_ARTIFACTS=<output>/fleet.json for an isolated real-app run.
@@ -11,11 +11,15 @@ import concurrent.futures
 import fnmatch
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 
 import e2e
+
+# The hub work is merged into main: test what users get. Set ARCADE_E2E_BRANCH for a feature branch.
+BRANCH = os.environ.get('ARCADE_E2E_BRANCH', 'main')
 
 
 def command(argv, timeout=300, **kwargs):
@@ -55,7 +59,7 @@ def reusable(packages, run, artifact):
 def fetch(app, spec, destination, sources=False):
     repo = spec['repo']
     result = {'repository': repo}
-    runs = json.loads(command(['gh', 'run', 'list', '-R', repo, '--branch', 'arcade/tools-hub',
+    runs = json.loads(command(['gh', 'run', 'list', '-R', repo, '--branch', BRANCH,
                               '--status', 'success', '--limit', '5',
                               '--json', 'databaseId,headSha,headBranch,conclusion,url']))
     chosen = None
@@ -86,8 +90,8 @@ def fetch(app, spec, destination, sources=False):
         result['repoPath'] = str(checkout)
     if chosen is None:
         result['reason'] = (f'no unexpired {spec["artifact"]} AppImage artifact in the latest five successful '
-                            f'arcade/tools-hub runs of {repo}' if runs else
-                            f'{repo} has no successful arcade/tools-hub workflow run')
+                            f'{BRANCH} runs of {repo}' if runs else
+                            f'{repo} has no successful {BRANCH} workflow run')
         return result
     run, artifact = chosen
     packages = destination / 'packages'
