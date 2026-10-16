@@ -371,8 +371,19 @@ class Session:
             except subprocess.TimeoutExpired:
                 os.killpg(p.pid, signal.SIGKILL)
                 p.wait()
+        if p and os.name != "nt":
+            # An AppImage runtime (the group leader) exits before the app it
+            # runs. Wait for the whole group, so the app's global shortcut
+            # grabs and bus names are free before the next profile starts.
+            if not wait_gone(lambda: os.killpg(p.pid, 0), 5):
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                wait_gone(lambda: os.killpg(p.pid, 0), 5)
 
     def stop_apps(self) -> None:
+        quitting = []
         if CLI.is_file():
             for endpoint in sorted((self.root / "arcade/run").glob("*.endpoint")):
                 try:
@@ -380,11 +391,20 @@ class Session:
                     pid = entry["pid"]
                     environment = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
                     if f"ARCADE_HOME={self.env['ARCADE_HOME']}".encode() in environment:
+                        quitting.append(pid)
                         self.cli("quit", endpoint.stem, "--force", timeout=3)
                 except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
                     pass
         for app in list(self.procs):
             self.kill(app, signal.SIGTERM)
+        # `quit` only asks; apps that Tools or Link launched have no Popen here.
+        # (POSIX only: on Windows os.kill(pid, 0) terminates instead of probing.)
+        for pid in quitting if os.name != "nt" else []:
+            if not wait_gone(lambda: os.kill(pid, 0), 5):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
 
     def close(self) -> None:
         self.stop_apps()
@@ -392,6 +412,21 @@ class Session:
             self.keyring.terminate()
         if self.xvfb:
             self.xvfb.terminate()
+
+
+def wait_gone(probe, timeout: float) -> bool:
+    """Poll `probe` (a signal-0 send) until the process or group is gone."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            probe()
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            return True  # the pid was reused by a process we don't own
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
 
 
 def parse_invoke(code: int, stdout: str, stderr: str):
