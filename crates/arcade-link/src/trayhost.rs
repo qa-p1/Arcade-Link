@@ -134,6 +134,7 @@ enum Event {
     Closed(u64),
     Link(bool),
     Stop,
+    Finish,
 }
 /// A nonblocking handle. Drop/stop wakes the worker and restores Own; no UI
 /// thread joins an IPC reader. State can be inserted in Handler::status().
@@ -159,6 +160,12 @@ impl TrayHostWatcher {
     }
     pub fn stop(&self) {
         let _ = self.tx.send(Event::Stop);
+    }
+    /// The app is quitting: stop without restoring Own, so a hosted app does
+    /// not flash its own icon on the way out. Dropping the handle still
+    /// restores Own.
+    pub fn finish(&self) {
+        let _ = self.tx.send(Event::Finish);
     }
 }
 impl Drop for TrayHostWatcher {
@@ -274,6 +281,10 @@ fn watch(
             Some(Event::Stop) => {
                 close(&mut control);
                 emit(if config.has_tray { TrayState::Own } else { TrayState::None });
+                break;
+            }
+            Some(Event::Finish) => {
+                close(&mut control);
                 break;
             }
             Some(Event::Link(enabled)) => {

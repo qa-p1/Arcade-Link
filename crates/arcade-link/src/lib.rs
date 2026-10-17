@@ -20,6 +20,7 @@
 
 pub mod accelerator;
 pub mod app;
+pub mod childenv;
 pub mod client;
 pub mod content;
 pub mod endpoint;

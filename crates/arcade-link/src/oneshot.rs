@@ -49,16 +49,17 @@ pub fn run(
             }
         }
     });
+    let cancelled = || cancel.is_some_and(|c| c.load(Ordering::SeqCst));
     let result = loop {
+        // Checked before every message, not only when the provider is quiet:
+        // a provider streaming progress must still stop when asked.
+        if cancelled() {
+            let _ = child.kill();
+            break Err(LinkError::cancelled());
+        }
         let m = match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(m) => m,
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-                    let _ = child.kill();
-                    break Err(LinkError::cancelled());
-                }
-                continue;
-            }
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break Err(LinkError::internal("one-shot process ended without a result")),
         };
         match m {
@@ -79,9 +80,25 @@ pub fn run(
             Err(e) => break Err(e),
         }
     };
-    let _ = child.wait();
+    // The answer is in: give the provider a moment to exit on its own, but
+    // never let a lingering process (or a cancel) hold up the caller.
+    let deadline = std::time::Instant::now() + EXIT_GRACE;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) | Err(_) => break,
+            Ok(None) if cancelled() || std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
     result
 }
+
+/// How long a provider may keep running after its final response.
+const EXIT_GRACE: Duration = Duration::from_millis(250);
 
 /// Writes progress to stdout and keeps `job.done` for the final response.
 struct StdoutSink {
@@ -151,5 +168,50 @@ fn run_handler(handler: &dyn Handler, request: InvokeRequest) -> Result<InvokeRe
             }
             done.take().map_or_else(|| Err(LinkError::internal("no result")), JobDone::into_result)
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    fn request() -> InvokeRequest {
+        serde_json::from_value(serde_json::json!({ "action": "test" })).unwrap()
+    }
+
+    /// A provider that reads the request, then runs `body` with $P (one
+    /// progress line) and $R (the final response line) in its environment.
+    fn provider(body: &str) -> (String, Vec<String>) {
+        let progress = Message::notification(method::JOB_PROGRESS, serde_json::json!({ "job": "j", "message": "working" })).to_line();
+        let response = Message::response(1, Ok(serde_json::to_value(InvokeResult::message("done")).unwrap())).to_line();
+        let script = format!("P='{}'; R='{}'; read line; {body}", progress.trim_end(), response.trim_end());
+        ("/bin/sh".into(), vec!["-c".into(), script])
+    }
+
+    #[test]
+    fn cancel_stops_a_provider_that_keeps_reporting_progress() {
+        let (sh, args) = provider(r#"for i in $(seq 30); do printf '%s\n' "$P"; sleep 0.02; done; printf '%s\n' "$R""#);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let flag = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            flag.store(true, Ordering::SeqCst);
+        });
+        let started = Instant::now();
+        let mut seen = 0;
+        let result = run(&sh, &args, &request(), &mut |_| seen += 1, Some(&cancel));
+        assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+        assert!(started.elapsed() < Duration::from_millis(400), "took {:?}", started.elapsed());
+        assert!(seen < 30, "all progress was relayed after cancel");
+    }
+
+    #[test]
+    fn a_provider_lingering_after_its_answer_does_not_hold_the_caller() {
+        let (sh, args) = provider(r#"printf '%s\n' "$R"; sleep 2"#);
+        let started = Instant::now();
+        let result = run(&sh, &args, &request(), &mut |_| {}, None).unwrap();
+        assert_eq!(result.message.as_deref(), Some("done"));
+        assert!(started.elapsed() < Duration::from_millis(1000), "took {:?}", started.elapsed());
     }
 }

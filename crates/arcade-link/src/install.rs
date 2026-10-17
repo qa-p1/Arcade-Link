@@ -253,13 +253,20 @@ pub struct InstallOptions<'a> {
 
 #[cfg(target_os = "linux")]
 fn quote(s: &str) -> String {
-    // Desktop Entry string escaping, followed by Exec quoting. '%' is a
-    // literal here, never a field code. Never invoke a shell.
-    format!("\"{}\"", s.replace('\\', "\\\\\\\\").replace('"', "\\\\\"").replace('`', "\\\\`").replace('$', "\\\\$").replace('%', "%%"))
+    // Exec quoting, then Desktop Entry string escaping. '%' is a literal
+    // here, never a field code. Control characters use the string escapes
+    // (a raw newline would end the key). Never invoke a shell.
+    let exec = s.replace('\\', "\\\\").replace('"', "\\\"").replace('`', "\\`").replace('$', "\\$").replace('%', "%%");
+    format!("\"{}\"", exec.replace('\\', "\\\\").replace('\n', "\\n").replace('\t', "\\t").replace('\r', "\\r"))
 }
 #[cfg(target_os = "linux")]
 fn exec(path: &Path, args: &[String]) -> String {
-    std::iter::once(quote(&path.to_string_lossy())).chain(args.iter().map(|s| quote(s))).collect::<Vec<_>>().join(" ")
+    let program = path.to_string_lossy();
+    // GLib looks the program up before expanding "%%", so a '%' in the path
+    // (e.g. in HOME) makes every launcher "unable to load". `env` takes the
+    // program as an ordinary argument, where "%%" is expanded.
+    let env = program.contains('%').then(|| "env".to_string());
+    env.into_iter().chain(std::iter::once(quote(&program))).chain(args.iter().map(|s| quote(s))).collect::<Vec<_>>().join(" ")
 }
 #[cfg(target_os = "linux")]
 fn desktop(app: &AppInfo, path: &Path) -> String {
@@ -314,6 +321,8 @@ fn repair_autostart(path: &Path, app: &AppInfo, executable: &Path, create: bool)
     let mut in_entry = false;
     let mut replaced = false;
     let command = format!("Exec={}", exec(executable, &app.background_args));
+    // A login entry taken over from an older copy becomes recognizably ours.
+    let marked = entry_value(&old, "X-Arcade-Id").is_some();
     let mut lines = Vec::new();
     for line in old.lines() {
         if line.starts_with('[') {
@@ -321,6 +330,9 @@ fn repair_autostart(path: &Path, app: &AppInfo, executable: &Path, create: bool)
         }
         if in_entry && line.starts_with("Exec=") {
             lines.push(command.clone());
+            if !marked {
+                lines.push(format!("X-Arcade-Id={}", app.id));
+            }
             replaced = true;
         } else {
             lines.push(line.into());
@@ -372,31 +384,47 @@ fn desktop_executable(text: &str) -> Option<PathBuf> {
             c
         });
     }
-    let mut chars = decoded.trim_start().chars().peekable();
-    let quoted = chars.peek() == Some(&'"');
+    let mut rest = decoded.as_str();
+    let mut token = exec_token(&mut rest)?;
+    // Launchers for paths containing '%' run the program through `env`.
+    if token == "env" {
+        token = exec_token(&mut rest)?;
+    }
+    (!token.is_empty() && !token.contains(['=', '\0', '\n', '\r'])).then(|| PathBuf::from(token))
+}
+
+/// Reads one Exec argument from the front of `rest` (already string-unescaped).
+#[cfg(target_os = "linux")]
+fn exec_token(rest: &mut &str) -> Option<String> {
+    let text = rest.trim_start();
+    let mut chars = text.char_indices().peekable();
+    let quoted = chars.peek().map(|(_, c)| *c) == Some('"');
     if quoted {
         chars.next();
     }
     let mut token = String::new();
     let mut closed = !quoted;
-    while let Some(c) = chars.next() {
+    let mut end = text.len();
+    while let Some((i, c)) = chars.next() {
         if quoted && c == '"' {
             closed = true;
-            if chars.peek().is_some_and(|c| !c.is_whitespace()) {
+            if chars.peek().is_some_and(|(_, c)| !c.is_whitespace()) {
                 return None;
             }
+            end = i + 1;
             break;
         }
         if !quoted && c.is_whitespace() {
+            end = i;
             break;
         }
         token.push(match c {
-            '\\' if quoted => match chars.next()? {
+            '\\' if quoted => match chars.next()?.1 {
                 c @ ('"' | '`' | '$' | '\\') => c,
                 _ => return None,
             },
             '%' => {
-                if chars.next()? != '%' {
+                if chars.next()?.1 != '%' {
                     return None;
                 }
                 '%'
@@ -405,7 +433,11 @@ fn desktop_executable(text: &str) -> Option<PathBuf> {
             c => c,
         });
     }
-    (closed && !token.is_empty() && !token.contains(['=', '\0', '\n', '\r'])).then(|| PathBuf::from(token))
+    if !closed {
+        return None;
+    }
+    *rest = &text[end..];
+    Some(token)
 }
 
 #[cfg(target_os = "linux")]
@@ -428,7 +460,180 @@ fn desktop_owned(path: &Path, app: &AppInfo, recorded: bool) -> bool {
     let known_id = path.file_stem().is_some_and(|id| {
         id == app.desktop_id.as_str() || id == app.autostart_id.as_str() || app.legacy_desktop_ids.iter().any(|legacy| id == legacy.as_str())
     });
-    known_id && executable.file_name().is_some_and(|name| name == app.filename.as_str() || name == app.cli_name.as_str())
+    known_id && executable.file_name().is_some_and(|name| name == app.filename.as_str() || name == app.cli_name.as_str() || legacy_appimage_name(app, name))
+}
+
+/// Releases before the self-installer ran from wherever they were saved and
+/// wrote their own launcher, e.g. `ArcadeLens-0.1.1-linux-x86_64.AppImage`.
+/// Together with the app's own desktop id that identifies the app's older copy.
+#[cfg(target_os = "linux")]
+fn legacy_appimage_name(app: &AppInfo, name: &std::ffi::OsStr) -> bool {
+    let normalize = |s: &str| s.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect::<String>();
+    let name = name.to_string_lossy();
+    if name == app.filename.as_str() || name == app.cli_name.as_str() {
+        return false;
+    }
+    let app_name = normalize(&app.name);
+    !app_name.is_empty() && name.to_ascii_lowercase().ends_with(".appimage") && normalize(&name).starts_with(&app_name)
+}
+
+/// Older copies of this app that its launcher or login entry still run,
+/// i.e. what an install replaces. Apps can mention them in the prompt.
+#[cfg(target_os = "linux")]
+pub fn legacy_copies(environment: &Environment, app: &AppInfo) -> Vec<PathBuf> {
+    let mut entries: Vec<PathBuf> = std::iter::once(app.desktop_id.as_str())
+        .chain(app.legacy_desktop_ids.iter().map(String::as_str))
+        .map(|id| environment.data.join("applications").join(format!("{id}.desktop")))
+        .collect();
+    entries.push(environment.config.join("autostart").join(format!("{}.desktop", app.autostart_id)));
+    let mut copies = Vec::new();
+    for entry in entries {
+        let Ok(text) = fs::read_to_string(&entry) else { continue };
+        let Some(executable) = desktop_executable(&text) else { continue };
+        let legacy = executable.file_name().is_some_and(|name| legacy_appimage_name(app, name));
+        if legacy && entry_value(&text, "X-Arcade-Id").is_none() && executable.is_file() && !copies.contains(&executable) {
+            copies.push(executable);
+        }
+    }
+    copies
+}
+
+/// Asks processes of this user started from the AppImage `path` to quit, so
+/// an older copy doesn't keep running beside its replacement. Matching the
+/// app's `APPIMAGE`, not the runtime's executable, lets the runtime unmount
+/// after the app exits instead of being killed under it.
+#[cfg(target_os = "linux")]
+fn stop_processes_running(path: &Path) {
+    extern "C" {
+        fn kill(pid: i32, sig: i32) -> i32;
+    }
+    const SIGTERM: i32 = 15;
+    let target = canonical(path);
+    let me = std::process::id();
+    let Ok(dir) = fs::read_dir("/proc") else { return };
+    for entry in dir.flatten() {
+        let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else { continue };
+        if pid == me {
+            continue;
+        }
+        let appimage = fs::read(entry.path().join("environ")).ok().and_then(|bytes| {
+            bytes.split(|b| *b == 0).find_map(|var| var.strip_prefix(b"APPIMAGE=").map(|v| PathBuf::from(String::from_utf8_lossy(v).into_owned())))
+        });
+        if appimage.is_some_and(|p| canonical(&p) == target) {
+            // SAFETY: kill has no memory preconditions; only our own
+            // processes' environ is readable.
+            unsafe {
+                kill(pid as i32, SIGTERM);
+            }
+        }
+    }
+}
+
+/// `$XDG_DOWNLOAD_DIR` from user-dirs.dirs, else `~/Downloads`.
+#[cfg(target_os = "linux")]
+fn download_dir(environment: &Environment) -> PathBuf {
+    let configured = fs::read_to_string(environment.config.join("user-dirs.dirs")).ok().and_then(|text| {
+        text.lines().find_map(|line| {
+            let value = line.trim().strip_prefix("XDG_DOWNLOAD_DIR=")?.trim().trim_matches('"');
+            let path = match value.strip_prefix("$HOME") {
+                Some(rest) => environment.home.join(rest.trim_start_matches('/')),
+                None => PathBuf::from(value),
+            };
+            path.is_absolute().then_some(path)
+        })
+    });
+    configured.unwrap_or_else(|| environment.home.join("Downloads"))
+}
+
+/// "Remove the downloaded file" only ever removes a file from the Downloads
+/// folder: an AppImage the user keeps elsewhere is theirs.
+#[cfg(target_os = "linux")]
+pub fn is_download(environment: &Environment, source: &Path) -> bool {
+    canonical(source).starts_with(canonical(&download_dir(environment)))
+}
+
+/// Error text that names the path, e.g. a read-only apps folder.
+fn at<'a>(path: &'a Path, action: &'static str) -> impl FnOnce(io::Error) -> io::Error + 'a {
+    move |e| io::Error::new(e.kind(), format!("{action} {}: {e}", path.display()))
+}
+
+/// Held for the whole of an install, repair or uninstall of one app, across
+/// processes: Rust and Qt lock the same `<installs>/<id>.lock`. A second
+/// installer waits for the first instead of interleaving with it.
+pub struct AppLock {
+    _file: fs::File,
+}
+
+#[cfg(unix)]
+fn try_lock(file: &fs::File) -> io::Result<bool> {
+    use std::os::unix::io::AsRawFd;
+    extern "C" {
+        fn flock(fd: i32, operation: i32) -> i32;
+    }
+    const LOCK_EX: i32 = 2;
+    const LOCK_NB: i32 = 4;
+    // SAFETY: the descriptor is owned by `file` and open for the call.
+    if unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) } == 0 {
+        return Ok(true);
+    }
+    let e = io::Error::last_os_error();
+    if e.kind() == io::ErrorKind::WouldBlock {
+        Ok(false)
+    } else {
+        Err(e)
+    }
+}
+#[cfg(windows)]
+fn try_lock(file: &fs::File) -> io::Result<bool> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::{
+        Storage::FileSystem::{LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY},
+        System::IO::OVERLAPPED,
+    };
+    // SAFETY: zeroed OVERLAPPED is the documented start-of-file offset.
+    let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+    // SAFETY: the handle is owned by `file`; `overlapped` outlives the call.
+    let ok = unsafe { LockFileEx(file.as_raw_handle() as _, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, u32::MAX, u32::MAX, &mut overlapped) };
+    if ok != 0 {
+        return Ok(true);
+    }
+    let e = io::Error::last_os_error();
+    if e.raw_os_error() == Some(33) {
+        Ok(false) // ERROR_LOCK_VIOLATION
+    } else {
+        Err(e)
+    }
+}
+
+/// Waits up to two minutes for another install, update or uninstall of `id`.
+pub fn lock(environment: &Environment, id: &str) -> io::Result<AppLock> {
+    let store = environment.receipts();
+    let path = store.path(id)?.with_extension("lock");
+    crate::paths::ensure_private_dir(store.dir())?;
+    let file = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(&path).map_err(at(&path, "Couldn't open"))?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    while !try_lock(&file)? {
+        if std::time::Instant::now() >= deadline {
+            return Err(io::Error::new(io::ErrorKind::WouldBlock, "another install, update or uninstall of this app is still running"));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    Ok(AppLock { _file: file })
+}
+
+/// `<stem>.<token>.stage` copies left behind by an installer that was killed.
+/// Called with the app's lock held, so no other installer owns them.
+#[cfg(target_os = "linux")]
+fn remove_stale_stages(applications: &Path, filename: &str) {
+    let stem = Path::new(filename).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let Ok(entries) = fs::read_dir(applications) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let token = name.strip_prefix(&format!("{stem}.")).and_then(|rest| rest.strip_suffix(".stage"));
+        if token.is_some_and(|t| t.len() == 64 && t.chars().all(|c| c.is_ascii_hexdigit())) {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -609,6 +814,7 @@ impl Drop for InstallRollback {
 pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Result<Receipt> {
     environment.validate()?;
     opts.app.validate()?;
+    let _lock = lock(environment, &opts.app.id)?;
     let detected = detect(environment, &opts.app.id, opts.runtime)?;
     if detected.state == State::DevBuild {
         return Err(input("dev builds cannot be installed"));
@@ -621,7 +827,9 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
         return Err(input("source must be an absolute file"));
     }
     let dest = environment.applications.join(&opts.app.filename);
-    fs::create_dir_all(&environment.applications)?;
+    fs::create_dir_all(&environment.applications).map_err(at(&environment.applications, "Couldn't create"))?;
+    remove_stale_stages(&environment.applications, &opts.app.filename);
+    let legacy = legacy_copies(environment, opts.app);
     let old = detected.receipt;
     if let Some(receipt) = &old {
         receipt.validate_native_paths()?;
@@ -722,19 +930,21 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
             }
         }
     }
+    // symlink_metadata, not exists(): a dangling symlink is still somebody's entry.
+    let dest_present = fs::symlink_metadata(&dest).is_ok();
     if !same {
-        if dest.exists() && old.as_ref().is_none_or(|r| r.path != dest) {
+        if dest_present && old.as_ref().is_none_or(|r| r.path != dest) {
             return Err(io::Error::new(io::ErrorKind::AlreadyExists, "destination exists without this app's receipt"));
         }
         use std::io::Write;
-        let mut stage = fs::OpenOptions::new().write(true).create_new(true).open(&staged)?;
-        io::copy(&mut fs::File::open(&source)?, &mut stage)?;
+        let mut stage = fs::OpenOptions::new().write(true).create_new(true).open(&staged).map_err(at(&environment.applications, "Couldn't write to"))?;
+        io::copy(&mut fs::File::open(&source).map_err(at(&source, "Couldn't read"))?, &mut stage).map_err(at(&staged, "Couldn't copy to"))?;
         stage.flush()?;
-        stage.sync_all()?;
+        stage.sync_all().map_err(at(&staged, "Couldn't save"))?;
         drop(stage);
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&staged, fs::Permissions::from_mode(0o755))?;
-        if dest.exists() {
+        if dest_present {
             let preferred = environment.applications.join(".previous").join(&opts.app.filename);
             let owned_previous = old.as_ref().and_then(|r| r.previous.as_ref()).map(|p| &p.path);
             let prev = if let Some(owned) = owned_previous {
@@ -793,8 +1003,16 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     };
     environment.receipts().write(&receipt)?;
     rollback.committed = true;
-    if opts.remove_download && !same {
-        remove_file(&source)?;
+    drop(rollback);
+    // The install has happened: from here nothing may turn it into a failure.
+    if opts.remove_download && !same && is_download(environment, &source) {
+        let _ = remove_file(&source);
+    }
+    for copy in legacy.iter().filter(|copy| canonical(copy) != canonical(&receipt.path) && canonical(copy) != canonical(&source)) {
+        stop_processes_running(copy);
+        if opts.remove_download && is_download(environment, copy) {
+            let _ = remove_file(copy);
+        }
     }
     if opts.refresh_caches {
         refresh_caches(environment);
@@ -809,6 +1027,7 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
 pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>) -> io::Result<Receipt> {
     environment.validate()?;
     app.validate()?;
+    let _lock = lock(environment, &app.id)?;
     let mut receipt = environment.receipts().read(&app.id)?.ok_or_else(|| input("no receipt"))?;
     receipt.validate_native_paths()?;
     validate_integration_roots(environment, &receipt)?;
@@ -865,6 +1084,10 @@ pub struct UninstallOptions<'a> {
 /// Does not invoke a Windows uninstaller: apps/Tools run its recorded command.
 pub fn uninstall(environment: &Environment, id: &str, opts: UninstallOptions<'_>) -> io::Result<bool> {
     environment.validate()?;
+    if environment.receipts().read(id)?.is_none() {
+        return Ok(false);
+    }
+    let _lock = lock(environment, id)?;
     let Some(receipt) = environment.receipts().read(id)? else { return Ok(false) };
     receipt.validate_native_paths()?;
     #[cfg(target_os = "linux")]
@@ -989,16 +1212,27 @@ pub fn integration_status(environment: &Environment, id: &str, shell: &str) -> i
     Ok(IntegrationStatus { receipt, entries, bin_on_path, path_hint: (!bin_on_path).then(|| path_hint(&environment.bin, shell)), skipped })
 }
 
-/// Replaces this process on Unix, or starts a successor on Windows. The
-/// caller passes original args and owns any old-process wait handshake.
+/// Starts the installed copy with the original args. From an AppImage (and on
+/// Windows) it starts a detached successor and returns `Ok`, and the caller
+/// exits: exec would keep the downloaded image mounted until the app quits.
+/// Elsewhere on Unix it replaces this process. The successor gets the user's
+/// environment, not this image's runtime variables. The caller owns any
+/// old-process wait handshake.
 pub fn reexec(path: &Path, original_args: &[std::ffi::OsString]) -> io::Result<()> {
     crate::receipt::native_absolute(path)?;
     let mut cmd = Command::new(path);
+    crate::childenv::sanitize(&mut cmd);
     cmd.args(original_args).env_remove("APPIMAGE").env_remove("APPDIR");
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        Err(cmd.exec())
+        if env::var_os("APPIMAGE").is_none() {
+            return Err(cmd.exec());
+        }
+        // Detached: a caller collecting this process's output must not wait
+        // for the app it started.
+        cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).process_group(0);
+        cmd.spawn().map(|_| ())
     }
     #[cfg(not(unix))]
     {

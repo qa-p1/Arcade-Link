@@ -662,8 +662,15 @@ in the error; repair can detach it before retrying. Integration status reports
 these conflicts without writing. Atomic writes replace the final directory
 entry itself and never follow a final symlink.
 Desktop/icon cache refresh commands, when available, are non-fatal.
-Re-exec from the installed path with original args only when launch policy
-requests it. Uninstall reverses receipt paths only, plus caller-supplied
+Install, repair and uninstall hold an exclusive advisory lock on
+`<installs>/<id>.lock` for their whole duration. Relaunch the installed path
+with original args only when launch policy requests it: from an AppImage start
+it detached with the user's environment (AppImage runtime variables and mount
+paths removed) and exit, elsewhere on Unix exec it. "Remove the downloaded
+file" applies only to files in the Downloads folder and never fails a
+committed install. Launchers written by pre-installer releases under the app's
+own desktop or autostart id, running an AppImage named after the app, are the
+app's to replace. Uninstall reverses receipt paths only, plus caller-supplied
 app data folders if removeData is requested. Repair uses receipt paths and
 an explicit moved path, never guesses. Integration status is read-only and
 offers a fish/bash/zsh PATH hint; it never edits shell profiles.

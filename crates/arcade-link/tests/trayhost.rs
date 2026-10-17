@@ -209,3 +209,15 @@ fn vector_deadlines_pin_the_contract() {
     assert_eq!(v["restartGraceMs"].as_u64().unwrap(), RESTART_GRACE.as_millis() as u64);
     assert_eq!(v["sequences"].as_array().unwrap().len(), 7);
 }
+
+#[test]
+fn finishing_a_hosted_watcher_does_not_restore_its_own_icon() {
+    let root = Root::new();
+    let loc = Locations::under(&root.0);
+    let (_server, _host, _doc) = tools(&loc, true);
+    let (w, rx) = watcher(&loc, true);
+    expect(&rx, TrayState::Hosted, Duration::from_secs(1));
+    w.finish();
+    drop(w);
+    assert!(rx.recv_timeout(Duration::from_millis(500)).is_err(), "a quitting app must not register its own item");
+}

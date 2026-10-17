@@ -393,7 +393,9 @@ fn install_update_repair_uninstall_are_isolated_and_receipt_driven() {
         background_args: vec!["--background".into()],
         legacy_desktop_ids: vec!["old-find".into()],
     };
-    let source = root.0.join("download % dollar$.AppImage");
+    // "Remove the downloaded file" only applies inside Downloads.
+    fs::create_dir_all(root.0.join("Downloads")).unwrap();
+    let source = root.0.join("Downloads/download % dollar$.AppImage");
     fs::write(&source, b"version 1").unwrap();
     let r = runtime(source.clone());
     let png = root.0.join("find.png");
@@ -559,4 +561,150 @@ fn integration_failure_restores_current_previous_receipt_and_launchers() {
             !name.ends_with("stage") && !name.ends_with("backup")
         }));
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_dangling_symlink_at_the_destination_is_not_replaced() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"fixture").unwrap();
+    fs::create_dir_all(&e.applications).unwrap();
+    let dest = e.applications.join(&app.filename);
+    std::os::unix::fs::symlink(root.0.join("missing-target"), &dest).unwrap();
+    let r = runtime(source);
+    let error = install(&e, find_options(&app, &r, "1")).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+    assert!(fs::symlink_metadata(&dest).unwrap().file_type().is_symlink());
+    assert!(e.receipts().read(&app.id).unwrap().is_none());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn launchers_escape_newlines_and_route_percent_paths_through_env() {
+    for home in ["home\nwith newline", "home % percent"] {
+        let root = Root::new();
+        let e = Environment::under(&root.0.join(home));
+        let app = find_info();
+        fs::create_dir_all(&e.home).unwrap();
+        let source = e.home.join("download.AppImage");
+        fs::write(&source, b"fixture").unwrap();
+        let r = runtime(source);
+        let receipt = install(&e, find_options(&app, &r, "1")).unwrap();
+        let entry = receipt.integration.desktop_entry.clone().unwrap();
+        let text = fs::read_to_string(&entry).unwrap();
+        for line in text.lines().filter(|l| !l.is_empty()) {
+            assert!(line.starts_with('#') || line.starts_with('[') || line.contains('='), "stray line {line:?} in\n{text}");
+        }
+        let exec = text.lines().find(|l| l.starts_with("Exec=")).unwrap();
+        assert_eq!(exec.starts_with("Exec=env \""), home.contains('%'), "{exec}");
+        if which("desktop-file-validate") {
+            let out = std::process::Command::new("desktop-file-validate").arg(&entry).output().unwrap();
+            let errors = String::from_utf8_lossy(&out.stdout).lines().filter(|l| l.contains("error:")).map(String::from).collect::<Vec<_>>();
+            assert!(errors.is_empty(), "{errors:?}\n{text}");
+        }
+        // The installer still recognizes the entry as its own on reinstall.
+        let again = install(&e, find_options(&app, &r, "2")).unwrap();
+        assert_eq!(again.integration.desktop_entry, Some(entry));
+        assert!(again.integration.skipped.is_empty(), "{:?}", again.integration.skipped);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn which(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_pre_installer_launcher_and_login_entry_are_taken_over() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let downloads = root.0.join("Downloads");
+    fs::create_dir_all(&downloads).unwrap();
+    let legacy = downloads.join("Arcade-Find-0.2.1-x86_64.AppImage");
+    fs::write(&legacy, b"old release").unwrap();
+    let launcher = e.data.join("applications/arcade-find.desktop");
+    let login = e.config.join("autostart/arcade-find.desktop");
+    for path in [&launcher, &login] {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, format!("[Desktop Entry]\nType=Application\nName=Arcade Find\nExec=\"{}\" --background\n", legacy.display())).unwrap();
+    }
+    assert_eq!(legacy_copies(&e, &app), vec![legacy.clone()]);
+    let source = downloads.join("Arcade-Find-x86_64.AppImage");
+    fs::write(&source, b"new release").unwrap();
+    let r = runtime(source.clone());
+    let mut options = find_options(&app, &r, "0.3.1");
+    options.remove_download = true;
+    let receipt = install(&e, options).unwrap();
+    assert!(receipt.integration.skipped.is_empty(), "{:?}", receipt.integration.skipped);
+    assert_eq!(receipt.integration.autostart.as_ref(), Some(&login));
+    for path in [&launcher, &login] {
+        let text = fs::read_to_string(path).unwrap();
+        assert!(text.contains(&receipt.path.display().to_string()) && !text.contains("0.2.1"), "{text}");
+    }
+    assert!(!source.exists() && !legacy.exists(), "downloaded copies are removed when asked");
+    assert!(legacy_copies(&e, &app).is_empty());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn only_files_in_downloads_are_removed_and_stale_stages_are_cleaned() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    fs::create_dir_all(&e.applications).unwrap();
+    let stale = e.applications.join(format!("Arcade-Find.{}.stage", arcade_link::endpoint::new_token().unwrap()));
+    fs::write(&stale, b"half a copy").unwrap();
+    let unrelated = e.applications.join("Arcade-Findings.stage");
+    fs::write(&unrelated, b"not ours").unwrap();
+    let kept = root.0.join("Apps/Arcade-Find-x86_64.AppImage");
+    fs::create_dir_all(kept.parent().unwrap()).unwrap();
+    fs::write(&kept, b"fixture").unwrap();
+    let r = runtime(kept.clone());
+    let mut options = find_options(&app, &r, "1");
+    options.remove_download = true;
+    install(&e, options).unwrap();
+    assert!(kept.exists(), "a file outside Downloads is the user's");
+    assert!(!stale.exists() && unrelated.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn installs_and_uninstalls_of_one_app_take_turns() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"fixture").unwrap();
+    let held = lock(&e, &app.id).unwrap();
+    let (env2, app2, source2) = (e.clone(), app.clone(), source.clone());
+    let worker = std::thread::spawn(move || {
+        let r = runtime(source2);
+        install(&env2, find_options(&app2, &r, "1")).map(|_| ())
+    });
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(e.receipts().read(&app.id).unwrap().is_none(), "install ran while another holder had the lock");
+    drop(held);
+    worker.join().unwrap().unwrap();
+    assert!(e.receipts().read(&app.id).unwrap().is_some());
+    assert!(uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn install_errors_name_the_folder() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    fs::create_dir_all(e.applications.parent().unwrap()).unwrap();
+    fs::write(&e.applications, b"a file where the apps folder goes").unwrap();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"fixture").unwrap();
+    let app = find_info();
+    let r = runtime(source);
+    let error = install(&e, find_options(&app, &r, "1")).unwrap_err().to_string();
+    assert!(error.contains(&e.applications.display().to_string()), "{error}");
 }
