@@ -1274,9 +1274,9 @@ pub fn reexec(path: &Path, original_args: &[std::ffi::OsString]) -> io::Result<(
         if env::var_os("APPIMAGE").is_none() {
             return Err(cmd.exec());
         }
-        // Detached: a caller collecting this process's output must not wait
-        // for the app it started.
-        cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).process_group(0);
+        // Its own process group; output still reaches this process's stdout
+        // and stderr, as with exec (e.g. `--install --silent --status`).
+        cmd.stdin(std::process::Stdio::null()).process_group(0);
         cmd.spawn().map(|_| ())
     }
     #[cfg(not(unix))]
