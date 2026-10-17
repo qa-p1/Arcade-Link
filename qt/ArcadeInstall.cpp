@@ -1073,6 +1073,41 @@ QStringList ArcadeInstall::legacyCopies(const AppInfo &app) const {
 #endif
   return copies;
 }
+bool ArcadeInstall::quitRunning(const Locations &locations, const QString &id,
+                                int timeoutMs, bool *wasRunning, QString *error) {
+  if (wasRunning)
+    *wasRunning = false;
+  Endpoint endpoint;
+  if (!Endpoint::read(locations, id, &endpoint))
+    return true;
+  Error linkError;
+  auto client = Client::connect(locations, id, id + QStringLiteral(".installer"),
+                                QStringLiteral("1"), 2000, &linkError);
+  if (!client)
+    return true; // a stale endpoint file
+  client->call(QStringLiteral("app.quit"), {}, &linkError, 5000);
+  if (!linkError.code.isEmpty())
+    return fail(error, linkError.message);
+  client.reset();
+  if (wasRunning)
+    *wasRunning = true;
+  QElapsedTimer timer;
+  timer.start();
+  while (timer.elapsed() < timeoutMs) {
+    Endpoint current;
+    const bool replaced = !Endpoint::read(locations, id, &current) || current.token != endpoint.token;
+#ifdef Q_OS_LINUX
+    // An app that exits without removing its endpoint is gone too.
+    const bool exited = !QFileInfo::exists(QStringLiteral("/proc/%1").arg(endpoint.pid));
+#else
+    const bool exited = false;
+#endif
+    if (replaced || exited)
+      return true;
+    QThread::msleep(50);
+  }
+  return fail(error, QStringLiteral("%1 did not quit").arg(id));
+}
 bool ArcadeInstall::autostartEnabled(const QString &path) {
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly))

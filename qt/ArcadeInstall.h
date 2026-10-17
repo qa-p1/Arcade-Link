@@ -107,6 +107,11 @@ public:
   static QProcessEnvironment childEnvironment(QProcessEnvironment environment);
   // Older pre-installer copies this app's launcher or login entry still run.
   QStringList legacyCopies(const AppInfo &app) const;
+  // Asks a running copy of `id` to quit over the Link (before its replacement
+  // starts) and waits up to timeoutMs for its endpoint to go away.
+  static bool quitRunning(const Locations &locations, const QString &id,
+                          int timeoutMs, bool *wasRunning = nullptr,
+                          QString *error = nullptr);
   // A login entry that will start the app: present and not switched off with
   // Hidden=true or X-GNOME-Autostart-enabled=false.
   static bool autostartEnabled(const QString &path);
