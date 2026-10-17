@@ -23,6 +23,9 @@ pub struct Strings {
     #[serde(default)]
     pub newer_installed: Option<Dialog>,
     pub managed_by_tools: String,
+    /// Install prompt note when a pre-installer copy is being replaced.
+    #[serde(default)]
+    pub replaces_legacy: Option<String>,
     pub installed_here: String,
     pub macos: Dialog,
     pub path_hint: String,

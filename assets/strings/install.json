@@ -21,6 +21,7 @@
     "buttons": ["Open installed", "Run this copy once"]
   },
   "managedByTools": "Arcade Tools manages updates for {app}.",
+  "replacesLegacy": "This replaces the older copy at {from}; it will be closed.",
   "installedHere": "{app} is installed in your apps folder.",
   "macos": {
     "title": "Move {app} to Applications?",
