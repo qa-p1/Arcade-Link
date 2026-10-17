@@ -744,3 +744,24 @@ fn quit_running_asks_the_running_copy_to_quit_and_waits() {
     assert!(quit_running(&loc, "arcade.find", timeout).unwrap());
     app.join().unwrap();
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn explicit_start_at_login_re_enables_a_switched_off_entry() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"fixture").unwrap();
+    let r = runtime(source);
+    let login = e.config.join("autostart/arcade-find.desktop");
+    fs::create_dir_all(login.parent().unwrap()).unwrap();
+    fs::write(&login, "[Desktop Entry]\nType=Application\nX-Arcade-Id=arcade.find\nExec=/old/find --background\nHidden=true\n").unwrap();
+    install(&e, find_options(&app, &r, "1")).unwrap();
+    assert!(!autostart_enabled(&login), "an install without Start at login keeps the user's switch");
+    assert!(repair(&e, &app, None).is_ok() && !autostart_enabled(&login), "repair keeps it too");
+    let mut options = find_options(&app, &r, "1");
+    options.start_at_login = true;
+    install(&e, options).unwrap();
+    assert!(autostart_enabled(&login), "{}", fs::read_to_string(&login).unwrap());
+}

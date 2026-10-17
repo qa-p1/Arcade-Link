@@ -632,6 +632,23 @@ private slots:
     QVERIFY(!installer.install(options(source, QStringLiteral("1")), &receipt, &error));
     QVERIFY2(error.contains(e.applications), qPrintable(error));
   }
+  void explicitStartAtLoginReEnablesASwitchedOffEntry() {
+    QTemporaryDir root;
+    auto e = ArcadeInstall::Environment::under(root.path());
+    ArcadeInstall installer(e);
+    const auto source = root.filePath(QStringLiteral("download.AppImage"));
+    put(source, "v1");
+    const auto login = QDir(e.config).filePath(QStringLiteral("autostart/arcade-find.desktop"));
+    put(login, "[Desktop Entry]\nType=Application\nX-Arcade-Id=arcade.find\nExec=/old/find --background\nHidden=true\n");
+    QJsonObject receipt;
+    QString error;
+    QVERIFY2(installer.install(options(source, QStringLiteral("1")), &receipt, &error), qPrintable(error));
+    QVERIFY(!ArcadeInstall::autostartEnabled(login));
+    auto opts = options(source, QStringLiteral("1"));
+    opts.startAtLogin = true;
+    QVERIFY2(installer.install(opts, &receipt, &error), qPrintable(error));
+    QVERIFY2(ArcadeInstall::autostartEnabled(login), get(login).constData());
+  }
 #endif
   void childEnvironmentDropsTheAppImageMount() {
     QProcessEnvironment env;

@@ -308,7 +308,7 @@ fn replace_symlink(path: &Path, target: &Path) -> io::Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-fn repair_autostart(path: &Path, app: &AppInfo, executable: &Path, create: bool) -> io::Result<bool> {
+fn repair_autostart(path: &Path, app: &AppInfo, executable: &Path, create: bool, enable: bool) -> io::Result<bool> {
     let old = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == io::ErrorKind::NotFound && !create => return Ok(false),
@@ -328,6 +328,14 @@ fn repair_autostart(path: &Path, app: &AppInfo, executable: &Path, create: bool)
         if line.starts_with('[') {
             in_entry = line == "[Desktop Entry]";
         }
+        // An explicit "Start at login" re-enables an entry the desktop's
+        // startup settings switched off; a repair leaves that choice alone.
+        if enable && in_entry && (line.trim() == "Hidden=true" || line.trim() == "X-GNOME-Autostart-enabled=false") {
+            if line.trim() != "Hidden=true" {
+                lines.push("X-GNOME-Autostart-enabled=true".into());
+            }
+            continue;
+        }
         if in_entry && line.starts_with("Exec=") {
             lines.push(command.clone());
             if !marked {
@@ -343,6 +351,14 @@ fn repair_autostart(path: &Path, app: &AppInfo, executable: &Path, create: bool)
     }
     write(path, (lines.join("\n") + "\n").as_bytes())?;
     Ok(true)
+}
+
+/// Whether a login entry will actually start the app: present and not
+/// switched off with `Hidden=true` or `X-GNOME-Autostart-enabled=false`.
+#[cfg(target_os = "linux")]
+pub fn autostart_enabled(path: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(path) else { return false };
+    entry_value(&text, "Hidden").is_none_or(|v| v.trim() != "true") && entry_value(&text, "X-GNOME-Autostart-enabled").is_none_or(|v| v.trim() != "false")
 }
 
 #[cfg(target_os = "linux")]
@@ -982,7 +998,7 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
         symlink(path, &dest)?;
     }
     if let Some(path) = &integration.autostart {
-        repair_autostart(path, opts.app, &dest, opts.start_at_login)?;
+        repair_autostart(path, opts.app, &dest, opts.start_at_login, opts.start_at_login)?;
     }
     if integration.desktop_entry.is_some() {
         cleanup_duplicates(environment, opts.app, &desktop_entry, &dest)?;
@@ -1063,7 +1079,7 @@ pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>)
         symlink(path, &receipt.path)?;
     }
     if let Some(path) = &receipt.integration.autostart {
-        repair_autostart(path, app, &receipt.path, true)?;
+        repair_autostart(path, app, &receipt.path, true, false)?;
     }
     receipt.updated_at = manifest::now_rfc3339();
     environment.receipts().write(&receipt)?;

@@ -107,6 +107,9 @@ public:
   static QProcessEnvironment childEnvironment(QProcessEnvironment environment);
   // Older pre-installer copies this app's launcher or login entry still run.
   QStringList legacyCopies(const AppInfo &app) const;
+  // A login entry that will start the app: present and not switched off with
+  // Hidden=true or X-GNOME-Autostart-enabled=false.
+  static bool autostartEnabled(const QString &path);
   // Whether `path` is inside the user's Downloads folder.
   bool isDownload(const QString &path) const;
 

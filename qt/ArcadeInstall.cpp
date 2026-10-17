@@ -663,8 +663,8 @@ bool arcadeInstallSymlink(const QString &path, const QString &target,
   return symlink(path, target, error);
 }
 static bool autostart(const QString &path, const ArcadeInstall::AppInfo &app,
-                      const QString &executable, bool create, bool *written,
-                      QString *error) {
+                      const QString &executable, bool create, bool enable,
+                      bool *written, QString *error) {
   if (written)
     *written = false;
   QFile file(path);
@@ -693,6 +693,16 @@ static bool autostart(const QString &path, const ArcadeInstall::AppInfo &app,
     auto &line = lines[i];
     if (line.startsWith(QLatin1Char('[')))
       main = line == u"[Desktop Entry]";
+    // An explicit "Start at login" re-enables an entry the desktop's startup
+    // settings switched off; a repair leaves that choice alone.
+    if (enable && main && line.trimmed() == u"Hidden=true") {
+      lines.removeAt(i--);
+      continue;
+    }
+    if (enable && main && line.trimmed() == u"X-GNOME-Autostart-enabled=false") {
+      line = QStringLiteral("X-GNOME-Autostart-enabled=true");
+      continue;
+    }
     if (main && line.startsWith(u"Exec=") && !replaced) {
       line = QStringLiteral("Exec=") + execLine(executable, app.backgroundArgs);
       replaced = true;
@@ -1063,6 +1073,14 @@ QStringList ArcadeInstall::legacyCopies(const AppInfo &app) const {
 #endif
   return copies;
 }
+bool ArcadeInstall::autostartEnabled(const QString &path) {
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly))
+    return false;
+  const auto text = QString::fromUtf8(file.readAll());
+  return entryValue(text, QStringLiteral("Hidden")).trimmed() != u"true" &&
+         entryValue(text, QStringLiteral("X-GNOME-Autostart-enabled")).trimmed() != u"false";
+}
 bool ArcadeInstall::isDownload(const QString &path) const {
 #ifdef Q_OS_LINUX
   return inside(canonical(path), canonical(downloadDir(m_environment)));
@@ -1387,7 +1405,8 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
       !symlink(cli, dest, error))
     return false;
   if (integration.value(QStringLiteral("autostart")).isString() &&
-      !autostart(autoPath, opts.app, dest, opts.startAtLogin, nullptr, error))
+      !autostart(autoPath, opts.app, dest, opts.startAtLogin, opts.startAtLogin,
+                 nullptr, error))
     return false;
   for (const auto &path : stale)
     if (!removeFile(path, error))
@@ -1496,7 +1515,7 @@ bool ArcadeInstall::repair(const AppInfo &app, const QString &movedTo,
   const auto autoPath =
       integration.value(QStringLiteral("autostart")).toString();
   if (!autoPath.isEmpty() &&
-      !autostart(autoPath, app, exe, true, nullptr, error))
+      !autostart(autoPath, app, exe, true, false, nullptr, error))
     return false;
   receipt.insert(QStringLiteral("updatedAt"), nowRfc3339());
   if (!m_environment.receipts().write(receipt, error))
