@@ -708,3 +708,36 @@ fn install_errors_name_the_folder() {
     let error = install(&e, find_options(&app, &r, "1")).unwrap_err().to_string();
     assert!(error.contains(&e.applications.display().to_string()), "{error}");
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn quit_running_asks_the_running_copy_to_quit_and_waits() {
+    use arcade_link::{Action, Handler, InvokeContext, InvokeRequest, LinkError, PeerInfo, Reply, Server, ServerConfig};
+    use std::sync::{mpsc, Arc, Mutex};
+    struct App(Mutex<mpsc::Sender<()>>);
+    impl Handler for App {
+        fn describe(&self) -> Vec<Action> {
+            vec![]
+        }
+        fn invoke(&self, _: InvokeRequest, _: &InvokeContext) -> Result<Reply, LinkError> {
+            Err(LinkError::unsupported("no actions"))
+        }
+        fn quit(&self) -> Result<(), LinkError> {
+            let _ = self.0.lock().unwrap().send(());
+            Ok(())
+        }
+    }
+    let root = Root::new();
+    let loc = arcade_link::Locations::under(&root.0);
+    let timeout = std::time::Duration::from_secs(5);
+    assert!(!quit_running(&loc, "arcade.find", timeout).unwrap(), "nothing is running");
+    let (tx, rx) = mpsc::channel();
+    let server = Server::start(ServerConfig { app: PeerInfo { id: "arcade.find".into(), version: "0.3.0".into() }, locations: loc.clone() }, Arc::new(App(Mutex::new(tx))))
+        .unwrap();
+    let app = std::thread::spawn(move || {
+        rx.recv().unwrap();
+        drop(server); // the app's normal exit removes its endpoint
+    });
+    assert!(quit_running(&loc, "arcade.find", timeout).unwrap());
+    app.join().unwrap();
+}

@@ -19,6 +19,9 @@ pub struct Strings {
     pub not_installed: Dialog,
     pub older: Dialog,
     pub same_or_newer: Dialog,
+    /// Running an older file while a newer copy is installed.
+    #[serde(default)]
+    pub newer_installed: Option<Dialog>,
     pub managed_by_tools: String,
     pub installed_here: String,
     pub macos: Dialog,

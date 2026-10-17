@@ -1212,6 +1212,32 @@ pub fn integration_status(environment: &Environment, id: &str, shell: &str) -> i
     Ok(IntegrationStatus { receipt, entries, bin_on_path, path_hint: (!bin_on_path).then(|| path_hint(&environment.bin, shell)), skipped })
 }
 
+/// Asks a running copy of `id` (an older one, before its replacement starts)
+/// to quit over the Link and waits up to `timeout` for its endpoint to go
+/// away. `Ok(false)`: nothing was running. A busy app refuses with an error.
+pub fn quit_running(locations: &crate::Locations, id: &str, timeout: std::time::Duration) -> io::Result<bool> {
+    let me = crate::PeerInfo { id: format!("{id}.installer"), version: env!("CARGO_PKG_VERSION").into() };
+    let Ok(endpoint) = crate::endpoint::read(locations, id) else { return Ok(false) };
+    let mut client = match crate::Client::connect_with(locations, id, &me, std::time::Duration::from_secs(2)) {
+        Ok(client) => client,
+        Err(_) => return Ok(false), // a stale endpoint file
+    };
+    client.call(crate::wire::method::APP_QUIT, serde_json::json!({})).map_err(|e| io::Error::other(e.message))?;
+    drop(client);
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        let replaced = crate::endpoint::read(locations, id).map_or(true, |current| current.token != endpoint.token);
+        // An app that exits without removing its endpoint is gone too.
+        let exited = cfg!(target_os = "linux") && !Path::new(&format!("/proc/{}", endpoint.pid)).exists();
+        let gone = replaced || exited;
+        if gone {
+            return Ok(true);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    Err(io::Error::new(io::ErrorKind::TimedOut, format!("{id} did not quit")))
+}
+
 /// Starts the installed copy with the original args. From an AppImage (and on
 /// Windows) it starts a detached successor and returns `Ok`, and the caller
 /// exits: exec would keep the downloaded image mounted until the app quits.

@@ -16,6 +16,11 @@ R"arcade_install({
     "title": "{app} {version} is already installed.",
     "buttons": ["Open installed", "Run this copy once"]
   },
+  "newerInstalled": {
+    "title": "A newer {app} is already installed.",
+    "body": "The installed copy is {version}; this file is the older {from}.",
+    "buttons": ["Open installed", "Run this copy once"]
+  },
   "managedByTools": "Arcade Tools manages updates for {app}.",
   "installedHere": "{app} is installed in your apps folder.",
   "macos": {
