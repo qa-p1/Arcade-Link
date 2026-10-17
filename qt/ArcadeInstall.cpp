@@ -1213,9 +1213,6 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
     error->clear();
   if (!m_environment.validate(error) || !appValid(opts.app, error))
     return false;
-  AppLock lock;
-  if (!lock.acquire(m_environment.receipts(), opts.app.id, error))
-    return false;
   Detection d;
   if (!detect(opts.app.id, opts.runtime, &d, error))
     return false;
@@ -1225,6 +1222,12 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
       (opts.managedBy != u"self" && opts.managedBy != u"tools"))
     return fail(error,
                 QStringLiteral("version, channel and managedBy are required"));
+  // Refusals above leave no trace; everything below runs under the lock,
+  // starting from a fresh read of the receipt.
+  AppLock lock;
+  if (!lock.acquire(m_environment.receipts(), opts.app.id, error) ||
+      !detect(opts.app.id, opts.runtime, &d, error))
+    return false;
   const auto source = d.runningFrom;
   if (!QDir::isAbsolutePath(source) || !QFileInfo(source).isFile())
     return fail(error, QStringLiteral("source must be an absolute file"));
@@ -1498,11 +1501,14 @@ bool ArcadeInstall::repair(const AppInfo &app, const QString &movedTo,
 #else
   if (!m_environment.validate(error) || !appValid(app, error))
     return false;
-  AppLock lock;
-  if (!lock.acquire(m_environment.receipts(), app.id, error))
-    return false;
   QJsonObject receipt;
   if (!m_environment.receipts().read(app.id, &receipt, error))
+    return false;
+  if (receipt.isEmpty())
+    return fail(error, QStringLiteral("no receipt"));
+  AppLock lock;
+  if (!lock.acquire(m_environment.receipts(), app.id, error) ||
+      !m_environment.receipts().read(app.id, &receipt, error))
     return false;
   if (receipt.isEmpty())
     return fail(error, QStringLiteral("no receipt"));

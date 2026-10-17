@@ -830,14 +830,16 @@ impl Drop for InstallRollback {
 pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Result<Receipt> {
     environment.validate()?;
     opts.app.validate()?;
-    let _lock = lock(environment, &opts.app.id)?;
-    let detected = detect(environment, &opts.app.id, opts.runtime)?;
-    if detected.state == State::DevBuild {
+    if detect(environment, &opts.app.id, opts.runtime)?.state == State::DevBuild {
         return Err(input("dev builds cannot be installed"));
     }
     if opts.version.trim().is_empty() || opts.channel.trim().is_empty() {
         return Err(input("version and channel are required"));
     }
+    // Refusals above leave no trace; everything below runs under the lock,
+    // starting from a fresh read of the receipt.
+    let _lock = lock(environment, &opts.app.id)?;
+    let detected = detect(environment, &opts.app.id, opts.runtime)?;
     let source = detected.running_from;
     if !source.is_absolute() || !source.is_file() {
         return Err(input("source must be an absolute file"));
@@ -1043,6 +1045,7 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
 pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>) -> io::Result<Receipt> {
     environment.validate()?;
     app.validate()?;
+    environment.receipts().read(&app.id)?.ok_or_else(|| input("no receipt"))?;
     let _lock = lock(environment, &app.id)?;
     let mut receipt = environment.receipts().read(&app.id)?.ok_or_else(|| input("no receipt"))?;
     receipt.validate_native_paths()?;
