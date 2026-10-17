@@ -103,6 +103,16 @@ pub fn sanitize(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
+/// [`sanitize`], unless `program` lives inside this process's own AppImage
+/// mount: helpers shipped in the same image need its library paths.
+pub fn sanitize_for<'a>(cmd: &'a mut Command, program: &Path) -> &'a mut Command {
+    let own = std::env::var_os("APPDIR").is_some_and(|dir| !dir.is_empty() && program.starts_with(Path::new(&dir)));
+    if !own {
+        sanitize(cmd);
+    }
+    cmd
+}
+
 /// The sanitized environment as a whole, for spawn APIs that take a full
 /// environment instead of a [`Command`].
 pub fn sanitized_vars() -> Vec<(OsString, OsString)> {
