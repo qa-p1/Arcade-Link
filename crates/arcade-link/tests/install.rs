@@ -732,8 +732,11 @@ fn quit_running_asks_the_running_copy_to_quit_and_waits() {
     let timeout = std::time::Duration::from_secs(5);
     assert!(!quit_running(&loc, "arcade.find", timeout).unwrap(), "nothing is running");
     let (tx, rx) = mpsc::channel();
-    let server = Server::start(ServerConfig { app: PeerInfo { id: "arcade.find".into(), version: "0.3.0".into() }, locations: loc.clone() }, Arc::new(App(Mutex::new(tx))))
-        .unwrap();
+    let server = Server::start(
+        ServerConfig { app: PeerInfo { id: "arcade.find".into(), version: "0.3.0".into() }, locations: loc.clone() },
+        Arc::new(App(Mutex::new(tx))),
+    )
+    .unwrap();
     let app = std::thread::spawn(move || {
         rx.recv().unwrap();
         drop(server); // the app's normal exit removes its endpoint
