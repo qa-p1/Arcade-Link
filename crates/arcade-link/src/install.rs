@@ -1150,6 +1150,12 @@ pub fn uninstall(environment: &Environment, id: &str, opts: UninstallOptions<'_>
             remove_file(cli)?;
         }
     }
+    for command in &receipt.integration.commands {
+        // Only a link to this installation: never another program's command.
+        if within_root(command, &environment.bin).is_ok() && fs::read_link(command).is_ok_and(|target| target == receipt.path) {
+            remove_file(command)?;
+        }
+    }
     remove_installation(&receipt.path)?;
     if let Some(previous) = &receipt.previous {
         remove_installation(&previous.path)?;
