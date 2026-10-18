@@ -8,6 +8,10 @@
 //! [`sanitize`] removes exactly that: mount entries from path lists, the
 //! variables only the AppImage tooling sets, and a working directory inside
 //! the mount. The user's own values are kept.
+//!
+//! [`on_startup`] undoes what the launcher leaves on the app itself: open
+//! handles on the mount that every child would inherit, and a working
+//! directory inside the mount.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -40,6 +44,61 @@ fn in_mount(entry: &str, appdir: Option<&str>) -> bool {
         let dir = dir.trim_end_matches('/');
         !dir.is_empty() && (entry == dir || entry.starts_with(&format!("{dir}/")))
     }) || entry.split('/').any(|part| part.starts_with(".mount_"))
+}
+
+/// Undoes what an AppImage's launcher leaves on this process. Call it first
+/// thing in `main`; outside an AppImage it changes nothing.
+///
+/// - The type-2 runtime gives the app an open handle on its mount (fd 1023)
+///   that isn't close-on-exec, and libraries can leave files in the mount
+///   open too. Every program the app started inherited them, so a child
+///   that outlives the app (the installed copy, a lean restart, another
+///   Arcade app) kept the mount busy, and the old runtime and its mount
+///   never went away. [`release_mount_handles`] makes them close-on-exec.
+/// - linuxdeploy's `AppRun` changes into `$APPDIR/usr`, so a relative path
+///   on the command line resolved inside the mount. The working directory
+///   goes back to `$OWD`, where the user started the app.
+pub fn on_startup() {
+    release_mount_handles();
+    let (Some(owd), Ok(current)) = (std::env::var_os("OWD"), std::env::current_dir()) else {
+        return;
+    };
+    let appdir = std::env::var("APPDIR").ok();
+    if !owd.is_empty() && in_mount(&current.to_string_lossy(), appdir.as_deref()) {
+        let _ = std::env::set_current_dir(owd);
+    }
+}
+
+/// Marks this process's open handles on an AppImage mount (`$APPDIR` or any
+/// runtime's `.mount_*` directory) close-on-exec, so programs it starts
+/// don't keep the mount busy. [`sanitize`] calls it as well; it is cheap and
+/// idempotent. Linux only: elsewhere there are no such mounts.
+pub fn release_mount_handles() {
+    #[cfg(target_os = "linux")]
+    {
+        let appdir = std::env::var("APPDIR").ok();
+        let Ok(entries) = std::fs::read_dir("/proc/self/fd") else {
+            return;
+        };
+        let fds: Vec<i32> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let fd: i32 = entry.file_name().to_str()?.parse().ok()?;
+                let target = std::fs::read_link(entry.path()).ok()?;
+                (fd > 2 && in_mount(&target.to_string_lossy(), appdir.as_deref())).then_some(fd)
+            })
+            .collect();
+        for fd in fds {
+            // SAFETY: F_GETFD/F_SETFD only read and set this descriptor's
+            // flags; a descriptor closed meanwhile makes them fail harmlessly.
+            unsafe {
+                let flags = libc::fcntl(fd, libc::F_GETFD);
+                if flags >= 0 && flags & libc::FD_CLOEXEC == 0 {
+                    libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
+                }
+            }
+        }
+    }
 }
 
 /// The changes [`sanitize`] makes, computed from `vars` (normally
@@ -86,6 +145,7 @@ pub fn working_directory(current: &Path, home: Option<&Path>, appdir: Option<&st
 /// Applies [`changes`] for this process's environment to `cmd`. Call it before
 /// setting the child's own variables: later `cmd.env` calls still win.
 pub fn sanitize(cmd: &mut Command) -> &mut Command {
+    release_mount_handles();
     let vars = std::env::vars_os().filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)));
     for (key, value) in changes(vars) {
         match value {
@@ -106,6 +166,7 @@ pub fn sanitize(cmd: &mut Command) -> &mut Command {
 /// [`sanitize`], unless `program` lives inside this process's own AppImage
 /// mount: helpers shipped in the same image need its library paths.
 pub fn sanitize_for<'a>(cmd: &'a mut Command, program: &Path) -> &'a mut Command {
+    release_mount_handles();
     let own = std::env::var_os("APPDIR").is_some_and(|dir| !dir.is_empty() && program.starts_with(Path::new(&dir)));
     if !own {
         sanitize(cmd);
@@ -116,6 +177,7 @@ pub fn sanitize_for<'a>(cmd: &'a mut Command, program: &Path) -> &'a mut Command
 /// The sanitized environment as a whole, for spawn APIs that take a full
 /// environment instead of a [`Command`].
 pub fn sanitized_vars() -> Vec<(OsString, OsString)> {
+    release_mount_handles();
     let mut vars: Vec<(OsString, OsString)> = std::env::vars_os().collect();
     let utf8 = vars.iter().filter_map(|(k, v)| Some((k.to_str()?.to_owned(), v.to_str()?.to_owned()))).collect::<Vec<_>>();
     for (key, value) in changes(utf8) {
@@ -179,6 +241,38 @@ mod tests {
     fn keeps_a_user_theme_when_the_gtk_hook_did_not_run() {
         let env = apply(&[("APPIMAGE", "/a/X.AppImage"), ("APPDIR", "/tmp/.mount_X"), ("GTK_THEME", "Yaru-dark")]);
         assert_eq!(env, vec![("GTK_THEME".into(), "Yaru-dark".into())]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn children_do_not_inherit_handles_on_a_mount() {
+        use std::ffi::CString;
+        let mount = std::env::temp_dir().join(format!(".mount_ArcadeTest{}", std::process::id()));
+        std::fs::create_dir_all(&mount).unwrap();
+        let other = std::env::temp_dir().join(format!("arcade-childenv-{}", std::process::id()));
+        std::fs::create_dir_all(&other).unwrap();
+        // What the AppImage runtime does: an inheritable handle on the mount.
+        let open = |dir: &Path| {
+            let path = CString::new(dir.to_str().unwrap()).unwrap();
+            // SAFETY: a plain open(2) of a directory we just created.
+            let fd = unsafe { libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY) };
+            assert!(fd > 2);
+            fd
+        };
+        let (on_mount, elsewhere) = (open(&mount), open(&other));
+        release_mount_handles();
+        // What the child holds: the targets of the shell's own descriptors.
+        let listing = Command::new("sh").args(["-c", r#"for f in /proc/$$/fd/*; do readlink "$f"; done"#]).output().unwrap();
+        let seen = String::from_utf8_lossy(&listing.stdout).into_owned();
+        assert!(!seen.contains(mount.to_str().unwrap()), "the child inherited the mount handle:\n{seen}");
+        assert!(seen.contains(other.to_str().unwrap()), "other handles are left alone:\n{seen}");
+        // SAFETY: closing the descriptors opened above.
+        unsafe {
+            libc::close(on_mount);
+            libc::close(elsewhere);
+        }
+        let _ = std::fs::remove_dir(&mount);
+        let _ = std::fs::remove_dir(&other);
     }
 
     #[test]

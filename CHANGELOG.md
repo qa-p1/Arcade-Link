@@ -5,6 +5,15 @@ immutable tag; a new tag never changes the wire format.
 
 ## Unreleased
 
+- `childenv::on_startup` (Qt: `onStartup`), called first thing in each app's
+  `main`: an AppImage's open handles on its mount (the runtime's fd 1023 and
+  files libraries leave open) become close-on-exec, and the working directory
+  goes back to `$OWD`. Programs an app started inherited those handles, so a
+  child that outlived it (the installed copy after an install from Downloads,
+  a lean restart, another Arcade app) kept the old mount busy and its runtime
+  never exited; and relative command-line paths resolved inside the mount.
+  `release_mount_handles`/`releaseMountHandles` also runs before every launch
+  Link makes.
 - Install, repair and uninstall of one app take a per-app lock
   (`<installs>/<id>.lock`, the same file and advisory lock in Rust and Qt), so
   a reinstall and an uninstall can no longer interleave into a "successful"
