@@ -1,8 +1,9 @@
 //! A log file for an app that runs without a terminal.
 //!
 //! Started from the launcher, at login or by Tools, an app's stderr often
-//! goes nowhere (`/dev/null`, or no handle on Windows), so its warnings and
-//! errors were lost although its manifest advertised a log folder.
+//! goes nowhere (`/dev/null`, or `NUL` or no handle on Windows), so its
+//! warnings and errors were lost although its manifest advertised a log
+//! folder.
 //! [`capture_stderr`] sends that stderr to `<dir>/<name>.log` instead,
 //! keeping one older file (`<name>.log.1`) once the log passes
 //! [`MAX_BYTES`]. A terminal, a file, a pipe or the session journal keeps
@@ -39,9 +40,9 @@ pub fn stderr_is_terminal() -> bool {
     }
 }
 
-/// Whether stderr is discarded: `/dev/null` or closed on Unix, no handle on
-/// Windows. Anything else (a terminal, a file, a pipe, the journal) is read
-/// by someone.
+/// Whether stderr is discarded: `/dev/null` or closed on Unix, `NUL` or no
+/// handle on Windows. Anything else (a terminal, a file, a pipe, the
+/// journal) is read by someone.
 pub fn stderr_goes_nowhere() -> bool {
     #[cfg(unix)]
     {
@@ -55,10 +56,17 @@ pub fn stderr_goes_nowhere() -> bool {
     }
     #[cfg(windows)]
     {
-        use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE};
+        use windows_sys::Win32::Storage::FileSystem::{GetFileType, FILE_TYPE_CHAR};
+        use windows_sys::Win32::System::Console::{GetConsoleMode, GetStdHandle, STD_ERROR_HANDLE};
         // SAFETY: GetStdHandle only reads the process's standard handle.
         let handle = unsafe { GetStdHandle(STD_ERROR_HANDLE) };
-        handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE
+        if handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+            return true;
+        }
+        // NUL is a character device that, unlike a console, has no console mode.
+        let mut mode = 0;
+        // SAFETY: both calls only inspect a valid handle.
+        unsafe { GetFileType(handle) == FILE_TYPE_CHAR && GetConsoleMode(handle, &mut mode) == 0 }
     }
     #[cfg(not(any(unix, windows)))]
     {
