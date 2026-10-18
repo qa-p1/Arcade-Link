@@ -43,6 +43,10 @@ pub struct Integration {
     pub autostart: Option<PathBuf>,
     #[serde(default)]
     pub uninstaller: Option<PathBuf>,
+    /// More terminal commands the app linked to its installation (Box's
+    /// `arcade-box` beside `arcade-desktop`). Removed with it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commands: Vec<PathBuf>,
     /// Conflicting entries left untouched. These are diagnostic paths, never
     /// owned paths and never inputs to repair or uninstall.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

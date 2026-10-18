@@ -389,6 +389,8 @@ pub fn launch_and_connect(locations: &Locations, manifest: &Manifest, me: &PeerI
 /// Starts a process that outlives the caller, with no inherited stdio.
 pub fn spawn_detached(executable: &str, args: &[String]) -> std::io::Result<()> {
     let mut cmd = Command::new(executable);
+    // Another app gets the user's environment, not this AppImage's runtime.
+    crate::childenv::sanitize_for(&mut cmd, std::path::Path::new(executable));
     cmd.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(unix)]
     {

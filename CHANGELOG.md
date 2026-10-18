@@ -3,6 +3,39 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
+## Unreleased
+
+- Install, repair and uninstall of one app take a per-app lock
+  (`<installs>/<id>.lock`, the same file and advisory lock in Rust and Qt), so
+  a reinstall and an uninstall can no longer interleave into a "successful"
+  install with no executable. Stale `.stage` copies from a killed installer are
+  removed under that lock.
+- A dangling symlink at the install destination counts as an existing entry
+  and is never replaced without a receipt.
+- Launcher `Exec` lines escape newlines/tabs, and paths containing `%` run
+  through `env` (GLib checks the program before expanding `%%`, so a `%` in
+  HOME broke every launcher). Ownership checks read both forms.
+- Launchers and login entries written by pre-installer releases (e.g.
+  `ArcadeLens-0.1.1-linux-x86_64.AppImage` under the app's own desktop id) are
+  taken over instead of skipped; the older copy's processes are asked to quit
+  and, with "Remove the downloaded file", a copy in Downloads is removed.
+  `install::legacy_copies`/`legacyCopies` lists them for prompts.
+- "Remove the downloaded file" only ever removes a file inside the Downloads
+  folder (`XDG_DOWNLOAD_DIR`), and failing to remove it after the receipt is
+  committed no longer reports the install as failed.
+- Install errors name the folder involved.
+- `reexec` from an AppImage starts the installed copy detached and returns, so
+  the downloaded image's mount goes away; the successor gets the user's
+  environment (`childenv`). New `childenv::sanitize` strips AppImage runtime
+  variables and mount paths for any program an app starts; Qt has
+  `ArcadeInstall::childEnvironment`.
+- One-shot calls honour cancellation while a provider streams progress, and
+  stop waiting 250 ms after the final response.
+- `TrayHostWatcher::finish` (Qt `ArcadeTrayHost::finish`) stops without
+  restoring the app's own icon, for quitting apps.
+- Qt: the `/tmp/arcade-<uid>` socket fallback refuses a folder that is not
+  private to the user, like the Rust transport.
+
 ## 0.3.0 — 2026-10-11
 
 - Adds optional settings, restart, menu, menu invocation, shortcut rebinding

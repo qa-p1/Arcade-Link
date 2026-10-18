@@ -20,6 +20,7 @@
 
 pub mod accelerator;
 pub mod app;
+pub mod childenv;
 pub mod client;
 pub mod content;
 pub mod endpoint;
@@ -29,6 +30,7 @@ pub mod error;
 pub mod handoff;
 #[cfg(feature = "install")]
 pub mod install;
+pub mod logs;
 pub mod manifest;
 pub mod oneshot;
 pub mod paths;

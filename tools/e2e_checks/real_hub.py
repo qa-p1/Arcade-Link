@@ -128,8 +128,10 @@ def _install_case(app):
             for path in owned + icons:
                 assert not path.exists() and not path.is_symlink(), path
 
-            # Explicit install without --no-launch must re-exec from the durable
-            # package. Its manifest, not an inferred launcher, proves the path.
+            # Explicit install without --no-launch must relaunch from the durable
+            # package: the downloaded image starts the installed copy and exits,
+            # so its own mount goes away. The manifest, not an inferred
+            # launcher, proves the path.
             shutil.copy2(artifact, source)
             settings = child.root / 'find/config/settings.json'
             settings.parent.mkdir(parents=True, exist_ok=True)
@@ -137,7 +139,7 @@ def _install_case(app):
             with (child.root / f'{app}.log').open('ab') as log:
                 p = subprocess.Popen([str(source), '--install', '--silent'],
                                      env=dict(child.env, APPIMAGE_EXTRACT_AND_RUN='1'), stdout=log, stderr=log, start_new_session=True)
-            child.procs[app] = p
+            assert p.wait(timeout=60) == 0, f'{app} install exited {p.returncode}; log:\n{child.log(app)}'
             child.wait_running(app)
             current = receipt(child, app)
             manifest = json.loads((child.root / f'arcade/apps/{app}.json').read_text(encoding='utf-8'))

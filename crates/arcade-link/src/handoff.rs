@@ -109,6 +109,17 @@ pub fn read_text(c: &Content) -> io::Result<String> {
     }
 }
 
+/// The HTML of `text/rich`, inline or handed off as a file in `htmlPath`.
+pub fn read_html(c: &Content) -> io::Result<Option<String>> {
+    if c.kind != "text/rich" {
+        return Ok(None);
+    }
+    if let Some(html) = &c.html {
+        return Ok(Some(html.clone()));
+    }
+    c.html_path.as_ref().map(std::fs::read_to_string).transpose()
+}
+
 /// Removes handoff directories older than [`MAX_AGE`]; returns how many.
 /// One directory listing: call it off the startup path.
 pub fn cleanup_stale(locations: &Locations) -> usize {
@@ -157,6 +168,23 @@ mod tests {
         let kept = h.keep();
         assert!(kept.exists());
         assert_eq!(cleanup_stale(&loc), 0);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn rich_html_inline_or_in_a_handoff_file() {
+        let root = std::env::temp_dir().join(format!("arcade-link-html-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("clipboard.html");
+        std::fs::write(&file, "<b>big</b>").unwrap();
+        let sent = serde_json::json!({"type": "text/rich", "path": "/t.txt", "htmlPath": file, "owner": "arcade.wheel"});
+        let c: Content = serde_json::from_value(sent.clone()).unwrap();
+        assert_eq!(read_html(&c).unwrap().as_deref(), Some("<b>big</b>"));
+        assert_eq!(serde_json::to_value(&c).unwrap(), sent);
+        assert_eq!(c.byte_size(), 10);
+        let inline = Content { html: Some("<i>x</i>".into()), ..Content::text("text/rich", "x") };
+        assert_eq!(read_html(&inline).unwrap().as_deref(), Some("<i>x</i>"));
+        assert_eq!(read_html(&Content::plain("x")).unwrap(), None);
         std::fs::remove_dir_all(root).ok();
     }
 }
