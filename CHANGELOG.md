@@ -5,6 +5,11 @@ immutable tag; a new tag never changes the wire format.
 
 ## Unreleased
 
+- `on_startup` (Qt: `onStartup`) now makes every inherited descriptor above
+  stdio close-on-exec (`release_inherited_handles`/`releaseInheritedHandles`),
+  not only handles on mounts. The runtime's keep-alive pipe was still passed
+  to the installed copy after an install from Downloads, so the downloaded
+  image's runtime and mount stayed alive.
 - `childenv::on_startup` (Qt: `onStartup`), called first thing in each app's
   `main`: an AppImage's open handles on its mount (the runtime's fd 1023 and
   files libraries leave open) become close-on-exec, and the working directory

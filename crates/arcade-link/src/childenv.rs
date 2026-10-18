@@ -47,19 +47,22 @@ fn in_mount(entry: &str, appdir: Option<&str>) -> bool {
 }
 
 /// Undoes what an AppImage's launcher leaves on this process. Call it first
-/// thing in `main`; outside an AppImage it changes nothing.
+/// thing in `main`, before the app opens anything itself.
 ///
-/// - The type-2 runtime gives the app an open handle on its mount (fd 1023)
-///   that isn't close-on-exec, and libraries can leave files in the mount
-///   open too. Every program the app started inherited them, so a child
-///   that outlives the app (the installed copy, a lean restart, another
-///   Arcade app) kept the mount busy, and the old runtime and its mount
-///   never went away. [`release_mount_handles`] makes them close-on-exec.
+/// - The type-2 runtime leaves the app two inherited descriptors that aren't
+///   close-on-exec: a handle on its mount (fd 1023) and the read end of its
+///   keep-alive pipe. The runtime unmounts and exits only once every holder
+///   of that pipe has exited, and every program the app started inherited
+///   both, so a child that outlived the app (the installed copy after an
+///   install from Downloads, a lean restart, another Arcade app) kept the
+///   old runtime and its mount alive. [`release_inherited_handles`] makes
+///   every inherited descriptor above stdio close-on-exec: this process
+///   keeps them, its children don't get them.
 /// - linuxdeploy's `AppRun` changes into `$APPDIR/usr`, so a relative path
 ///   on the command line resolved inside the mount. The working directory
 ///   goes back to `$OWD`, where the user started the app.
 pub fn on_startup() {
-    release_mount_handles();
+    release_inherited_handles();
     let (Some(owd), Ok(current)) = (std::env::var_os("OWD"), std::env::current_dir()) else {
         return;
     };
@@ -69,14 +72,27 @@ pub fn on_startup() {
     }
 }
 
+/// Marks every open descriptor above stdio close-on-exec. Called at start
+/// (by [`on_startup`]), those are exactly what this process inherited from
+/// whatever launched it, which it never means to pass on. Linux only.
+pub fn release_inherited_handles() {
+    set_close_on_exec(|_| true);
+}
+
 /// Marks this process's open handles on an AppImage mount (`$APPDIR` or any
 /// runtime's `.mount_*` directory) close-on-exec, so programs it starts
 /// don't keep the mount busy. [`sanitize`] calls it as well; it is cheap and
 /// idempotent. Linux only: elsewhere there are no such mounts.
 pub fn release_mount_handles() {
+    let appdir = std::env::var("APPDIR").ok();
+    set_close_on_exec(|target| in_mount(&target.to_string_lossy(), appdir.as_deref()));
+}
+
+/// Sets FD_CLOEXEC on each descriptor above stdio whose target `select`s.
+#[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
+fn set_close_on_exec(select: impl Fn(&Path) -> bool) {
     #[cfg(target_os = "linux")]
     {
-        let appdir = std::env::var("APPDIR").ok();
         let Ok(entries) = std::fs::read_dir("/proc/self/fd") else {
             return;
         };
@@ -85,7 +101,7 @@ pub fn release_mount_handles() {
             .filter_map(|entry| {
                 let fd: i32 = entry.file_name().to_str()?.parse().ok()?;
                 let target = std::fs::read_link(entry.path()).ok()?;
-                (fd > 2 && in_mount(&target.to_string_lossy(), appdir.as_deref())).then_some(fd)
+                (fd > 2 && select(&target)).then_some(fd)
             })
             .collect();
         for fd in fds {
@@ -273,6 +289,26 @@ mod tests {
         }
         let _ = std::fs::remove_dir(&mount);
         let _ = std::fs::remove_dir(&other);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn children_do_not_inherit_the_keep_alive_pipe() {
+        // What the AppImage runtime does: the app inherits the read end of a
+        // pipe whose last holder exiting lets the runtime unmount.
+        let mut ends = [0; 2];
+        // SAFETY: pipe(2) into a local two-element array.
+        assert_eq!(unsafe { libc::pipe(ends.as_mut_ptr()) }, 0);
+        let inode = std::fs::read_link(format!("/proc/self/fd/{}", ends[0])).unwrap();
+        release_inherited_handles();
+        let listing = Command::new("sh").args(["-c", r#"for f in /proc/$$/fd/*; do readlink "$f"; done"#]).output().unwrap();
+        let seen = String::from_utf8_lossy(&listing.stdout).into_owned();
+        // SAFETY: closing the descriptors opened above.
+        unsafe {
+            libc::close(ends[0]);
+            libc::close(ends[1]);
+        }
+        assert!(!seen.contains(inode.to_str().unwrap()), "the child inherited the pipe:\n{seen}");
     }
 
     #[test]
