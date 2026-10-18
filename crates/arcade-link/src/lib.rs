@@ -30,6 +30,7 @@ pub mod error;
 pub mod handoff;
 #[cfg(feature = "install")]
 pub mod install;
+pub mod logs;
 pub mod manifest;
 pub mod oneshot;
 pub mod paths;
