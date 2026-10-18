@@ -259,9 +259,14 @@ mod tests {
         assert_eq!(env, vec![("GTK_THEME".into(), "Yaru-dark".into())]);
     }
 
+    /// The descriptor tests change flags process-wide; one at a time.
+    #[cfg(target_os = "linux")]
+    static DESCRIPTORS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[cfg(target_os = "linux")]
     #[test]
     fn children_do_not_inherit_handles_on_a_mount() {
+        let _one_at_a_time = DESCRIPTORS.lock().unwrap_or_else(|e| e.into_inner());
         use std::ffi::CString;
         let mount = std::env::temp_dir().join(format!(".mount_ArcadeTest{}", std::process::id()));
         std::fs::create_dir_all(&mount).unwrap();
@@ -294,6 +299,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn children_do_not_inherit_the_keep_alive_pipe() {
+        let _one_at_a_time = DESCRIPTORS.lock().unwrap_or_else(|e| e.into_inner());
         // What the AppImage runtime does: the app inherits the read end of a
         // pipe whose last holder exiting lets the runtime unmount.
         let mut ends = [0; 2];
