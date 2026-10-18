@@ -8,6 +8,7 @@ version = "0.3.0"
 dependencies = [
  "getrandom",
  "interprocess",
+ "libc",
  "notify",
  "serde",
  "serde_json",
