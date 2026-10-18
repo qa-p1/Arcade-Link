@@ -11,7 +11,8 @@ pub const INLINE_TEXT_LIMIT: usize = 256 * 1024;
 ///
 /// `type` is a Link content type (`text/plain`, `file/image`, `folder/reference`,
 /// `structured/color`, `screen/region`, …). Files travel as `path`; text as
-/// `text` (plus `html` for `text/rich`); structured values as `data`.
+/// `text` (plus `html` for `text/rich`); structured values as `data`. Large
+/// text travels in a handoff file in `path`, and its HTML in `htmlPath`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Content {
     #[serde(rename = "type")]
@@ -25,6 +26,9 @@ pub struct Content {
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub html: Option<String>,
+    /// `text/rich` HTML handed off as a file, beside the text in `path`.
+    #[serde(rename = "htmlPath", default, skip_serializing_if = "Option::is_none")]
+    pub html_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
     /// Semantic detail the type alone loses, e.g. `["command"]` for text.
@@ -100,7 +104,8 @@ impl Content {
             return s;
         }
         let files: u64 = self.all_paths().iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum();
-        files + self.text.as_ref().map_or(0, |t| t.len() as u64) + self.html.as_ref().map_or(0, |t| t.len() as u64)
+        let html_file = self.html_path.as_ref().and_then(|p| std::fs::metadata(p).ok()).map_or(0, |m| m.len());
+        files + html_file + self.text.as_ref().map_or(0, |t| t.len() as u64) + self.html.as_ref().map_or(0, |t| t.len() as u64)
     }
 }
 
