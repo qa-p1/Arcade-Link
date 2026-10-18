@@ -1152,7 +1152,7 @@ pub fn uninstall(environment: &Environment, id: &str, opts: UninstallOptions<'_>
     }
     for command in &receipt.integration.commands {
         // Only a link to this installation: never another program's command.
-        if within_root(command, &environment.bin).is_ok() && fs::read_link(command).is_ok_and(|target| target == receipt.path) {
+        if command.parent() == Some(environment.bin.as_path()) && fs::read_link(command).is_ok_and(|target| target == receipt.path) {
             remove_file(command)?;
         }
     }

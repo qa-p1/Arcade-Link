@@ -51,8 +51,7 @@ pub fn stderr_goes_nowhere() -> bool {
         let duplicate = unsafe { BorrowedFd::borrow_raw(2) }.try_clone_to_owned();
         let Ok(duplicate) = duplicate else { return true };
         let Ok(meta) = fs::File::from(duplicate).metadata() else { return true };
-        meta.file_type().is_char_device()
-            && fs::metadata("/dev/null").is_ok_and(|null| null.rdev() == meta.rdev())
+        meta.file_type().is_char_device() && fs::metadata("/dev/null").is_ok_and(|null| null.rdev() == meta.rdev())
     }
     #[cfg(windows)]
     {
