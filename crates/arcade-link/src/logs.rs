@@ -1,10 +1,12 @@
 //! A log file for an app that runs without a terminal.
 //!
-//! Started from the launcher, at login or by Tools, an app's stderr goes
-//! nowhere, so its warnings and errors were lost although its manifest
-//! advertised a log folder. [`capture_stderr`] sends stderr to
-//! `<dir>/<name>.log` instead, keeping one older file (`<name>.log.1`) once
-//! the log passes [`MAX_BYTES`]. In a terminal nothing changes.
+//! Started from the launcher, at login or by Tools, an app's stderr often
+//! goes nowhere (`/dev/null`, or no handle on Windows), so its warnings and
+//! errors were lost although its manifest advertised a log folder.
+//! [`capture_stderr`] sends that stderr to `<dir>/<name>.log` instead,
+//! keeping one older file (`<name>.log.1`) once the log passes
+//! [`MAX_BYTES`]. A terminal, a file, a pipe or the session journal keeps
+//! receiving it.
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -37,11 +39,39 @@ pub fn stderr_is_terminal() -> bool {
     }
 }
 
-/// Redirects stderr to `<dir>/<name>.log` unless it is a terminal. Returns
-/// the log file's path when it did. Call it once, early, from the resident
-/// app (not from command-line subcommands meant for a user's terminal).
+/// Whether stderr is discarded: `/dev/null` or closed on Unix, no handle on
+/// Windows. Anything else (a terminal, a file, a pipe, the journal) is read
+/// by someone.
+pub fn stderr_goes_nowhere() -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::fd::BorrowedFd;
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        // SAFETY: fd 2 is only borrowed for the duplicate below.
+        let duplicate = unsafe { BorrowedFd::borrow_raw(2) }.try_clone_to_owned();
+        let Ok(duplicate) = duplicate else { return true };
+        let Ok(meta) = fs::File::from(duplicate).metadata() else { return true };
+        meta.file_type().is_char_device()
+            && fs::metadata("/dev/null").is_ok_and(|null| null.rdev() == meta.rdev())
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE};
+        // SAFETY: GetStdHandle only reads the process's standard handle.
+        let handle = unsafe { GetStdHandle(STD_ERROR_HANDLE) };
+        handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        false
+    }
+}
+
+/// Redirects stderr to `<dir>/<name>.log` when it would otherwise be lost
+/// ([`stderr_goes_nowhere`]). Returns the log file's path when it did. Call
+/// it once, early, from the resident app.
 pub fn capture_stderr(dir: &Path, name: &str) -> io::Result<Option<PathBuf>> {
-    if stderr_is_terminal() {
+    if !stderr_goes_nowhere() {
         return Ok(None);
     }
     capture_stderr_to(dir, name).map(Some)
@@ -100,7 +130,8 @@ mod tests {
     #[test]
     fn stderr_goes_to_a_rotated_log() {
         if let Some(dir) = std::env::var_os("ARCADE_LOGS_CHILD") {
-            capture_stderr_to(Path::new(&dir), "app").unwrap();
+            // Captured only because stderr is /dev/null here.
+            assert!(capture_stderr(Path::new(&dir), "app").unwrap().is_some());
             eprintln!("written to the log");
             return;
         }
@@ -119,5 +150,23 @@ mod tests {
         assert!(log.contains("app started") && log.contains("written to the log"), "{log}");
         assert_eq!(fs::metadata(dir.join("app.log.1")).unwrap().len(), MAX_BYTES + 1);
         let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A pipe (a terminal, journal or test runner reading stderr) keeps it.
+    #[test]
+    fn stderr_that_someone_reads_is_left_alone() {
+        if std::env::var_os("ARCADE_LOGS_READ_CHILD").is_some() {
+            let dir = std::env::temp_dir().join("arcade-logs-unused");
+            assert!(capture_stderr(&dir, "app").unwrap().is_none());
+            eprintln!("still on stderr");
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "logs::tests::stderr_that_someone_reads_is_left_alone", "--nocapture"])
+            .env("ARCADE_LOGS_READ_CHILD", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("still on stderr"));
     }
 }
