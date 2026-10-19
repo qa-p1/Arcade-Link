@@ -62,14 +62,34 @@ fn in_mount(entry: &str, appdir: Option<&str>) -> bool {
 /// image mounted after the app quits. Programs from anywhere else must not
 /// hold it; [`detach_from_image`] (applied by [`sanitize`]) drops it in
 /// those children.
+///
+/// An app that shows a WebKitGTK webview (Tauri) must call
+/// [`enter_image_dir`] once it has read its command line.
 pub fn on_startup() {
     release_mount_handles();
     let (Some(owd), Ok(current)) = (std::env::var_os("OWD"), std::env::current_dir()) else {
         return;
     };
     let appdir = std::env::var("APPDIR").ok();
-    if !owd.is_empty() && in_mount(&current.to_string_lossy(), appdir.as_deref()) {
-        let _ = std::env::set_current_dir(owd);
+    if !owd.is_empty() && in_mount(&current.to_string_lossy(), appdir.as_deref()) && std::env::set_current_dir(owd).is_ok() {
+        let _ = IMAGE_DIR.set(current);
+    }
+}
+
+/// The directory `AppRun` chose, when [`on_startup`] left it.
+static IMAGE_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Goes back into the directory `AppRun` chose (`$APPDIR/usr`) after
+/// [`on_startup`] left it for the user's. Call it in an app that shows a
+/// WebKitGTK webview, after the command line has been read and before the
+/// first webview: linuxdeploy's GTK plugin rewrites WebKit's helper paths to
+/// `././/lib/…`, relative to that directory, and WebKit aborts the whole app
+/// when it can't start its network process there. Programs the app starts
+/// still begin in the user's home: [`sanitize`] sees to that. Outside an
+/// AppImage, or without [`on_startup`], it changes nothing.
+pub fn enter_image_dir() {
+    if let Some(dir) = IMAGE_DIR.get() {
+        let _ = std::env::set_current_dir(dir);
     }
 }
 
