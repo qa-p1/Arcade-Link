@@ -5,6 +5,13 @@ immutable tag; a new tag never changes the wire format.
 
 ## Unreleased
 
+- `childenv::enter_image_dir`: an app that shows a WebKitGTK webview (Tauri)
+  goes back into `$APPDIR/usr` once it has read its command line.
+  linuxdeploy's GTK plugin points WebKit's helpers at `././/lib/...`, relative
+  to that directory, so after `on_startup` moved the app to `$OWD` every Tauri
+  app aborted on its first webview ("Unable to spawn ... WebKitNetworkProcess").
+  Tools, Box and Look call it; programs they start still begin in the user's
+  home through `sanitize`.
 - Programs from another image (the installed copy, another Arcade app, a
   restart through the AppImage file) inherit nothing above stdio:
   `childenv::detach_from_image` (Qt: `detachFromImage`), applied by
