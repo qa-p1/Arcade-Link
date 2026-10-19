@@ -27,7 +27,8 @@ pub fn run(
     cancel: Option<&AtomicBool>,
 ) -> Result<InvokeResult, LinkError> {
     crate::childenv::release_mount_handles();
-    let mut child = Command::new(executable)
+    let mut command = Command::new(executable);
+    let mut child = crate::childenv::detach_from_image(&mut command)
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
