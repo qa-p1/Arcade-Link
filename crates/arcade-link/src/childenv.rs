@@ -47,22 +47,23 @@ fn in_mount(entry: &str, appdir: Option<&str>) -> bool {
 }
 
 /// Undoes what an AppImage's launcher leaves on this process. Call it first
-/// thing in `main`, before the app opens anything itself.
+/// thing in `main`; outside an AppImage it changes nothing.
 ///
-/// - The type-2 runtime leaves the app two inherited descriptors that aren't
-///   close-on-exec: a handle on its mount (fd 1023) and the read end of its
-///   keep-alive pipe. The runtime unmounts and exits only once every holder
-///   of that pipe has exited, and every program the app started inherited
-///   both, so a child that outlived the app (the installed copy after an
-///   install from Downloads, a lean restart, another Arcade app) kept the
-///   old runtime and its mount alive. [`release_inherited_handles`] makes
-///   every inherited descriptor above stdio close-on-exec: this process
-///   keeps them, its children don't get them.
+/// - The type-2 runtime gives the app an open handle on its mount (fd 1023)
+///   that isn't close-on-exec, and libraries can leave files in the mount
+///   open too; [`release_mount_handles`] makes them close-on-exec.
 /// - linuxdeploy's `AppRun` changes into `$APPDIR/usr`, so a relative path
 ///   on the command line resolved inside the mount. The working directory
 ///   goes back to `$OWD`, where the user started the app.
+///
+/// The runtime's keep-alive pipe stays inheritable on purpose: the runtime
+/// unmounts once every holder of its read end has exited, so a helper this
+/// app starts from its own image (a settings window, a worker) keeps the
+/// image mounted after the app quits. Programs from anywhere else must not
+/// hold it; [`detach_from_image`] (applied by [`sanitize`]) drops it in
+/// those children.
 pub fn on_startup() {
-    release_inherited_handles();
+    release_mount_handles();
     let (Some(owd), Ok(current)) = (std::env::var_os("OWD"), std::env::current_dir()) else {
         return;
     };
@@ -72,11 +73,39 @@ pub fn on_startup() {
     }
 }
 
-/// Marks every open descriptor above stdio close-on-exec. Called at start
-/// (by [`on_startup`]), those are exactly what this process inherited from
-/// whatever launched it, which it never means to pass on. Linux only.
-pub fn release_inherited_handles() {
-    set_close_on_exec(|_| true);
+/// Makes the program `cmd` starts inherit nothing above stdio: in the
+/// child, just before exec, every other descriptor becomes close-on-exec.
+/// Use it for anything that isn't a helper from this app's own image: the
+/// installed copy, another Arcade app, a restart through the AppImage file,
+/// a browser or file manager. Inheriting this app's AppImage descriptors
+/// (above all the runtime's keep-alive pipe) kept the old runtime and its
+/// mount alive for as long as that program ran. [`sanitize`] applies it.
+/// Linux only; elsewhere it changes nothing.
+pub fn detach_from_image(cmd: &mut Command) -> &mut Command {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        // SAFETY: the closure runs in the child between fork and exec and
+        // only makes async-signal-safe calls (close_range, sysconf, fcntl)
+        // on the child's own descriptors.
+        unsafe {
+            cmd.pre_exec(|| {
+                let all = libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, libc::CLOSE_RANGE_CLOEXEC);
+                if all != 0 {
+                    // Kernels before 5.11: one descriptor at a time.
+                    let max = libc::sysconf(libc::_SC_OPEN_MAX).clamp(1024, 65536) as i32;
+                    for fd in 3..max {
+                        let flags = libc::fcntl(fd, libc::F_GETFD);
+                        if flags >= 0 && flags & libc::FD_CLOEXEC == 0 {
+                            libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
+                        }
+                    }
+                }
+                Ok(())
+            });
+        }
+    }
+    cmd
 }
 
 /// Marks this process's open handles on an AppImage mount (`$APPDIR` or any
@@ -162,6 +191,7 @@ pub fn working_directory(current: &Path, home: Option<&Path>, appdir: Option<&st
 /// setting the child's own variables: later `cmd.env` calls still win.
 pub fn sanitize(cmd: &mut Command) -> &mut Command {
     release_mount_handles();
+    detach_from_image(cmd);
     let vars = std::env::vars_os().filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)));
     for (key, value) in changes(vars) {
         match value {
@@ -298,7 +328,7 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn children_do_not_inherit_the_keep_alive_pipe() {
+    fn only_other_programs_lose_the_keep_alive_pipe() {
         let _one_at_a_time = DESCRIPTORS.lock().unwrap_or_else(|e| e.into_inner());
         // What the AppImage runtime does: the app inherits the read end of a
         // pipe whose last holder exiting lets the runtime unmount.
@@ -306,15 +336,23 @@ mod tests {
         // SAFETY: pipe(2) into a local two-element array.
         assert_eq!(unsafe { libc::pipe(ends.as_mut_ptr()) }, 0);
         let inode = std::fs::read_link(format!("/proc/self/fd/{}", ends[0])).unwrap();
-        release_inherited_handles();
-        let listing = Command::new("sh").args(["-c", r#"for f in /proc/$$/fd/*; do readlink "$f"; done"#]).output().unwrap();
-        let seen = String::from_utf8_lossy(&listing.stdout).into_owned();
+        let held = |cmd: &mut Command| {
+            let out = cmd.args(["-c", r#"for f in /proc/$$/fd/*; do readlink "$f"; done"#]).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).contains(inode.to_str().unwrap())
+        };
+        // A helper from this app's own image keeps the image mounted...
+        let own = held(&mut Command::new("sh"));
+        // ...anything else must not.
+        let other = held(detach_from_image(&mut Command::new("sh")));
+        let sanitized = held(sanitize(&mut Command::new("sh")));
         // SAFETY: closing the descriptors opened above.
         unsafe {
             libc::close(ends[0]);
             libc::close(ends[1]);
         }
-        assert!(!seen.contains(inode.to_str().unwrap()), "the child inherited the pipe:\n{seen}");
+        assert!(own, "an own helper must keep the pipe");
+        assert!(!other, "detach_from_image passed the pipe on");
+        assert!(!sanitized, "sanitize passed the pipe on");
     }
 
     #[test]

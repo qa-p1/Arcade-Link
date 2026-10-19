@@ -5,11 +5,15 @@ immutable tag; a new tag never changes the wire format.
 
 ## Unreleased
 
-- `on_startup` (Qt: `onStartup`) now makes every inherited descriptor above
-  stdio close-on-exec (`release_inherited_handles`/`releaseInheritedHandles`),
-  not only handles on mounts. The runtime's keep-alive pipe was still passed
-  to the installed copy after an install from Downloads, so the downloaded
-  image's runtime and mount stayed alive.
+- Programs from another image (the installed copy, another Arcade app, a
+  restart through the AppImage file) inherit nothing above stdio:
+  `childenv::detach_from_image` (Qt: `detachFromImage`), applied by
+  `sanitize`, `spawn_detached`, `reexec`, one-shot invokes and Qt's launches.
+  The runtime's keep-alive pipe was passed to the installed copy after an
+  install from Downloads, so the downloaded image's runtime and mount stayed
+  alive. `on_startup` itself no longer releases that pipe (the previous
+  change did): a helper an app starts from its own image, such as Find's
+  settings window, lost its files when the app quit.
 - `childenv::on_startup` (Qt: `onStartup`), called first thing in each app's
   `main`: an AppImage's open handles on its mount (the runtime's fd 1023 and
   files libraries leave open) become close-on-exec, and the working directory
