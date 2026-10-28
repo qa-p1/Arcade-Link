@@ -18,6 +18,11 @@ engines = ["dep:sha2"]
 install = []
 # OS notifications and a blocking subscription to the tray host.
 trayhost = ["watch"]
+# The design kit for Rust UIs: palette, type/space/size tokens, icons, Inter
+# and the shared format helpers (design/tokens.json; STANDARD.md).
+design = []
+# The design kit applied to egui (Visuals, spacing, fonts).
+design-egui = ["design", "dep:egui"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -26,6 +31,7 @@ interprocess = "2.4"
 getrandom = "0.4"
 notify = { version = "8", optional = true, default-features = false, features = ["macos_fsevent"] }
 sha2 = { version = "0.10", optional = true }
+egui = { version = "0.33", optional = true, default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

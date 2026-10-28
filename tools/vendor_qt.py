@@ -6,7 +6,9 @@
 
 The source is read with git show, so uncommitted edits cannot masquerade as a
 commit pin. Existing files may be replaced only when an earlier VENDORED.json
-owns them. The directory layout supports add_subdirectory(.../qt).
+owns them. The directory layout supports add_subdirectory(.../qt). The QML
+design kit (design/qml/Arcade, with Inter in design/fonts) comes along under
+the same pin.
 """
 import argparse
 import hashlib
@@ -40,7 +42,8 @@ def bundle(destination: Path, revision="HEAD", check=False):
         return old
     commit = git("rev-parse", "--verify", f"{revision}^{{commit}}").decode().strip()
     names = git("ls-tree", "-r", "--name-only", commit).decode().splitlines()
-    names = [n for n in names if n.startswith(("qt/", "spec/vectors/", "fixtures/")) or n in (
+    names = [n for n in names if n.startswith(("qt/", "spec/vectors/", "fixtures/", "design/qml/")) or n in (
+        "design/fonts/InterVariable.ttf", "design/fonts/OFL.txt",
         "SPEC.md", "Cargo.toml", "tools/arcade-release.py", "tools/validate_shortcuts.py",
         "spec/shortcuts.schema.json", "spec/shortcut-sheet.schema.json", "spec/receipt.schema.json",
         "spec/arcade-release.schema.json", "assets/strings/install.json")]

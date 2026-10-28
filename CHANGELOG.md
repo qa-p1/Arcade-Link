@@ -3,7 +3,56 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
-## Unreleased
+## 0.4.0 (2026-10-28)
+
+Arcade design kit; shared app folders and diagnostics; a stricter test harness.
+
+- `design/`: the design kit. `tokens.json` holds every value of
+  `design/STANDARD.md` §2-4 (shared neutrals and status colours, one accent per
+  app, Inter, type scale, spacing, radii, sizes, motion, shadows, icons).
+  `design/generate.py` (stdlib only) writes `css/arcade.css` (Tools 0.3.8's
+  look made reusable, with light/dark/system themes and `[data-app]` accents),
+  `css/icons.ts`, the QML `Arcade` module (`Theme`, `Fonts`, `Icon`,
+  `Format.js`), `dart/arcade_theme.dart` and `arcade_icons.dart`, and the Rust
+  tokens; `--check` fails on stale output, an accent below its contrast pair,
+  a default-shortcut clash or a literal colour in the component CSS. Find
+  moves to lime and Shelf to fuchsia; Tools' light green is `#16884b` (the
+  0.3.8 `#168a4c` gives white text 4.40:1, under the 4.5:1 rule).
+- `design` feature: `arcade_link::design` (`palette(theme, app_id)`, type,
+  space, radius, size and motion consts, `ICONS`, `inter_font_bytes()`,
+  `format`), and `design-egui` with `apply_egui` (Visuals, spacing, Inter).
+- Inter 4.1 variable (`design/fonts`, SIL OFL), the outline icon set
+  (`design/icons`, Tools' icons plus Box's and Look's), the app marks
+  (`design/glyphs`, canonical; `assets/glyphs` keeps generated copies) and
+  every app's launcher icon set (`design/app-icons/make.py`).
+- Shared format helpers (`formatSize`, `formatCount`, `formatDuration`,
+  `formatRelative`) in Rust, TypeScript, QML and Dart with one case file.
+- `design/shortcuts.json`: the default global shortcut of each app.
+- `paths::{app_dirs, legacy_dirs, migrate_app_dirs}` (Qt: `ArcadePaths.h`):
+  `arcade/<app>` config, data and cache folders, every old location per OS
+  (`spec/app-dirs.json`; an entry can name a subfolder, such as `webview` for
+  a Tauri app's old webview storage), and a copy-verify-remove migration that
+  leaves a folder in place on any conflict and is safe to run on every start.
+- `diagnostics::Header` (Qt: `DiagnosticsHeader`): the shared first lines of
+  "Copy diagnostics".
+- `manifest::app_pitch` (Qt: `appPitch`) returns each app's tagline, its README
+  one-liner, so every app describes its peers the same way (STANDARD §8).
+- `manifest::os_identifier` (Qt: `osIdentifier`): an app's `dev.arcade.<App>`
+  bundle id, desktop file name and window class (STANDARD §10).
+- Long socket paths fall back to a private `arcade-<uid>/` under
+  `$XDG_RUNTIME_DIR`, then `$TMPDIR`, then `/tmp` (was always `/tmp`), so
+  isolated runs keep their sockets inside their own root (SPEC §4.1).
+- Test harness: `tools/stress.py` requires a non-empty output file of the
+  expected type (`{}`, `outputs: []` and text-only results no longer pass);
+  `tools/leak.py` checks every result's text, not only exit codes;
+  `tools/real_bench.py` honours `--runs` for the tray hand-back probe. The
+  nightly e2e picks one green run per app, builds each app's development
+  executable at that commit (`tools/fleet_build.py`), lists the skipped checks
+  in the job summary and fails a check whose package or build is missing
+  (`--require-artifacts`).
+- `LICENSE-MIT`, `LICENSE-APACHE` and `rust-toolchain.toml` (1.88); the early
+  plans and 0.3 reports moved to `docs/dev/history/`; links in vendored files
+  are absolute.
 
 - `childenv::enter_image_dir`: an app that shows a WebKitGTK webview (Tauri)
   goes back into `$APPDIR/usr` once it has read its command line.

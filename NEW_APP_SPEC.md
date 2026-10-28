@@ -23,7 +23,7 @@ Read these sources (links work when this file is copied on its own):
   protocol, manifests, content, lifecycle, settings and action contracts.
 - [Link source and integration assets](https://github.com/qa-p1/Arcade-Link):
   Rust crate, Qt module, glyphs, tokens and conformance vectors.
-- [Verification and limitations](https://github.com/qa-p1/Arcade-Link/blob/main/COMPLETION_REPORT.md):
+- [Verification and limitations](https://github.com/qa-p1/Arcade-Link/blob/main/docs/dev/history/COMPLETION_REPORT.md):
   measured behavior and known gaps; historical plans are not implementation proof.
 - The current README, status and Link integration docs of the closest existing
   apps. Inspect the actual manifests and code before copying an example.
@@ -59,6 +59,29 @@ New integrations must use capabilities that actually exist.
   user content; preserve the existing apps' secret and private-mode guards.
 - Do not add cloud services, mobile clients, a plugin system or a workflow
   language merely because another Arcade app has one.
+
+### UI
+
+Every Arcade app follows the shared UI and project standard,
+[`design/STANDARD.md`](https://github.com/qa-p1/Arcade-Link/blob/main/design/STANDARD.md),
+and builds its interface from the design kit in
+[`design/`](https://github.com/qa-p1/Arcade-Link/tree/main/design) at the Link
+tag it pins (see its README for each toolkit):
+
+- the window shell (Template A) for main and settings windows and the overlay
+  (Template B) for quick panels; the standard settings sections, Connected apps
+  page, About section, tray menu and onboarding;
+- kit tokens only: shared neutrals and status colours, the app's own accent
+  (add it to `design/tokens.json`; the generator checks its contrast), Inter,
+  the type scale, spacing, radii and motion. No colour literals in app code;
+- the kit's components and standard controls (shortcut recorder, settings rows,
+  theme picker, pickers, result panel, menus, dialogs, toasts) and the four
+  states (loading, empty, error, populated) wherever data loads;
+- the kit's icons, the app's glyph in `design/glyphs/` and its launcher icon set
+  from `design/app-icons/make.py`; the shared format helpers and the default
+  shortcut in `design/shortcuts.json` (no clash with another app);
+- the `arcade/<app>` folders from `paths::app_dirs`, and the
+  "Copy diagnostics" header from `diagnostics::Header`.
 
 ## 3. Stack and dependency budget
 

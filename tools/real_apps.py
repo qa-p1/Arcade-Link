@@ -162,7 +162,7 @@ def package(app):
     executable = spec['dir'] / spec['bin']
     override = os.environ.get(prefix + '_APPIMAGE') or (str(executable) if executable.suffix == '.AppImage' else None) or (identity or {}).get('path')
     if identity and not override:
-        raise e2e.SkipCheck(f'{app}: {identity["reason"]}')
+        raise e2e.MissingArtifact(f'{app}: {identity["reason"]}')
     candidates = [p for pattern in spec['packages'] for p in spec['dir'].glob(pattern)]
     cache = Path(os.environ.get('ARCADE_ARTIFACT_DIR', str(e2e.CODING.parent.parent / '.cache/arcade-orchestrator/artifacts')))
     slug = app.replace('.', '').replace('-', '')
@@ -171,7 +171,7 @@ def package(app):
                    and p.with_suffix('.AppImage.provenance.json').is_file()]
     path = Path(override).resolve() if override else max(candidates, key=lambda p: p.stat().st_mtime_ns, default=None)
     if not path or not path.is_file():
-        raise e2e.SkipCheck(f'stale or missing build: {app} AppImage in {spec["dir"]}/dist; download a successful main artifact (tools/e2e_artifacts.py) or set {prefix}_APPIMAGE')
+        raise e2e.MissingArtifact(f'stale or missing build: {app} AppImage in {spec["dir"]}/dist; download a successful main artifact (tools/e2e_artifacts.py) or set {prefix}_APPIMAGE')
     provenance = path.with_suffix(path.suffix + '.provenance.json')
     if provenance.is_file():
         identity = json.loads(provenance.read_text(encoding='utf-8'))
@@ -206,7 +206,8 @@ def binary(app):
         try:
             return package(app)
         except e2e.SkipCheck as package_error:
-            raise e2e.SkipCheck(f'{app}: {native_error}; {package_error}') from None
+            kind = e2e.MissingArtifact if isinstance(package_error, e2e.MissingArtifact) else e2e.SkipCheck
+            raise kind(f'{app}: {native_error}; {package_error}') from None
 
 
 def run_app(s, binary, *args, check=True):

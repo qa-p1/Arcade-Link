@@ -20,7 +20,7 @@ from real_apps import (Peer, Releases, binary, call, child_session, driver, flee
 from validate_shortcuts import normalize, validate
 
 
-# Confirmed product defects outside Link (docs/e2e-0.3.md, "Known product
+# Confirmed product defects outside Link (docs/dev/history/e2e-0.3.md, "Known product
 # bugs"). The runner reports XFAIL only when the failure message contains the
 # expected Tools rejection; any other failure, or a pass, still fails the run.
 BACKUP_REJECTED = 'The app settings contained excluded data or exceeded backup limits.'

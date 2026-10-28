@@ -31,7 +31,12 @@ and a small library, not a process.
 - [`spec/vectors/`](spec/vectors): conformance vectors both implementations
   run.
 - [`fixtures/`](fixtures): mock-peer fixtures for each app.
-- [`assets/`](assets): app glyphs and `tokens.json` for integration surfaces.
+- [`design/`](design/README.md): the Arcade design kit (tokens, the CSS, QML,
+  Dart and Rust kits, Inter, icons, app marks and launcher icons, default
+  shortcuts) and [`design/STANDARD.md`](design/STANDARD.md), the UI and project
+  standard every app follows.
+- [`assets/`](assets/README.md): generated copies of the glyphs and the 0.3
+  `tokens.json` keys for older integration surfaces.
 - [`assets/strings/install.json`](assets/strings/install.json): verbatim
   shared first-run strings, exposed through `install::strings`.
 - [`packaging/windows`](packaging/windows/README.md): checksum-pinned Inno
@@ -181,11 +186,11 @@ watchers, a temporary install harness and sibling shortcut documents/sheets.
 Existing real-app groups remain available; their binaries are checked for
 missing/stale builds before use. Interactive app install/tray flows and the
 `tools-hub` group belong to app/Tools adoption. See [current status](docs/STATUS.md) and the
-[v0.3 implementation report](docs/V0.3_REPORT.md) for evidence and limits.
+[v0.3 implementation report](docs/dev/history/V0.3_REPORT.md) for evidence and limits.
 
 The apps currently use the published `v0.2.0` git tag (see the [changelog](CHANGELOG.md));
-Wheel and Shelf vendor the matching Qt module. See the [completed ecosystem plan](ARCADE_ECOSYSTEM_PLAN.md) and
-[completion report](COMPLETION_REPORT.md) for verification results, performance
+Wheel and Shelf vendor the matching Qt module. See the [completed ecosystem plan](docs/dev/history/ARCADE_ECOSYSTEM_PLAN.md) and
+[completion report](docs/dev/history/COMPLETION_REPORT.md) for verification results, performance
 measurements and remaining platform limitations.
 This branch prepares v0.3.0 without moving that tag or publishing a release.
 
@@ -205,3 +210,12 @@ Linux/macOS assets can carry `installArgs: ["--install","--silent"]`.
 Windows portable assets carry `kind: "portable"`; Tools ignores those for
 managed installation. Use `--portable FILE` for an otherwise ambiguous
 portable asset; existing release fields remain unchanged.
+
+## Licence
+
+The code is available under the MIT licence or the Apache License 2.0, at
+your option ([`LICENSE-MIT`](LICENSE-MIT), [`LICENSE-APACHE`](LICENSE-APACHE)).
+The bundled Inter typeface in [`design/fonts/`](design/fonts) is © The Inter
+Project Authors under the SIL Open Font License 1.1
+([`design/fonts/OFL.txt`](design/fonts/OFL.txt)); apps that ship it include
+that file with their licence notices.

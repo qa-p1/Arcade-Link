@@ -116,9 +116,11 @@ pub(crate) fn short_hash(s: &str) -> String {
 /// Where `app_id` listens.
 ///
 /// Unix: `<runtime>/<id>.sock`. If that path is too long for a socket (a
-/// deep `ARCADE_HOME`, or a long macOS `$TMPDIR`), a hashed name in a private
-/// `/tmp/arcade-<uid>/` directory is used instead; the endpoint file records
-/// the real address, so clients never compute it themselves.
+/// deep `ARCADE_HOME`, or a long macOS `$TMPDIR`), a hashed name goes in a
+/// private `arcade-<uid>/` directory under the first of `$XDG_RUNTIME_DIR`,
+/// `$TMPDIR` and `/tmp` that keeps the path short enough (SPEC §4.1), so an
+/// isolated run stays inside its own runtime or temporary root. The endpoint
+/// file records the real address; clients never compute it themselves.
 ///
 /// Windows: `\\.\pipe\arcade-<user-hash>-<id>`, where the hash covers the user
 /// and the runtime directory, so separate `ARCADE_HOME`s never collide.
@@ -142,9 +144,25 @@ pub fn address_for(locations: &Locations, app_id: &str) -> io::Result<Address> {
 
 #[cfg(not(windows))]
 fn short_socket_path(locations: &Locations, app_id: &str) -> io::Result<PathBuf> {
-    let dir = PathBuf::from(format!("/tmp/arcade-{}", crate::paths::user_id()));
-    crate::paths::ensure_private_dir(&dir)?;
-    Ok(dir.join(format!("{}.sock", short_hash(&format!("{}|{app_id}", locations.runtime.display())))))
+    let name = format!("{}.sock", short_hash(&format!("{}|{app_id}", locations.runtime.display())));
+    let folder = format!("arcade-{}", crate::paths::user_id());
+    for base in short_socket_bases() {
+        let dir = base.join(&folder);
+        if dir.join(&name).as_os_str().len() <= MAX_SOCKET_PATH {
+            crate::paths::ensure_private_dir(&dir)?;
+            return Ok(dir.join(name));
+        }
+    }
+    Err(io::Error::new(io::ErrorKind::InvalidInput, "no runtime or temporary folder is short enough for a socket"))
+}
+
+/// Where long socket paths go instead, in order: `$XDG_RUNTIME_DIR`, `$TMPDIR`, `/tmp`.
+#[cfg(not(windows))]
+fn short_socket_bases() -> Vec<PathBuf> {
+    let mut bases: Vec<PathBuf> =
+        ["XDG_RUNTIME_DIR", "TMPDIR"].iter().filter_map(std::env::var_os).filter(|v| !v.is_empty()).map(PathBuf::from).filter(|p| p.is_absolute()).collect();
+    bases.push(PathBuf::from("/tmp"));
+    bases
 }
 
 pub(crate) fn listen(address: &str) -> io::Result<Listener> {
@@ -213,7 +231,9 @@ mod tests {
         let deep = std::env::temp_dir().join("a".repeat(120));
         let a = address_for(&Locations::under(&deep), "arcade.clipboard").unwrap();
         assert!(a.address.len() <= MAX_SOCKET_PATH, "{}", a.address);
-        assert!(a.address.starts_with("/tmp/arcade-"));
+        let folder = format!("arcade-{}", crate::paths::user_id());
+        let first = short_socket_bases().into_iter().map(|b| b.join(&folder)).find(|d| d.as_os_str().len() + 17 <= MAX_SOCKET_PATH).unwrap();
+        assert!(std::path::Path::new(&a.address).starts_with(&first), "{} not under {}", a.address, first.display());
         let b = address_for(&Locations::under(&deep.join("b")), "arcade.clipboard").unwrap();
         assert_ne!(a.address, b.address);
     }

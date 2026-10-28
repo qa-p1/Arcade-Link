@@ -1,12 +1,19 @@
 # Assets
 
-Monochrome glyphs (`glyphs/<arcade-id>.svg`, 16 × 16, `currentColor`) badge
-entries that a peer app contributes ("Quick Look" with Look's eye, "Convert to
-WebP" with Box's cube). `tokens.json` holds the accents, neutrals, radii and
-motion used only by integration surfaces.
+Integration-surface assets that the apps copied before the design kit. The
+canonical copies now live in [`design/`](../design/README.md):
 
-Each app copies what it needs into its own resources (the apps never depend
-on this repository at build time). After changing a glyph, copy it again:
+- `glyphs/<arcade-id>.svg`: generated copies of `design/glyphs/` (16 × 16,
+  `currentColor`), which badge entries a peer app contributes ("Quick Look" with
+  Look's eye, "Convert to WebP" with Box's cube). `glyphs/png/` holds the tray
+  renders (`python3 tools/render_glyphs.py`).
+- `tokens.json`: the 0.3 integration-surface keys (accents, neutrals, radii,
+  motion), generated from `design/tokens.json` with the same keys so existing
+  consumers keep working. New code uses the kit.
+- `strings/install.json`: the shared install prompt copy.
+
+Run `python3 design/generate.py` after changing a glyph or token. Apps that
+still copy these files by hand:
 
 | App | Copy to |
 |---|---|

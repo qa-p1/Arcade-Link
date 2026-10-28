@@ -13,6 +13,9 @@ class VendorTests(unittest.TestCase):
             self.assertIn("qt/ArcadeInstallPlatform.cpp", pin["files"])
             self.assertIn("qt/install-strings.inc", pin["files"])
             self.assertIn("spec/vectors/shortcuts.json", pin["files"])
+            self.assertIn("qt/ArcadePaths.cpp", pin["files"])
+            self.assertIn("design/qml/Arcade/Theme.qml", pin["files"])
+            self.assertIn("design/fonts/InterVariable.ttf", pin["files"])
             self.assertEqual(vendor_qt.bundle(target, check=True), pin)
             (target / "qt/ArcadeLink.cpp").write_text("changed", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "differs from the pin"):

@@ -65,10 +65,25 @@ def outputs_text(result):
     return "\n".join(o.get("text", "") for o in result.get("outputs", []) if isinstance(o, dict))
 
 
-def files_exist(result):
-    return isinstance(result, dict) and all(
-        Path(o["path"]).is_file() and Path(o["path"]).stat().st_size > 0
-        for o in result.get("outputs", []) if isinstance(o, dict) and o.get("path"))
+def produced(kind, magic=None):
+    """A check that passes only with at least one existing, non-empty output
+    file of `kind` (and, if given, starting with `magic`). `{}`, `outputs: []`
+    and text-only results fail."""
+    def check(result):
+        if not isinstance(result, dict):
+            return False
+        for o in result.get("outputs", []):
+            if not isinstance(o, dict) or not o.get("path") or not str(o.get("type", "")).startswith(kind):
+                continue
+            path = Path(o["path"])
+            if path.is_file() and path.stat().st_size > 0 and (magic is None or path.read_bytes()[:len(magic)] == magic):
+                return True
+        return False
+    return check
+
+
+pdf_file = produced("file/pdf", b"%PDF-")
+audio_file = produced("file/audio")
 
 
 # ---- fixtures
@@ -116,10 +131,10 @@ for round_ in (2, 3):
 # ---- Box replaced engines, in parallel
 heavy = []
 for i in range(4):
-    heavy.append((("box", "box:arcade.pdf.convert", "--file", str(odt)), files_exist))
-    heavy.append((("box", "box:arcade.pdf.ocr", "--file", str(scan_pdf)), files_exist))
-    heavy.append((("box", "box:arcade.pdf.images-to-pdf", "--file", str(text_png), "--file", str(text_png)), files_exist))
-    heavy.append((("box", "box:arcade.audio.text-to-speech", "--text", f"Stress run number {i}"), files_exist))
+    heavy.append((("box", "box:arcade.pdf.convert", "--file", str(odt)), pdf_file))
+    heavy.append((("box", "box:arcade.pdf.ocr", "--file", str(scan_pdf)), pdf_file))
+    heavy.append((("box", "box:arcade.pdf.images-to-pdf", "--file", str(text_png), "--file", str(text_png)), pdf_file))
+    heavy.append((("box", "box:arcade.audio.text-to-speech", "--text", f"Stress run number {i}"), audio_file))
 burst("box_replaced_engines_16x4", heavy, 4)
 summary["box_rss_after_load_mib"] = group_rss_mib("arcade.box")
 burst("box_replaced_engines_round2", heavy, 4)

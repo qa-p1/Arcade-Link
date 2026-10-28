@@ -1,0 +1,6 @@
+module Arcade
+singleton Theme 1.0 Theme.qml
+singleton Fonts 1.0 Fonts.qml
+Icon 1.0 Icon.qml
+IconData 1.0 IconData.js
+Format 1.0 Format.js
