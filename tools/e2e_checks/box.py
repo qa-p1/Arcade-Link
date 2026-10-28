@@ -41,7 +41,7 @@ def resident(s):
             f"[Desktop Entry]\nType=Application\nName=Box test browser\nExec={browser} %u\nMimeType=x-scheme-handler/https;x-scheme-handler/http;\nNoDisplay=true\n")
         (Path(s.env["XDG_CONFIG_HOME"]) / "mimeapps.list").write_text(
             "[Default Applications]\nx-scheme-handler/https=box-e2e-browser.desktop\nx-scheme-handler/http=box-e2e-browser.desktop\n")
-        db = s.root / "arcade/dev.arcadebox.app/arcade.sqlite3"
+        db = s.box_data() / "arcade.sqlite3"
         if not db.exists():
             exe = APPS["arcade.box"]["dir"] / APPS["arcade.box"]["bin"]
             initialized = subprocess.run([str(exe), "--arcade-invoke"], env=s.env, capture_output=True, text=True,
@@ -134,7 +134,7 @@ def saved_pipeline_list_and_run_contract(s):
     pipeline = {"id": "link-uppercase", "name": "Link uppercase", "version": 1,
                 "nodes": [{"id": "upper", "toolId": "arcade.text.case", "inputs": [{"kind": "external", "index": 0}],
                            "options": {"mode": "upper"}}], "outputNodes": ["upper"]}
-    db = s.root / "arcade/dev.arcadebox.app/arcade.sqlite3"
+    db = s.box_data() / "arcade.sqlite3"
     with sqlite3.connect(db) as conn:
         conn.execute("INSERT OR REPLACE INTO pipelines(id, version, definition_json) VALUES(?, ?, ?)",
                      (pipeline["id"], 1, json.dumps(pipeline)))
@@ -450,7 +450,7 @@ def connected_apps_real_peers_and_per_peer_toggle(s):
     assert "Use with Box" not in lines, lines
     s.screenshot("box-connected-apps-peers", win)
     ui_click(s, "Use with Arcade Box")
-    db = s.root / "arcade/dev.arcadebox.app/arcade.sqlite3"
+    db = s.box_data() / "arcade.sqlite3"
     with sqlite3.connect(db) as conn:
         disabled = json.loads(conn.execute("SELECT value FROM settings WHERE key='link_disabled_peers'").fetchone()[0])
     assert "arcade.lens" in disabled, disabled
@@ -525,7 +525,7 @@ def screen_ocr_uses_real_lens_selection(s):
 def store_pipeline(s, pipeline):
     resident(s)
     s.kill("arcade.box", signal.SIGTERM)
-    db = s.root / "arcade/dev.arcadebox.app/arcade.sqlite3"
+    db = s.box_data() / "arcade.sqlite3"
     with sqlite3.connect(db) as conn:
         conn.execute("INSERT OR REPLACE INTO pipelines(id,version,definition_json) VALUES(?,?,?)", (pipeline["id"],pipeline["version"],json.dumps(pipeline)))
     resident(s)
@@ -598,7 +598,7 @@ def cross_app_pipeline_real_lens_and_clipboard(s):
         s.start("arcade.lens")
     finally:
         wire.close()
-    db = s.root / "arcade/dev.arcadebox.app/arcade.sqlite3"
+    db = s.box_data() / "arcade.sqlite3"
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT value FROM settings WHERE key=?", ("pipeline_effect_approval."+definition["id"],)).fetchone()
     clipboard_stop(s)
@@ -608,7 +608,7 @@ def cross_app_pipeline_real_lens_and_clipboard(s):
         representation.get("name", "").endswith(".webp") and representation.get("size", 0) > 0
         for clip in clips for representation in clip.get("representations", [])
     ), history
-    root = Path(s.env["XDG_DATA_HOME"]) / "dev.arcadebox.app/job-artifacts"
+    root = s.box_data() / "job-artifacts"
     assert not list(root.glob("pipeline-job-*")), "intermediate job dir survived"
     s.start("arcade.clipboard")
     return "real Lens capture → resize 50% → WebP → Clipboard history; effects confirmed once; cancel/crash clean up intermediates"
@@ -654,7 +654,7 @@ def peer_pipeline_editor_and_version_repair(s):
     ui_click(s, "Use current action version")
     s.xdotool("click", "5", "click", "5", "click", "5", "click", "5", "click", "5", "click", "5", "click", "5", "click", "5")
     ui_click(s, "Save pipeline")
-    with sqlite3.connect(s.root / "arcade/dev.arcadebox.app/arcade.sqlite3") as conn:
+    with sqlite3.connect(s.box_data() / "arcade.sqlite3") as conn:
         saved = json.loads(conn.execute("SELECT definition_json FROM pipelines WHERE id=?", (pipeline["id"],)).fetchone()[0])
     assert saved["nodes"][0]["link"]["version"] == 1, saved
     return "changed action version hidden from consumers; Needs repair editor updates the pinned version and saves all four stages"

@@ -23,6 +23,18 @@ class RunnerTests(unittest.TestCase):
         if not os.environ.get("ARCADE_SHELF_REPO"):
             self.assertEqual(e2e.APPS["arcade.shelf"]["dir"], e2e.CODING / "C++/Arcade-Shelf")
 
+    def test_box_data_follows_box_to_its_arcade_folder(self):
+        with tempfile.TemporaryDirectory() as root:
+            home = Path(root) / "arcade"
+            session = e2e.Session.__new__(e2e.Session)
+            session.env = {"ARCADE_HOME": str(home)}
+            current = home / ".local/share/arcade/box"
+            self.assertEqual(session.box_data(), current)
+            (home / "dev.arcadebox.app").mkdir(parents=True)
+            self.assertEqual(session.box_data(), home / "dev.arcadebox.app")
+            current.mkdir(parents=True)
+            self.assertEqual(session.box_data(), current)
+
     def test_missing_and_stale_builds_explain_how_to_rebuild(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)

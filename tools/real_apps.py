@@ -138,7 +138,7 @@ def fleet(s, apps=None):
 
 
 def tools_preferences(s, **values):
-    path = s.root / 'arcade/.local/share/arcade-tools/tray-preferences.json'
+    path = s.root / e2e.TOOLS_DATA / 'tray-preferences.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({'hostIcons': True, 'startAtLogin': False, 'shortcutsEnabled': True, **values}), encoding='utf-8')
     # Keep the idle samples away from update-network work.

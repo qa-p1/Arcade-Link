@@ -114,6 +114,9 @@ APPS = {
 TOOLS = {"dir": CODING / "Rust/Arcade-tools", "bin": "target/debug/arcade-tools",
          "args": ["--background"], "build": ["cargo", "build", "-p", "arcade-tools"]}
 FLEET = {**APPS, "arcade.tools": TOOLS}
+# Arcade Tools' data folder under a session root. Since Tools 0.4.0 it comes
+# from the paths module (`arcade/tools`); Tools moves its 0.3 folder there.
+TOOLS_DATA = Path("arcade/.local/share/arcade/tools")
 # Protocol IDs, CLI names, source trees/binaries, package globs and tray
 # expectations live together in FLEET. APPS retains the seven-peer contract.
 ARTIFACT_NAMES = {
@@ -294,6 +297,13 @@ class Session:
         if wait:
             self.wait_running(app)
         return p
+
+    def box_data(self) -> Path:
+        """Box's data folder: Link's `arcade/box` under ARCADE_HOME from Box
+        0.4.0, `dev.arcadebox.app` directly under ARCADE_HOME before that."""
+        home = Path(self.env["ARCADE_HOME"])
+        current, old = home / ".local/share/arcade/box", home / "dev.arcadebox.app"
+        return old if old.is_dir() and not current.is_dir() else current
 
     def endpoint(self, app: str) -> Path:
         return self.root / "arcade/run" / f"{app}.endpoint"
@@ -612,7 +622,7 @@ def load_check_modules(real_apps: bool = False) -> None:
             continue
         spec = importlib.util.spec_from_file_location(f"e2e_checks.{path.stem}", path)
         module = importlib.util.module_from_spec(spec)
-        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "APP_IDS": APP_IDS, "FLEET": FLEET, "SkipCheck": SkipCheck, "MissingArtifact": MissingArtifact, "CLI": CLI, "LINK": LINK, "CODING": CODING, "TOOLS": TOOLS, "require_current_build": require_current_build})
+        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "APP_IDS": APP_IDS, "FLEET": FLEET, "SkipCheck": SkipCheck, "MissingArtifact": MissingArtifact, "CLI": CLI, "LINK": LINK, "CODING": CODING, "TOOLS": TOOLS, "TOOLS_DATA": TOOLS_DATA, "require_current_build": require_current_build})
         spec.loader.exec_module(module)
         if path.stem == 'real_hub':
             for group in ('install', 'trayhost', 'tools-hub', 'shortcuts'):

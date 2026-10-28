@@ -19,11 +19,12 @@ class HubHarnessTests(unittest.TestCase):
                 ('install', '_development_install_suppression'),
                 ('shortcuts', '_shortcut_document'),
                 ('trayhost', '_standalone_status_notifier_item'),
-                ('tools-hub', '_manual_appimage_adoption'),
             ):
                 apps = {f.apps[0] for f in e2e.CHECKS[group] if f.__name__.endswith(suffix)}
                 self.assertEqual(apps, set(e2e.FLEET), (group, suffix))
-            for suffix in ('_bundle_install', '_update_rollback_incompatible_hold'):
+            # Tools never adopts itself: its own AppImage installs it, which
+            # the install group's check above covers.
+            for suffix in ('_bundle_install', '_update_rollback_incompatible_hold', '_manual_appimage_adoption'):
                 apps = {f.apps[0] for f in e2e.CHECKS['tools-hub'] if f.__name__.endswith(suffix)}
                 self.assertEqual(apps, set(e2e.APP_IDS))
 
