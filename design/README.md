@@ -11,7 +11,7 @@ this folder holds the values and the code.
 | `css/arcade.css` | Custom properties for light and dark (`prefers-color-scheme` with an `html[data-theme]` override), `[data-app]` accents, and the shared base, shell and component rules (Tools 0.3.8's look). Generated from `css/components.css`. |
 | `css/icons.ts`, `css/format.ts` | The icon path map and the shared format helpers (`formatSize`, `formatCount`, `formatDuration`, `formatRelative`). |
 | `qml/Arcade/` | QML module: `Theme` (singleton: colours per theme, `accent(appId)`, type, space, radius, motion), `Fonts` (Inter via `FontLoader`), `Icon`, `Format.js`. Component sets are added by the first QML app spec. |
-| `dart/` | `arcade_theme.dart` (`ArcadeTokens`, `ArcadeColors`, `arcadeTheme(Brightness, appId)`), `arcade_icons.dart` (`ArcadeIcon`, painter), `arcade_format.dart`. |
+| `dart/` | `arcade_theme.dart` (`ArcadeTokens`, `ArcadeColors`, `arcadeTheme(Brightness, appId)`), `arcade_icons.dart` (`ArcadeIcon`, painter), `arcade_format.dart`, and the hand-written components in `arcade_widgets.dart` (`ArcadeButton`, `ArcadeSwitchRow`, `ArcadeListSection` + `ArcadeRow`, `ArcadeBadge`/`ArcadeDot`, `ArcadeKeyChip`/`ArcadeKeyCombo`, `ArcadeNotice`, `ArcadeEmptyState`, `showArcadeToast`, `ArcadeSidebar` + `ArcadeNavItem`, `ArcadePageHead`, `ArcadeSegmented`, `ArcadeSearchField`, `ArcadeOverlayRow`, `ArcadeHintBar`, `showArcadeDialog`, `confirmArcadeDestroy`, `ArcadeSkeletonRow`). |
 | `../crates/arcade-link/src/design.rs` | Rust, behind the `design` feature: `palette(theme, app_id)`, type/space/radius/size consts, `ICONS`, `inter_font_bytes()`, `format`; `design-egui` adds `apply_egui`. |
 | `fonts/` | Inter 4.1 variable (`InterVariable.ttf`, `.woff2`) under the SIL Open Font License (`OFL.txt`). |
 | `icons/` | The outline icon set: `icons.json` (name → 24×24 path data) and one SVG per icon (generated). Stroke 1.5, round caps and joins, `currentColor`. |
@@ -75,7 +75,10 @@ MaterialApp(theme: arcadeTheme(Brightness.light, 'arcade.clipboard'),
 ```
 
 Bundle `design/fonts/InterVariable.ttf` as the `Inter` font family in
-`pubspec.yaml`. The files are generated, so exclude them from `dart format`.
+`pubspec.yaml`. `arcade_theme.dart` and `arcade_icons.dart` are generated, so
+exclude `lib/design/` from `dart format`; `arcade_widgets.dart` is written by
+hand here and changed only in Link. `tools/check_dart_kit.sh` renders every
+component in light and dark and fails on overflow.
 
 ### Rust (Find, Lens, and the Rust parts of other apps)
 
