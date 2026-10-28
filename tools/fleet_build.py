@@ -22,7 +22,7 @@ RECIPES = {
     "arcade.box": [
         (["npm", "ci"], "apps/desktop/frontend"),
         (["npm", "run", "build"], "apps/desktop/frontend"),
-        (["cargo", "build", "--release", "--locked", "-p", "arcade-desktop", "-p", "arcade-box"], "."),
+        (["cargo", "build", "--release", "--locked", "-p", "arcade-desktop"], "."),
     ],
     "arcade.lens": [(["cargo", "build", "--release", "--locked", "-p", "arcade-lens"], ".")],
     "arcade.find": [(["cargo", "build", "--release", "--locked", "-p", "arcade-find"], ".")],
@@ -33,8 +33,9 @@ RECIPES = {
         (["npm", "run", "build"], "."),
         (["npx", "tauri", "build", "--debug", "--no-bundle", "--features", "e2e"], "."),
     ],
+    # The nightly runs under X11: the Wayland layer-shell overlay isn't needed.
     "arcade.wheel": [
-        (["cmake", "-S", ".", "-B", "build", "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_TESTING=OFF"], "."),
+        (["cmake", "-S", ".", "-B", "build", "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_TESTING=OFF", "-DARCADE_REQUIRE_LAYERSHELLQT=OFF"], "."),
         (["cmake", "--build", "build", "--parallel", "3"], "."),
     ],
     "arcade.shelf": [

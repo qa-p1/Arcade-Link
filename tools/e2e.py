@@ -65,7 +65,7 @@ APPS = {
         "dir": CODING / "Rust/Arcade Box",
         "bin": "target/release/arcade-desktop",
         "args": ["--background"],
-        "build": ["cargo", "build", "--release", "-p", "arcade-desktop", "-p", "arcade-box"],
+        "build": ["cargo", "build", "--release", "-p", "arcade-desktop", "-p", "arcadebox"],
     },
     "arcade.lens": {
         "dir": CODING / "Rust/Arcade-lens",

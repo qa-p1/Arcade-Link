@@ -40,9 +40,11 @@ endforeach()
 # The QML design kit (design/qml/Arcade), when Qt Quick Test is installed
 # (required with -DARCADE_LINK_REQUIRE_DESIGN_TESTS=ON, as in CI).
 option(ARCADE_LINK_REQUIRE_DESIGN_TESTS "Fail when Qt Quick Test is missing" OFF)
+# Not on macOS: Qt 6.8's OpenGL wrapper links the AGL framework, which current
+# macOS SDKs no longer ship, so Qt Quick Test executables fail to link there.
 if(ARCADE_LINK_REQUIRE_DESIGN_TESTS)
     find_package(Qt6 6.8 REQUIRED COMPONENTS QuickTest Quick)
-else()
+elseif(NOT APPLE)
     find_package(Qt6 6.8 QUIET COMPONENTS QuickTest Quick)
 endif()
 if(Qt6QuickTest_FOUND)
