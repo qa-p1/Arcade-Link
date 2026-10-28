@@ -114,6 +114,9 @@ APPS = {
 TOOLS = {"dir": CODING / "Rust/Arcade-tools", "bin": "target/debug/arcade-tools",
          "args": ["--background"], "build": ["cargo", "build", "-p", "arcade-tools"]}
 FLEET = {**APPS, "arcade.tools": TOOLS}
+# Arcade Tools' data folder under a session root. Since Tools 0.4.0 it comes
+# from the paths module (`arcade/tools`); Tools moves its 0.3 folder there.
+TOOLS_DATA = Path("arcade/.local/share/arcade/tools")
 # Protocol IDs, CLI names, source trees/binaries, package globs and tray
 # expectations live together in FLEET. APPS retains the seven-peer contract.
 ARTIFACT_NAMES = {
@@ -612,7 +615,7 @@ def load_check_modules(real_apps: bool = False) -> None:
             continue
         spec = importlib.util.spec_from_file_location(f"e2e_checks.{path.stem}", path)
         module = importlib.util.module_from_spec(spec)
-        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "APP_IDS": APP_IDS, "FLEET": FLEET, "SkipCheck": SkipCheck, "MissingArtifact": MissingArtifact, "CLI": CLI, "LINK": LINK, "CODING": CODING, "TOOLS": TOOLS, "require_current_build": require_current_build})
+        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "APP_IDS": APP_IDS, "FLEET": FLEET, "SkipCheck": SkipCheck, "MissingArtifact": MissingArtifact, "CLI": CLI, "LINK": LINK, "CODING": CODING, "TOOLS": TOOLS, "TOOLS_DATA": TOOLS_DATA, "require_current_build": require_current_build})
         spec.loader.exec_module(module)
         if path.stem == 'real_hub':
             for group in ('install', 'trayhost', 'tools-hub', 'shortcuts'):

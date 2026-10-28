@@ -442,7 +442,9 @@ def _bundle(s, app):
 for _app in APP_IDS:
     per_app('tools-hub', _app, 'bundle_install', _bundle)
     per_app('tools-hub', _app, 'update_rollback_incompatible_hold', _updates)
-for _app in FLEET:
+# Tools installs itself from its own AppImage and never offers to adopt
+# itself ("Let Tools manage it" is for the other apps), so it is left out.
+for _app in APP_IDS:
     per_app('tools-hub', _app, 'manual_appimage_adoption', _adopt)
 
 
@@ -451,8 +453,12 @@ def tools_self_update_stages_and_applies_a_real_appimage(s):
     child = child_session(s, 'self-update')
     try:
         with Releases(child) as server:
-            server.publish('arcade.tools')
-            _operate(child, server, 'arcade.tools', 'install')
+            # Tools installs itself the way a user does: run its AppImage.
+            source = child.root / 'home/Downloads' / package('arcade.tools').name
+            source.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(package('arcade.tools'), source)
+            run_app(child, source, '--install', '--silent')
+            child.wait_running('arcade.tools')
             old = receipt(child, 'arcade.tools')
             old_hash = hashlib.sha256(Path(old['path']).read_bytes()).hexdigest()
             server.publish('arcade.tools', marker=b'\nArcade e2e self-update fixture\n')
@@ -515,7 +521,7 @@ def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
     try:
         fleet(first)
         tools_preferences(first)
-        prefs_path = first.root / 'arcade/.local/share/arcade-tools/preferences.json'
+        prefs_path = first.root / TOOLS_DATA / 'preferences.json'
         prefs = json.loads(prefs_path.read_text(encoding='utf-8'))
         prefs.update(channels={'arcade.find': 'nightly'}, updates={'enabled': False, 'autoUpdate': {'arcade.find': True}})
         prefs_path.write_text(json.dumps(prefs), encoding='utf-8')
@@ -549,7 +555,7 @@ def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
         restored = result['restored']
         assert restored['toolsSettingsRestored'] and all(a['imported'] for a in restored['apps'] if a['appId'] in portable), result
         assert {a['appId'] for a in restored['apps'] if a['imported']} == set(portable), result
-        restored_prefs = json.loads((second.root / 'arcade/.local/share/arcade-tools/preferences.json').read_text(encoding='utf-8'))
+        restored_prefs = json.loads((second.root / TOOLS_DATA / 'preferences.json').read_text(encoding='utf-8'))
         expected_prefs = backup_document['toolsPreferences']
         assert restored_prefs['linkEnabled'] == expected_prefs['linkEnabled'] and restored_prefs['updates']['enabled'] == expected_prefs['updates']['enabled'], restored_prefs
         assert restored_prefs['channels']['arcade.find'] == 'nightly' and restored_prefs['updates']['autoUpdate']['arcade.find'], restored_prefs
@@ -898,7 +904,7 @@ def tools_preferences_restore_without_any_app_binary(s):
     first, second = child_session(s, 'tools-prefs-source'), child_session(s, 'tools-prefs-target')
     try:
         tools_preferences(first)
-        path = first.root / 'arcade/.local/share/arcade-tools/preferences.json'
+        path = first.root / TOOLS_DATA / 'preferences.json'
         preferences = json.loads(path.read_text())
         # Tools intentionally restores connection/update policy, channels and
         # shortcut labels. Theme/notifications/onboarding are not portable.
@@ -912,7 +918,7 @@ def tools_preferences_restore_without_any_app_binary(s):
         shutil.copy2(archive, destination)
         restored = driver(second, 'restore', path=str(destination))['restored']
         assert restored['toolsSettingsRestored'], restored
-        actual = json.loads((second.root / 'arcade/.local/share/arcade-tools/preferences.json').read_text())
+        actual = json.loads((second.root / TOOLS_DATA / 'preferences.json').read_text())
         saved = document['toolsPreferences']
         assert actual['linkEnabled'] == saved['linkEnabled'] and actual['updates']['enabled'] == saved['updates']['enabled'], (preferences, actual)
         assert actual['channels']['arcade.find'] == 'nightly' and actual['updates']['autoUpdate']['arcade.find'], actual
