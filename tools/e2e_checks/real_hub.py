@@ -240,7 +240,8 @@ def tools_first_restart_and_clean_quit_preserve_real_app_trays(s):
     s.start('arcade.tools')
     fleet(s)
     for app in APP_IDS:
-        wait(lambda: tray(s, app) == 'hosted', f'{app}: app started after Tools did not become hosted')
+        wait(lambda: tray(s, app) == 'hosted', lambda: f'{app}: app started after Tools did not become hosted; '
+             f'status={call(s, app, "app.status")}\n{s.log(app)}\nTools:\n{s.log("arcade.tools")}')
     response = call(s, 'arcade.tools', 'app.restart')
     assert response.get('restarting'), response
     # Continuously sample every real app during successor handover. No mock
