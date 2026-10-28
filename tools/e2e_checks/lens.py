@@ -588,7 +588,7 @@ def command_finding_opens_real_wheel_settings(s):
 
 
 def _box_start_with_pipelines(s):
-    db = s.root / "arcade/dev.arcadebox.app/arcade.sqlite3"
+    db = s.box_data() / "arcade.sqlite3"
     if not db.exists():
         exe = APPS["arcade.box"]["dir"] / APPS["arcade.box"]["bin"]
         r = subprocess.run([str(exe), "--arcade-invoke"], env=s.env, capture_output=True, text=True,

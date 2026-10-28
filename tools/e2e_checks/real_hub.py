@@ -785,7 +785,7 @@ def _link_off(s, app):
     fleet(s, [app])  # Initializes only this disposable app's native settings.
     s.kill(app)
     if app == 'arcade.box':
-        with sqlite3.connect(s.root / 'arcade/dev.arcadebox.app/arcade.sqlite3') as db:
+        with sqlite3.connect(s.box_data() / 'arcade.sqlite3') as db:
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('link_enabled','false')")
     elif app == 'arcade.shelf':
         with sqlite3.connect(s.root / 'shelf/shelf.sqlite3') as db:

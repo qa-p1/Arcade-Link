@@ -298,6 +298,13 @@ class Session:
             self.wait_running(app)
         return p
 
+    def box_data(self) -> Path:
+        """Box's data folder: Link's `arcade/box` under ARCADE_HOME from Box
+        0.4.0, `dev.arcadebox.app` directly under ARCADE_HOME before that."""
+        home = Path(self.env["ARCADE_HOME"])
+        current, old = home / ".local/share/arcade/box", home / "dev.arcadebox.app"
+        return old if old.is_dir() and not current.is_dir() else current
+
     def endpoint(self, app: str) -> Path:
         return self.root / "arcade/run" / f"{app}.endpoint"
 
