@@ -55,14 +55,14 @@ QString appName(const QString &id)
 
 QString appPitch(const QString &id)
 {
-    if (id == Ids::Box) return QStringLiteral("Convert, compress and transform files with one click.");
-    if (id == Ids::Lens) return QStringLiteral("Recognize text, codes and colors on screen, and pick a region.");
-    if (id == Ids::Look) return QStringLiteral("Preview any file instantly.");
-    if (id == Ids::Wheel) return QStringLiteral("Put any action on a one-gesture radial launcher.");
-    if (id == Ids::Clipboard) return QStringLiteral("Send content to all your devices, end-to-end encrypted.");
-    if (id == Ids::Tools) return QStringLiteral("Install and update the Arcade apps.");
-    if (id == Ids::Shelf) return QStringLiteral("Collect, organize and transfer desktop content.");
-    if (id == Ids::Find) return QStringLiteral("Find files and folders instantly.");
+    if (id == Ids::Box) return QStringLiteral("File, media, text, web and system tasks in one searchable desktop tool.");
+    if (id == Ids::Lens) return QStringLiteral("Select anything on screen and act on it.");
+    if (id == Ids::Look) return QStringLiteral("Press Space, see anything.");
+    if (id == Ids::Wheel) return QStringLiteral("A radial launcher for the desktop. Hold a key, flick toward an action, release.");
+    if (id == Ids::Clipboard) return QStringLiteral("An encrypted copy history, synced across your own devices.");
+    if (id == Ids::Tools) return QStringLiteral("The optional home for the Arcade apps.");
+    if (id == Ids::Shelf) return QStringLiteral("A floating workspace for desktop content.");
+    if (id == Ids::Find) return QStringLiteral("Press a shortcut, type, and any file or folder shows up.");
     return {};
 }
 

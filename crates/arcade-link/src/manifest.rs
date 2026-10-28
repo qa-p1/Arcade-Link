@@ -142,17 +142,18 @@ pub fn app_name(id: &str) -> &str {
     }
 }
 
-/// One line describing what a peer adds, for the Connected apps page.
+/// The app's tagline, its README one-liner (STANDARD.md §8): shown on the
+/// Connected apps page, in install prompts and as Tools' summary.
 pub fn app_pitch(id: &str) -> &'static str {
     match id {
-        ids::BOX => "Convert, compress and transform files with one click.",
-        ids::LENS => "Recognize text, codes and colors on screen, and pick a region.",
-        ids::LOOK => "Preview any file instantly.",
-        ids::WHEEL => "Put any action on a one-gesture radial launcher.",
-        ids::CLIPBOARD => "Send content to all your devices, end-to-end encrypted.",
-        ids::TOOLS => "Install and update the Arcade apps.",
-        ids::SHELF => "Collect, organize and transfer desktop content.",
-        ids::FIND => "Find files and folders instantly.",
+        ids::BOX => "File, media, text, web and system tasks in one searchable desktop tool.",
+        ids::LENS => "Select anything on screen and act on it.",
+        ids::LOOK => "Press Space, see anything.",
+        ids::WHEEL => "A radial launcher for the desktop. Hold a key, flick toward an action, release.",
+        ids::CLIPBOARD => "An encrypted copy history, synced across your own devices.",
+        ids::TOOLS => "The optional home for the Arcade apps.",
+        ids::SHELF => "A floating workspace for desktop content.",
+        ids::FIND => "Press a shortcut, type, and any file or folder shows up.",
         _ => "",
     }
 }

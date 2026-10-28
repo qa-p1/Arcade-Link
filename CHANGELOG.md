@@ -34,6 +34,8 @@ Arcade design kit; shared app folders and diagnostics; a stricter test harness.
   folder in place on any conflict and is safe to run on every start.
 - `diagnostics::Header` (Qt: `DiagnosticsHeader`): the shared first lines of
   "Copy diagnostics".
+- `manifest::app_pitch` (Qt: `appPitch`) returns each app's tagline, its README
+  one-liner, so every app describes its peers the same way (STANDARD §8).
 - Long socket paths fall back to a private `arcade-<uid>/` under
   `$XDG_RUNTIME_DIR`, then `$TMPDIR`, then `/tmp` (was always `/tmp`), so
   isolated runs keep their sockets inside their own root (SPEC §4.1).
