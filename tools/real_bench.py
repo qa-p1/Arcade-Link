@@ -315,7 +315,7 @@ def main():
     probes = {
         'linkIdle': lambda: link_idle(s, args.idle_seconds),
         'protocolTrayHandback': lambda: protocol_handback(s, args.runs),
-        'trayHandback': lambda: handback(s, min(args.runs, 10)),
+        'trayHandback': lambda: handback(s, args.runs),
         'toolsIdle': lambda: idle(s, args.idle_seconds),
         'shortcutIndex': lambda: shortcut_index(s, args.runs),
         'shortcutFixtureIndex': lambda: shortcut_fixture_index(s, args.runs),

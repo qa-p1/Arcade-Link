@@ -56,6 +56,12 @@ def main() -> int:
             item = fleet.get(app, {})
             state = f'SKIP: {item["reason"]}' if 'reason' in item else f'{item.get("artifact")} @ {item.get("headSha", "")[:7]}'
             print(f'- {app}: {state}')
+    rows = [r for report in reports for r in report['checks']]
+    skipped = [r for r in rows if r['status'] == 'skipped']
+    missing = [r for r in rows if r.get('missingArtifact')]
+    print(f'\nSkipped: {len(skipped)} of {len(rows)} checks' + (f' ({len(missing)} for a missing artifact or build)' if missing else ''))
+    for row in skipped:
+        print(f'- {row["group"]}: {row["check"]}: {row["detail"][:200]}')
     known = sorted({(r['check'], r['knownBug']) for report in reports for r in report['checks'] if r['status'] == 'expected_failure'})
     if known:
         print('\nExpected failures (known product bugs):')

@@ -23,6 +23,9 @@ pub mod app;
 pub mod childenv;
 pub mod client;
 pub mod content;
+#[cfg(feature = "design")]
+pub mod design;
+pub mod diagnostics;
 pub mod endpoint;
 #[cfg(feature = "engines")]
 pub mod engines;

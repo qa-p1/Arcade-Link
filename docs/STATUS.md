@@ -1,5 +1,21 @@
 # Arcade Link status
 
+## 2026-10-28: v0.4.0 (design kit)
+
+Protocol 1 and manifest schema 1 are unchanged. v0.4.0 adds the design kit
+(`design/`, see its README), the `design`/`design-egui` features, the shared
+format helpers, `paths::{app_dirs, legacy_dirs, migrate_app_dirs}` and the
+diagnostics header (Rust and Qt), and a stricter harness (output checks in the
+stress and leak runs, development builds and `--require-artifacts` in the
+nightly real-fleet run). Verified locally on Linux: `design/generate.py
+--check`, `cargo clippy --all-features -D warnings`, `cargo test` with every
+feature, the Qt module's seven suites (including the QML kit under Qt Quick
+Test) and the Dart kit under `flutter analyze --fatal-infos`. CI repeats them on
+Linux, Windows and macOS. Apps adopt the kit one by one with their overhaul
+specs; until then they keep their own styling.
+
+## v0.3.0
+
 Updated 2026-10-15 for v0.3.0, protocol 1 and manifest schema 1.
 [PR #3](https://github.com/qa-p1/Arcade-Link/pull/3) is merged and v0.3.0 is
 tagged.
@@ -41,7 +57,7 @@ install/uninstall. Installer CI also covers old-copy uninstall after a newer
 installation and isolated PATH identity parity. Later updates and the current
 head's check results are on [the PR checks page](https://github.com/qa-p1/Arcade-Link/pull/3/checks).
 
-The [implementation report](V0.3_REPORT.md) gives commands/output tails,
+The [implementation report](dev/history/V0.3_REPORT.md) gives commands/output tails,
 regression test names, focused commits and current CI evidence.
 
 ## Limits
@@ -52,7 +68,7 @@ regression test names, focused commits and current CI evidence.
   workflow, under CI X11 only. Every app now ships user docs, including
   `docs/user/shortcuts.json`. Real desktop dialogs, tray icon painting and
   production Tools/overlay performance remain owner checks on a real desktop
-  (see [the benchmark report](benchmarks-0.3.md)).
+  (see [the benchmark report](dev/history/benchmarks-0.3.md)).
 - One Rust engine-download test is intentionally ignored. Two optional Python
   JSON Schema tests skip without `jsonschema`; semantic/shared-vector tests
   and canonical key schema-regex checks run without extra dependencies.

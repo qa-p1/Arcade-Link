@@ -1,0 +1,13 @@
+{
+  "comment": "Default global shortcuts for new installs (STANDARD.md §10). Canonical Link notation; Super is Cmd on macOS. design/generate.py --check fails when two Arcade defaults clash on any OS. Existing users keep the shortcut they have.",
+  "shortcuts": [
+    {"app": "arcade.box", "action": "Open Box", "linux": "Ctrl+Alt+Space", "windows": "Ctrl+Alt+Space", "macos": "Ctrl+Alt+Space"},
+    {"app": "arcade.look", "action": "Preview the selection", "linux": "Ctrl+Alt+Shift+Space", "windows": "Ctrl+Alt+Shift+Space", "macos": "Ctrl+Alt+Shift+Space"},
+    {"app": "arcade.find", "action": "Open Find", "linux": "Ctrl+Alt+F", "windows": "Ctrl+Alt+F", "macos": "Ctrl+Alt+F"},
+    {"app": "arcade.lens", "action": "Capture", "linux": "Ctrl+Alt+Shift+L", "windows": "Ctrl+Alt+Shift+L", "macos": "Ctrl+Alt+Shift+L", "note": "Ctrl+Alt+L locks the screen on several desktops."},
+    {"app": "arcade.shelf", "action": "Open Shelf", "linux": "Ctrl+Alt+S", "windows": "Ctrl+Alt+S", "macos": "Ctrl+Alt+S"},
+    {"app": "arcade.clipboard", "action": "Open Clipboard", "linux": "Ctrl+Alt+V", "windows": "Ctrl+Alt+V", "macos": "Ctrl+Alt+V"},
+    {"app": "arcade.wheel", "action": "Hold to open Wheel", "linux": "F8", "windows": "F8", "macos": "F8", "mode": "hold", "note": "Documented exception: hold-to-open needs one key."},
+    {"app": "arcade.tools", "action": "Show the shortcut sheet", "linux": "Super+Slash", "windows": "Super+Slash", "macos": "Super+Slash", "note": "Documented exception: the cheat-sheet convention."}
+  ]
+}

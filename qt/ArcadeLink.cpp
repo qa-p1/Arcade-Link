@@ -739,11 +739,24 @@ QString socketAddress(const Locations &locations, const QString &appId)
 #else
     const QString path = QDir(locations.runtime).filePath(appId + QStringLiteral(".sock"));
     if (path.toUtf8().size() <= 100) return path;
-    const QString dir = QStringLiteral("/tmp/arcade-%1").arg(geteuid());
-    // Another local user may have created it first: never listen in a folder
-    // that is not ours and private (same rule as the Rust transport).
-    if (!ensurePrivateDir(dir)) return QString();
-    return QDir(dir).filePath(shortHash(locations.runtime + QLatin1Char('|') + appId) + QStringLiteral(".sock"));
+    // A hashed name in a private arcade-<uid>/ under the first of
+    // XDG_RUNTIME_DIR, TMPDIR and /tmp that keeps the path short (SPEC §4.1).
+    const QString name = shortHash(locations.runtime + QLatin1Char('|') + appId) + QStringLiteral(".sock");
+    QStringList bases;
+    for (const char *variable : {"XDG_RUNTIME_DIR", "TMPDIR"}) {
+        const QString value = qEnvironmentVariable(variable);
+        if (!value.isEmpty() && QDir::isAbsolutePath(value)) bases.append(value);
+    }
+    bases.append(QStringLiteral("/tmp"));
+    for (const QString &base : bases) {
+        const QString dir = QDir(base).filePath(QStringLiteral("arcade-%1").arg(geteuid()));
+        const QString candidate = QDir(dir).filePath(name);
+        if (candidate.toUtf8().size() > 100) continue;
+        // Another local user may have created it first: never listen in a folder
+        // that is not ours and private (same rule as the Rust transport).
+        return ensurePrivateDir(dir) ? candidate : QString();
+    }
+    return QString();
 #endif
 }
 

@@ -1,0 +1,351 @@
+{
+  "comment": "Where each Arcade app keeps its files (STANDARD.md \u00a710). `current` is the target layout from Link's paths module; `legacy` lists every older location, per OS, that paths::migrate_app_dirs moves into it. Bases: Linux config/data/cache = XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_CACHE_HOME; Windows roaming/local = %APPDATA%, %LOCALAPPDATA%; macOS support/caches/preferences/webkit = ~/Library/{Application Support,Caches,Preferences,WebKit}. Generated into crates/arcade-link/src/legacy_dirs.rs and qt/ArcadeAppDirsTable.inc by design/generate.py.",
+  "apps": {
+    "arcade.box": {
+      "folder": "box",
+      "name": "Box",
+      "legacy": {
+        "linux": [
+          [
+            "data",
+            "data",
+            "dev.arcadebox.app"
+          ],
+          [
+            "data",
+            "data",
+            "arcadebox"
+          ]
+        ],
+        "windows": [
+          [
+            "data",
+            "roaming",
+            "dev.arcadebox.app"
+          ],
+          [
+            "data",
+            "roaming",
+            "Arcade Box/Arcade Box/data"
+          ]
+        ],
+        "macos": [
+          [
+            "data",
+            "support",
+            "dev.arcadebox.app"
+          ],
+          [
+            "data",
+            "support",
+            "dev.Arcade-Box.Arcade-Box"
+          ]
+        ]
+      }
+    },
+    "arcade.lens": {
+      "folder": "lens",
+      "name": "Lens",
+      "legacy": {
+        "linux": [
+          [
+            "config",
+            "config",
+            "arcadelens"
+          ],
+          [
+            "data",
+            "data",
+            "arcadelens"
+          ]
+        ],
+        "windows": [
+          [
+            "config",
+            "roaming",
+            "Arcade/Arcade Lens/config"
+          ],
+          [
+            "data",
+            "roaming",
+            "Arcade/Arcade Lens/data"
+          ]
+        ],
+        "macos": [
+          [
+            "data",
+            "support",
+            "dev.Arcade.Arcade-Lens"
+          ]
+        ]
+      }
+    },
+    "arcade.look": {
+      "folder": "look",
+      "name": "Look",
+      "legacy": {
+        "linux": [
+          [
+            "config",
+            "config",
+            "arcade-look"
+          ],
+          [
+            "data",
+            "data",
+            "app.arcadelook"
+          ],
+          [
+            "cache",
+            "cache",
+            "app.arcadelook"
+          ]
+        ],
+        "windows": [
+          [
+            "config",
+            "roaming",
+            "arcade-look"
+          ],
+          [
+            "data",
+            "local",
+            "app.arcadelook"
+          ]
+        ],
+        "macos": [
+          [
+            "config",
+            "support",
+            "arcade-look"
+          ],
+          [
+            "data",
+            "webkit",
+            "app.arcadelook"
+          ],
+          [
+            "cache",
+            "caches",
+            "app.arcadelook"
+          ]
+        ]
+      }
+    },
+    "arcade.wheel": {
+      "folder": "wheel",
+      "name": "Wheel",
+      "legacy": {
+        "linux": [
+          [
+            "config",
+            "config",
+            "Arcade Wheel/Arcade Wheel"
+          ],
+          [
+            "data",
+            "data",
+            "Arcade Wheel/Arcade Wheel"
+          ],
+          [
+            "cache",
+            "cache",
+            "Arcade Wheel/Arcade Wheel"
+          ]
+        ],
+        "windows": [
+          [
+            "config",
+            "local",
+            "Arcade Wheel/Arcade Wheel"
+          ]
+        ],
+        "macos": [
+          [
+            "config",
+            "preferences",
+            "Arcade Wheel/Arcade Wheel"
+          ],
+          [
+            "data",
+            "support",
+            "Arcade Wheel/Arcade Wheel"
+          ],
+          [
+            "cache",
+            "caches",
+            "Arcade Wheel/Arcade Wheel"
+          ]
+        ]
+      }
+    },
+    "arcade.clipboard": {
+      "folder": "clipboard",
+      "name": "Clipboard",
+      "legacy": {
+        "linux": [
+          [
+            "data",
+            "data",
+            "dev.arcade.clipboard"
+          ],
+          [
+            "data",
+            "data",
+            "clipboard"
+          ]
+        ],
+        "windows": [
+          [
+            "data",
+            "roaming",
+            "dev.arcade/clipboard"
+          ]
+        ],
+        "macos": [
+          [
+            "data",
+            "support",
+            "dev.arcade.clipboard"
+          ]
+        ]
+      }
+    },
+    "arcade.shelf": {
+      "folder": "shelf",
+      "name": "Shelf",
+      "legacy": {
+        "linux": [
+          [
+            "data",
+            "data",
+            "qa-p1/ArcadeShelf"
+          ]
+        ],
+        "windows": [
+          [
+            "data",
+            "local",
+            "qa-p1/ArcadeShelf"
+          ]
+        ],
+        "macos": [
+          [
+            "data",
+            "support",
+            "qa-p1/ArcadeShelf"
+          ]
+        ]
+      }
+    },
+    "arcade.find": {
+      "folder": "find",
+      "name": "Find",
+      "legacy": {
+        "linux": [
+          [
+            "config",
+            "config",
+            "arcade-find"
+          ],
+          [
+            "data",
+            "data",
+            "arcade-find"
+          ]
+        ],
+        "windows": [
+          [
+            "config",
+            "roaming",
+            "Arcade/Arcade Find"
+          ],
+          [
+            "data",
+            "local",
+            "Arcade/Arcade Find"
+          ]
+        ],
+        "macos": [
+          [
+            "data",
+            "support",
+            "Arcade Find"
+          ]
+        ]
+      }
+    },
+    "arcade.tools": {
+      "folder": "tools",
+      "name": "Tools",
+      "legacy": {
+        "linux": [
+          [
+            "data",
+            "data",
+            "arcade-tools"
+          ],
+          [
+            "data",
+            "data",
+            "app.arcadetools"
+          ],
+          [
+            "cache",
+            "cache",
+            "arcade-tools"
+          ],
+          [
+            "cache",
+            "cache",
+            "app.arcadetools"
+          ]
+        ],
+        "windows": [
+          [
+            "data",
+            "roaming",
+            "arcade-tools"
+          ],
+          [
+            "data",
+            "roaming",
+            "app.arcadetools"
+          ],
+          [
+            "data",
+            "local",
+            "app.arcadetools"
+          ],
+          [
+            "cache",
+            "local",
+            "arcade-tools"
+          ]
+        ],
+        "macos": [
+          [
+            "data",
+            "support",
+            "arcade-tools"
+          ],
+          [
+            "data",
+            "support",
+            "app.arcadetools"
+          ],
+          [
+            "cache",
+            "caches",
+            "app.arcadetools"
+          ],
+          [
+            "cache",
+            "caches",
+            "arcade-tools"
+          ]
+        ]
+      }
+    }
+  }
+}

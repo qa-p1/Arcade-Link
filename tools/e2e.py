@@ -46,6 +46,11 @@ class SkipCheck(AssertionError):
     """An explicit unavailable prerequisite; never counted as a passing check."""
 
 
+class MissingArtifact(SkipCheck):
+    """The app's package or development build is missing. With
+    --require-artifacts (the nightly real-fleet run) this fails the check."""
+
+
 def link_app_ids() -> list[str]:
     source = (LINK / "crates/arcade-link/src/manifest.rs").read_text(encoding="utf-8")
     constants = dict(re.findall(r'pub const (\w+): &str = "(arcade\.[^"]+)";', source))
@@ -166,7 +171,7 @@ def require_current_build(spec: dict) -> Path:
     hint = " ".join(spec.get("build") or ["run this app's documented build command"])
     message = f"stale or missing build: {executable}; rebuild in {spec['dir']}: {hint}"
     if not executable.is_file() or not os.access(executable, os.X_OK):
-        raise SkipCheck(message + " (missing executable build)")
+        raise MissingArtifact(message + " (missing executable build)")
     stamp = executable.stat().st_mtime_ns
     sources = source_paths(spec["dir"])
     if "source_suffixes" in spec:
@@ -607,7 +612,7 @@ def load_check_modules(real_apps: bool = False) -> None:
             continue
         spec = importlib.util.spec_from_file_location(f"e2e_checks.{path.stem}", path)
         module = importlib.util.module_from_spec(spec)
-        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "APP_IDS": APP_IDS, "FLEET": FLEET, "SkipCheck": SkipCheck, "CLI": CLI, "LINK": LINK, "CODING": CODING, "TOOLS": TOOLS, "require_current_build": require_current_build})
+        module.__dict__.update({"check": check, "Session": Session, "APPS": APPS, "APP_IDS": APP_IDS, "FLEET": FLEET, "SkipCheck": SkipCheck, "MissingArtifact": MissingArtifact, "CLI": CLI, "LINK": LINK, "CODING": CODING, "TOOLS": TOOLS, "require_current_build": require_current_build})
         spec.loader.exec_module(module)
         if path.stem == 'real_hub':
             for group in ('install', 'trayhost', 'tools-hub', 'shortcuts'):
@@ -616,7 +621,8 @@ def load_check_modules(real_apps: bool = False) -> None:
                         function.apps = list(FLEET)
 
 
-def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: bool = False, names: str | None = None, allow_skips: bool = False) -> int:
+def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: bool = False, names: str | None = None, allow_skips: bool = False,
+               require_artifacts: bool = False) -> int:
     load_check_modules(real_apps)
     if scaffold:
         print("Link scaffold: mock peer presence, crate watchers/install harness, sibling shortcut documents")
@@ -662,7 +668,9 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: 
                     if detail and os.environ.get("E2E_VERBOSE"):
                         print("     " + str(detail).replace("\n", "\n     "))
                 except Exception as e:  # noqa: BLE001 - report every failure and keep going
-                    unavailable = isinstance(e, SkipCheck)
+                    # A check expected to run may not skip for a missing artifact.
+                    missing = isinstance(e, MissingArtifact)
+                    unavailable = isinstance(e, SkipCheck) and not (missing and require_artifacts)
                     # A known bug excuses only its own documented symptom.
                     status = "skipped" if unavailable else "expected_failure" if known and (not match or match in str(e)) else "fail"
                     if unavailable:
@@ -672,8 +680,10 @@ def run_checks(root: Path, only: str | None, scaffold: bool = False, real_apps: 
                     else:
                         failures += 1
                     label = {"skipped": "SKIP", "expected_failure": "XFAIL", "fail": "FAIL"}[status]
-                    print(f"{label} {name}: {e}" + (f"\n     known product bug: {known}" if status == "expected_failure" else ""), flush=True)
-                    results.append({"group": group, "check": f.__name__, "apps": getattr(f, "apps", []), "passed": False, "status": status, "seconds": round(time.time() - t0, 3), "detail": str(e) or type(e).__name__, "traceback": traceback.format_exc(), **({"knownBug": known} if known else {})})
+                    note = " (missing artifact; --require-artifacts)" if missing and require_artifacts else ""
+                    print(f"{label} {name}{note}: {e}" + (f"\n     known product bug: {known}" if status == "expected_failure" else ""), flush=True)
+                    results.append({"group": group, "check": f.__name__, "apps": getattr(f, "apps", []), "passed": False, "status": status, "seconds": round(time.time() - t0, 3), "detail": str(e) or type(e).__name__, "traceback": traceback.format_exc(),
+                                    **({"missingArtifact": True} if missing else {}), **({"knownBug": known} if known else {})})
                 finally:
                     if real_apps:
                         s.stop_apps()
@@ -710,6 +720,7 @@ def main() -> int:
     p.add_argument("--check", help="comma-separated check function names, within --only")
     p.add_argument("--real-apps", action="store_true", help="exercise the real fleet and Tools core; require current builds and AppImages")
     p.add_argument("--allow-skips", action="store_true", help="accept explicitly reported unavailable prerequisites; failures still fail")
+    p.add_argument("--require-artifacts", action="store_true", help="fail (not skip) a check whose app package or development build is missing")
     p.add_argument("command", nargs="*", help="`run -- CMD…` runs CMD in the isolated session")
     args = p.parse_args()
     if args.command == ["run"]:
@@ -739,7 +750,7 @@ def main() -> int:
             # apps running in states (open pickers, toggled settings, held
             # profiles) that the next group must not inherit.
             load_check_modules(args.real_apps)
-            failed = [g for g in CHECKS if isolated(sys.argv[:1] + ['run', '--', sys.executable] + sys.argv[:1] + ["--only", g] + (["--real-apps"] if args.real_apps else []) + (["--allow-skips"] if args.allow_skips else [])) != 0]
+            failed = [g for g in CHECKS if isolated(sys.argv[:1] + ['run', '--', sys.executable] + sys.argv[:1] + ["--only", g] + (["--real-apps"] if args.real_apps else []) + (["--allow-skips"] if args.allow_skips else []) + (["--require-artifacts"] if args.require_artifacts else [])) != 0]
             print(f"groups failed: {', '.join(failed)}" if failed else "all groups passed")
             return 1 if failed else 0
         argv = sys.argv if args.command else sys.argv[:1] + ['run', '--', sys.executable] + sys.argv
@@ -747,7 +758,7 @@ def main() -> int:
     root = Path(os.environ["ARCADE_E2E_ROOT"])
     if args.command and args.command[0] == "run":
         return run_command(root, args.command[1:])
-    return run_checks(root, args.only, scaffold, args.real_apps, args.check, args.allow_skips)
+    return run_checks(root, args.only, scaffold, args.real_apps, args.check, args.allow_skips, args.require_artifacts)
 
 
 def isolated(argv: list[str]) -> int:
