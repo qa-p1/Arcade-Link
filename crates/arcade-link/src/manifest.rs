@@ -158,6 +158,14 @@ pub fn app_pitch(id: &str) -> &'static str {
     }
 }
 
+/// The app's OS identifier (STANDARD.md §10): bundle id, Windows
+/// AppUserModelID, desktop file name and Wayland app_id / X11 WM_CLASS, such as
+/// `dev.arcade.Box`. `None` for an id that isn't an Arcade app.
+pub fn os_identifier(id: &str) -> Option<String> {
+    let name = app_name(id).strip_prefix("Arcade ")?;
+    Some(format!("dev.arcade.{name}"))
+}
+
 /// Where to get an app when Arcade Tools isn't installed.
 pub fn releases_url(id: &str) -> &'static str {
     match id {
@@ -519,6 +527,7 @@ mod onboarding_tests {
             assert!(ids::APPS.contains(&id));
             assert_eq!(app_name(id), name);
             assert!(!app_pitch(id).is_empty());
+            assert!(os_identifier(id).is_some_and(|os| os.starts_with("dev.arcade.")));
             assert_eq!(releases_url(id), format!("https://github.com/qa-p1/{repository}/releases"));
         }
         assert_eq!(ids::APPS.len(), 7);

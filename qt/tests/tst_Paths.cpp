@@ -59,6 +59,19 @@ private slots:
         QVERIFY(migrateAppDirs(user, QStringLiteral("linux"), Ids::Wheel).isEmpty());
     }
 
+    void webviewStorageMovesIntoItsSubfolder()
+    {
+        QTemporaryDir root;
+        const UserDirs user = UserDirs::under(root.path());
+        write(root.path() + QStringLiteral("/.local/share/arcade-tools/preferences.json"), "{}");
+        write(root.path() + QStringLiteral("/.local/share/app.arcadetools/localstorage/file.db"), "db");
+        const Migration report = migrateAppDirs(user, QStringLiteral("linux"), Ids::Tools);
+        QCOMPARE(report.moved.size(), 2);
+        QCOMPARE(read(root.path() + QStringLiteral("/.local/share/arcade/tools/preferences.json")), QByteArray("{}"));
+        QCOMPARE(read(root.path() + QStringLiteral("/.cache/arcade/tools/webview/localstorage/file.db")), QByteArray("db"));
+        QVERIFY(!QFileInfo::exists(root.path() + QStringLiteral("/.local/share/app.arcadetools")));
+    }
+
     void conflictLeavesEverything()
     {
         QTemporaryDir root;

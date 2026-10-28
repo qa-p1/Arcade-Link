@@ -33,6 +33,8 @@ AppDirs appDirs(const UserDirs &user, const QString &platform, const QString &ap
 struct LegacyDir {
     QString kind;   // "config", "data" or "cache"
     QString path;
+    QString into;   // subfolder of the new folder its files move into; empty for the folder itself
+    QString target(const AppDirs &dirs) const;
 };
 QList<LegacyDir> legacyDirs(const QString &appId);
 QList<LegacyDir> legacyDirs(const UserDirs &user, const QString &platform, const QString &appId);

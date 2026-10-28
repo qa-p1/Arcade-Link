@@ -1,5 +1,5 @@
 {
-  "comment": "Where each Arcade app keeps its files (STANDARD.md \u00a710). `current` is the target layout from Link's paths module; `legacy` lists every older location, per OS, that paths::migrate_app_dirs moves into it. Bases: Linux config/data/cache = XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_CACHE_HOME; Windows roaming/local = %APPDATA%, %LOCALAPPDATA%; macOS support/caches/preferences/webkit = ~/Library/{Application Support,Caches,Preferences,WebKit}. Generated into crates/arcade-link/src/legacy_dirs.rs and qt/ArcadeAppDirsTable.inc by design/generate.py.",
+  "comment": "Where each Arcade app keeps its files (STANDARD.md §10). `current` is the target layout from Link's paths module; `legacy` lists every older location, per OS, as [kind, base, path] or [kind, base, path, into]: paths::migrate_app_dirs moves its files into the new `kind` folder, or into its `into` subfolder (a Tauri app's old webview storage goes to `webview`). Bases: Linux config/data/cache = XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_CACHE_HOME; Windows roaming/local = %APPDATA%, %LOCALAPPDATA%; macOS support/caches/preferences/webkit = ~/Library/{Application Support,Caches,Preferences,WebKit}. Generated into crates/arcade-link/src/legacy_dirs.rs and qt/ArcadeAppDirsTable.inc by design/generate.py.",
   "apps": {
     "arcade.box": {
       "folder": "box",
@@ -286,9 +286,10 @@
             "arcade-tools"
           ],
           [
+            "cache",
             "data",
-            "data",
-            "app.arcadetools"
+            "app.arcadetools",
+            "webview"
           ],
           [
             "cache",
@@ -298,7 +299,8 @@
           [
             "cache",
             "cache",
-            "app.arcadetools"
+            "app.arcadetools",
+            "webview"
           ]
         ],
         "windows": [
@@ -313,9 +315,10 @@
             "app.arcadetools"
           ],
           [
-            "data",
+            "cache",
             "local",
-            "app.arcadetools"
+            "app.arcadetools",
+            "webview"
           ],
           [
             "cache",
@@ -332,11 +335,6 @@
           [
             "data",
             "support",
-            "app.arcadetools"
-          ],
-          [
-            "cache",
-            "caches",
             "app.arcadetools"
           ],
           [

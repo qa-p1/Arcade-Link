@@ -294,6 +294,8 @@ pub(crate) struct LegacyEntry {
     pub kind: Kind,
     pub base: Base,
     pub path: &'static str,
+    /// Subfolder of the new folder it moves into ("" = the folder itself).
+    pub into: &'static str,
 }
 
 /// The current user's base folders. [`UserDirs::under`] roots them for
@@ -433,6 +435,22 @@ pub fn app_dirs_in(user: &UserDirs, platform: Platform, app_id: &str) -> AppDirs
 pub struct LegacyDir {
     pub kind: Kind,
     pub path: PathBuf,
+    /// Where its files go, relative to the new `kind` folder; empty for the
+    /// folder itself. A Tauri app's old webview storage, for example, moves
+    /// into a `webview` subfolder.
+    pub into: PathBuf,
+}
+
+impl LegacyDir {
+    /// The folder this location's files move into.
+    pub fn target(&self, dirs: &AppDirs) -> PathBuf {
+        let base = dirs.get(self.kind);
+        if self.into.as_os_str().is_empty() {
+            base.to_path_buf()
+        } else {
+            base.join(&self.into)
+        }
+    }
 }
 
 /// [`legacy_dirs_in`] for the current user and platform.
@@ -449,7 +467,7 @@ pub fn legacy_dirs_in(user: &UserDirs, platform: Platform, app_id: &str) -> Vec<
         Platform::Windows => row.windows,
         Platform::Macos => row.macos,
     };
-    entries.iter().map(|e| LegacyDir { kind: e.kind, path: user.base(e.base).join(e.path) }).collect()
+    entries.iter().map(|e| LegacyDir { kind: e.kind, path: user.base(e.base).join(e.path), into: PathBuf::from(e.into) }).collect()
 }
 
 /// What [`migrate_app_dirs`] did.
@@ -481,8 +499,8 @@ pub fn migrate_app_dirs_in(user: &UserDirs, platform: Platform, app_id: &str) ->
     let dirs = app_dirs_in(user, platform, app_id);
     let mut report = Migration::default();
     for legacy in legacy_dirs_in(user, platform, app_id) {
+        let to = legacy.target(&dirs);
         let from = legacy.path;
-        let to = dirs.get(legacy.kind).to_path_buf();
         let Ok(meta) = fs::symlink_metadata(&from) else { continue };
         if !meta.is_dir() {
             report.kept.push((from, "not a real folder".into()));
@@ -627,7 +645,7 @@ mod app_dir_tests {
             }
         }
         let wheel = legacy_dirs_in(&user, Platform::Linux, "arcade.wheel");
-        assert_eq!(wheel[0], LegacyDir { kind: Kind::Config, path: "/r/.config/Arcade Wheel/Arcade Wheel".into() });
+        assert_eq!(wheel[0], LegacyDir { kind: Kind::Config, path: "/r/.config/Arcade Wheel/Arcade Wheel".into(), into: PathBuf::new() });
     }
 
     #[test]
@@ -645,6 +663,24 @@ mod app_dir_tests {
         assert_eq!(fs::read(new.join("decks/main.json")).unwrap(), b"[]");
         assert!(!old.exists() && !root.join(".config/Arcade Wheel").exists());
         assert!(migrate_app_dirs_in(&user, Platform::Linux, "arcade.wheel").is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn webview_storage_moves_into_its_subfolder() {
+        let root = temp("into");
+        let user = UserDirs::under(&root);
+        let state = root.join(".local/share/arcade-tools");
+        let webview = root.join(".local/share/app.arcadetools");
+        fs::create_dir_all(&state).unwrap();
+        fs::create_dir_all(webview.join("localstorage")).unwrap();
+        fs::write(state.join("preferences.json"), b"{}").unwrap();
+        fs::write(webview.join("localstorage/file.db"), b"db").unwrap();
+        let report = migrate_app_dirs_in(&user, Platform::Linux, "arcade.tools");
+        assert_eq!(report.moved.len(), 2, "{report:?}");
+        assert_eq!(fs::read(root.join(".local/share/arcade/tools/preferences.json")).unwrap(), b"{}");
+        assert_eq!(fs::read(root.join(".cache/arcade/tools/webview/localstorage/file.db")).unwrap(), b"db");
+        assert!(!state.exists() && !webview.exists());
         fs::remove_dir_all(root).unwrap();
     }
 

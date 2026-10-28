@@ -86,6 +86,12 @@ AppDirs appDirs(const UserDirs &user, const QString &platform, const QString &ap
             user.cache + QStringLiteral("/arcade/") + folder};
 }
 
+QString LegacyDir::target(const AppDirs &dirs) const
+{
+    const QString base = dirs.get(kind);
+    return into.isEmpty() ? base : base + QLatin1Char('/') + into;
+}
+
 QList<LegacyDir> legacyDirs(const QString &appId) { return legacyDirs(UserDirs::discover(), currentPlatform(), appId); }
 
 QList<LegacyDir> legacyDirs(const UserDirs &user, const QString &platform, const QString &appId)
@@ -95,7 +101,7 @@ QList<LegacyDir> legacyDirs(const UserDirs &user, const QString &platform, const
         if (appId != QLatin1String(row.id) || platform != QLatin1String(row.platform)) continue;
         for (int i = 0; i < row.count; ++i) {
             const ArcadeLegacyEntry &e = row.entries[i];
-            out.append({QString::fromLatin1(e.kind), user.base(QString::fromLatin1(e.base)) + QLatin1Char('/') + QString::fromUtf8(e.path)});
+            out.append({QString::fromLatin1(e.kind), user.base(QString::fromLatin1(e.base)) + QLatin1Char('/') + QString::fromUtf8(e.path), QString::fromUtf8(e.into)});
         }
     }
     return out;
@@ -166,7 +172,7 @@ Migration migrateAppDirs(const UserDirs &user, const QString &platform, const QS
             report.kept.append({legacy.path, QStringLiteral("not a real folder")});
             continue;
         }
-        const QString to = dirs.get(legacy.kind), from = QDir::cleanPath(legacy.path);
+        const QString to = legacy.target(dirs), from = QDir::cleanPath(legacy.path);
         if ((to + QLatin1Char('/')).startsWith(from + QLatin1Char('/')) || (from + QLatin1Char('/')).startsWith(to + QLatin1Char('/'))) {
             report.kept.append({legacy.path, QStringLiteral("overlaps ") + to});
             continue;

@@ -30,12 +30,15 @@ Arcade design kit; shared app folders and diagnostics; a stricter test harness.
 - `design/shortcuts.json`: the default global shortcut of each app.
 - `paths::{app_dirs, legacy_dirs, migrate_app_dirs}` (Qt: `ArcadePaths.h`):
   `arcade/<app>` config, data and cache folders, every old location per OS
-  (`spec/app-dirs.json`), and a copy-verify-remove migration that leaves a
-  folder in place on any conflict and is safe to run on every start.
+  (`spec/app-dirs.json`; an entry can name a subfolder, such as `webview` for
+  a Tauri app's old webview storage), and a copy-verify-remove migration that
+  leaves a folder in place on any conflict and is safe to run on every start.
 - `diagnostics::Header` (Qt: `DiagnosticsHeader`): the shared first lines of
   "Copy diagnostics".
 - `manifest::app_pitch` (Qt: `appPitch`) returns each app's tagline, its README
   one-liner, so every app describes its peers the same way (STANDARD §8).
+- `manifest::os_identifier` (Qt: `osIdentifier`): an app's `dev.arcade.<App>`
+  bundle id, desktop file name and window class (STANDARD §10).
 - Long socket paths fall back to a private `arcade-<uid>/` under
   `$XDG_RUNTIME_DIR`, then `$TMPDIR`, then `/tmp` (was always `/tmp`), so
   isolated runs keep their sockets inside their own root (SPEC §4.1).

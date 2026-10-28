@@ -66,6 +66,12 @@ QString appPitch(const QString &id)
     return {};
 }
 
+QString osIdentifier(const QString &id)
+{
+    const QString name = appName(id);
+    return name.startsWith(QStringLiteral("Arcade ")) ? QStringLiteral("dev.arcade.") + name.mid(7) : QString();
+}
+
 QString releasesUrl(const QString &id)
 {
     if (id == Ids::Box) return QStringLiteral("https://github.com/qa-p1/Arcade-box/releases");
