@@ -144,8 +144,9 @@ def _install_case(app):
             current = receipt(child, app)
             manifest = json.loads((child.root / f'arcade/apps/{app}.json').read_text(encoding='utf-8'))
             assert manifest['executable'] == current['path'], manifest
+            current_pid = json.loads(child.endpoint(app).read_text(encoding='utf-8')).get('pid')
             call(child, app, 'app.quit')
-            wait(lambda: not child.endpoint(app).exists(), f'{app} did not quit')
+            wait(lambda: not child.endpoint(app).exists(), lambda: f'{app} did not quit; endpoint pid={json.loads(child.endpoint(app).read_text(encoding="utf-8")).get("pid") if child.endpoint(app).exists() else None}, quit pid={current_pid}\n{child.log(app)}')
             run_app(child, Path(current['path']), '--uninstall', '--silent')
             assert not Path(current['path']).exists()
             return f'{artifact}: install/files/0600 receipt/update older fixture/moved repair/uninstall/installed re-exec'
