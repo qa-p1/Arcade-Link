@@ -3,6 +3,15 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
+## 0.4.6 (2026-10-29)
+
+- egui kit: `glyph_tile` and `row_with_glyph` (a settings row with a leading
+  36 px glyph tile, for the Connected apps page), `checkbox` (selection in
+  lists and dialog options, with the label in its hit target) and
+  `dialog_head` / `dialog_actions` (title-sm and body, then actions
+  right-aligned in order with the primary last, wrapping when narrow).
+  `paint_icon_sized` draws kit icons at the tile and small sizes.
+
 ## 0.4.5 (2026-10-29)
 
 - Add the shared egui component set for Find and Lens: sidebar, page/section

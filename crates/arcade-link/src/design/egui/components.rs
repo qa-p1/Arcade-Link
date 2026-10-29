@@ -751,6 +751,132 @@ impl Kit {
         ui.add(Label::new(RichText::new(name).color(colour(self.palette.text))).truncate()).on_hover_text(name)
     }
 
+    /// `.glyph-tile`: a 36 px `sunken` tile with a `line` edge and an 18 px
+    /// glyph in `text`. `glyph` is a white mask texture (an Arcade app's
+    /// glyph); without one, `icon` names a kit icon.
+    pub fn glyph_tile(&self, ui: &mut Ui, glyph: Option<::egui::TextureId>, icon: &str) -> Response {
+        let (rect, r) = ui.allocate_exact_size(Vec2::splat(size::TILE), Sense::hover());
+        let p = self.palette;
+        ui.painter().rect(rect, radius::TILE, colour(p.sunken), Stroke::new(1.0, colour(p.line)), StrokeKind::Inside);
+        match glyph {
+            Some(texture) => {
+                let glyph = Rect::from_center_size(rect.center(), Vec2::splat(size::ICON_TILE));
+                ui.painter().image(texture, glyph, Rect::from_min_max(::egui::pos2(0.0, 0.0), ::egui::pos2(1.0, 1.0)), colour(p.text));
+            }
+            None => self.paint_icon_sized(ui, icon, rect.center(), size::ICON_TILE, colour(p.text)),
+        }
+        r
+    }
+
+    /// A [`Kit::row`] with a glyph tile before its text (`.row` with a
+    /// leading `.glyph-tile`), as the Connected apps page lists apps.
+    pub fn row_with_glyph<R>(
+        &self,
+        ui: &mut Ui,
+        glyph: Option<::egui::TextureId>,
+        icon: &str,
+        title: &str,
+        description: &str,
+        control: impl FnOnce(&mut Ui) -> R,
+    ) -> InnerResponse<R> {
+        self.row_divider(ui);
+        let id = ui.id().with(("arcade-row", title));
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.add_space(10.0);
+            let inner = self.beside(
+                ui,
+                id,
+                size::ROW - 20.0,
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 12.0;
+                        self.glyph_tile(ui, glyph, icon);
+                        let width = ui.available_width();
+                        ui.vertical(|ui| {
+                            ui.set_width(width);
+                            self.row_text(ui, title, description);
+                        });
+                    });
+                },
+                control,
+            );
+            ui.add_space(10.0);
+            inner
+        })
+    }
+
+    /// A checkbox (`input[type=checkbox]`, `.check-row`): selection in lists
+    /// and dialog options; settings use [`Kit::switch_row`]. The label is
+    /// part of the hit target.
+    pub fn checkbox(&self, ui: &mut Ui, value: &mut bool, label: &str) -> Response {
+        let enabled = ui.is_enabled();
+        let font = super::font(text::CONTROL);
+        let p = self.palette;
+        let galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_string(), font, colour(p.text)));
+        let height = size::HIT_TARGET.max(galley.size().y);
+        let (rect, mut r) = ui.allocate_exact_size(Vec2::new(15.0 + 8.0 + galley.size().x, height), Sense::click());
+        if r.clicked() && enabled {
+            *value = !*value;
+            r.mark_changed();
+        }
+        r.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, *value, label));
+        let boxed = Rect::from_min_size(::egui::pos2(rect.left(), rect.center().y - 7.5), Vec2::splat(15.0));
+        let (fill, edge) = match (enabled, *value) {
+            (false, _) => (p.sunken, p.line_strong),
+            (true, true) => (p.accent, p.accent),
+            (true, false) => (p.panel, if r.hovered() { p.muted } else { p.line_strong }),
+        };
+        ui.painter().rect(boxed, 4.0, colour(fill), Stroke::new(1.0, colour(edge)), StrokeKind::Inside);
+        if *value {
+            let ink = if enabled { p.accent_text } else { p.muted };
+            self.paint_icon_sized(ui, "check", boxed.center(), 12.0, colour(ink));
+        }
+        let fg = if enabled { p.text } else { p.muted };
+        ui.painter().galley(::egui::pos2(boxed.right() + 8.0, rect.center().y - galley.size().y * 0.5), galley, colour(fg));
+        if r.has_focus() {
+            ui.painter().rect_stroke(boxed.expand(size::FOCUS_OFFSET), 6.0, Stroke::new(size::FOCUS_RING, colour(p.accent)), StrokeKind::Outside);
+        }
+        if r.hovered() && enabled {
+            ui.ctx().set_cursor_icon(::egui::CursorIcon::PointingHand);
+        }
+        r
+    }
+
+    /// A dialog's title (`title-sm`) and body text (muted, wrapping).
+    pub fn dialog_head(&self, ui: &mut Ui, title: &str, body: &str) {
+        ui.add(Label::new(RichText::new(title).font(super::font(text::TITLE_SM)).color(colour(self.palette.text))).wrap());
+        if !body.is_empty() {
+            ui.add_space(8.0);
+            ui.add(Label::new(RichText::new(body).font(super::font(text::BODY)).color(colour(self.palette.muted))).wrap());
+        }
+    }
+
+    /// `.dialog-actions`: buttons right-aligned in the order given (primary
+    /// last), 8 px apart, 20 px below the content. When they don't fit on one
+    /// line they wrap, still in order.
+    pub fn dialog_actions<R>(&self, ui: &mut Ui, actions: impl FnOnce(&mut Ui) -> R) -> R {
+        ui.add_space(20.0);
+        let id = ui.id().with("arcade-dialog-actions");
+        let width = ui.available_width();
+        let known = ui.data(|d| d.get_temp::<f32>(id));
+        let r = ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            if let Some(w) = known.filter(|w| *w <= width) {
+                ui.add_space((width - w).max(0.0));
+            }
+            let start = ui.cursor().left();
+            let inner = actions(ui);
+            (inner, ui.min_rect().right() - start)
+        });
+        let (inner, used) = r.inner;
+        if known.is_none_or(|w| (w - used).abs() > 0.5) && used <= width {
+            ui.data_mut(|d| d.insert_temp(id, used));
+            ui.ctx().request_discard("Arcade layout measured dialog actions");
+        }
+        inner
+    }
+
     fn focus(&self, ui: &Ui, r: &Response) {
         if r.has_focus() {
             ui.painter().rect_stroke(
@@ -767,9 +893,14 @@ impl Kit {
 
     /// Draw an outline from the shared icon table, including cubic segments.
     pub fn paint_icon(&self, ui: &Ui, name: &str, center: ::egui::Pos2, color: Color32) {
+        self.paint_icon_sized(ui, name, center, size::ICON, color);
+    }
+
+    /// [`Kit::paint_icon`] at another kit icon size (15 small, 18 in tiles).
+    pub fn paint_icon_sized(&self, ui: &Ui, name: &str, center: ::egui::Pos2, px: f32, color: Color32) {
         let Some(icon) = crate::design::icon(name) else { return };
-        let scale = size::ICON / 24.0;
-        let origin = center - Vec2::splat(size::ICON * 0.5);
+        let scale = px / 24.0;
+        let origin = center - Vec2::splat(px * 0.5);
         let point = |x, y| origin + Vec2::new(x, y);
         let mut points = Vec::new();
         let mut current = origin;
@@ -1081,6 +1212,25 @@ mod tests {
                                     kit.select(ui, "locations", &mut option, &[(0, "Home"), (1, "Documents")]);
                                     kit.path(ui, "/a/very/long/folder/with/many/segments/and/a/long-filename-that-needs-to-wrap.txt");
                                     kit.ellipsis(ui, "A very long result name that needs an ellipsis and a tooltip instead of stretching the panel");
+                                    kit.row_with_glyph(
+                                        ui,
+                                        None,
+                                        "apps",
+                                        "Arcade Shelf",
+                                        "Drag results onto Shelf to keep them at hand while you work.",
+                                        |ui| {
+                                            kit.badge(ui, "Not running", Tone::Neutral);
+                                            kit.button_state(ui, "Open", ButtonKind::Default, true, false, true);
+                                        },
+                                    );
+                                });
+                                let mut ticked = true;
+                                kit.checkbox(ui, &mut ticked, "Remove the downloaded file");
+                                kit.dialog_head(ui, "Install Arcade Find?", "Arcade Find goes in your applications folder and can start at login.");
+                                kit.dialog_actions(ui, |ui| {
+                                    kit.button(ui, "Don't ask again for this file", ButtonKind::Ghost);
+                                    kit.button(ui, "Just run it", ButtonKind::Default);
+                                    kit.button(ui, "Install", ButtonKind::Primary);
                                 });
                                 ui.horizontal_wrapped(|ui| {
                                     for kind in [ButtonKind::Default, ButtonKind::Primary, ButtonKind::Ghost, ButtonKind::Danger, ButtonKind::Destructive] {
@@ -1149,6 +1299,88 @@ mod tests {
         assert!(next.left() >= busy.right(), "a busy button must not overlap the next widget");
         let (row, control) = centred;
         assert!((row.center().y - control.center().y).abs() < 1.0, "a row's control is centred on the row: {row:?} {control:?}");
+    }
+
+    #[test]
+    fn glyph_rows_put_the_tile_before_the_text_and_the_control_beside_it() {
+        let ctx = Context::default();
+        super::super::install_inter(&ctx);
+        let kit = Kit::for_theme(Theme::Dark, "arcade.find");
+        let mut got = (Rect::NOTHING, Vec::new(), Rect::NOTHING);
+        for _ in 0..3 {
+            let _ = ctx.run(input(720.0, 520.0, vec![]), |ctx| {
+                ::egui::CentralPanel::default().show(ctx, |ui| {
+                    let list = kit.list(ui, |ui| {
+                        kit.row_with_glyph(ui, None, "apps", "Arcade Shelf", "Keep files at hand while you work.", |ui| {
+                            vec![kit.badge(ui, "Connected", Tone::Ok).rect, kit.button_state(ui, "Open", ButtonKind::Default, true, false, true).rect]
+                        })
+                    });
+                    got = (list.inner.response.rect, list.inner.inner, list.response.rect);
+                });
+            });
+        }
+        let (row, controls, list) = got;
+        assert!(row.height() >= size::ROW - 0.5, "a glyph row keeps the row height: {row:?}");
+        assert!(controls[0].right() <= controls[1].left(), "controls keep their order");
+        assert!(controls[1].right() <= list.right() + 0.5 && controls[0].left() > list.center().x, "controls sit at the trailing edge");
+        assert!((controls[1].center().y - row.center().y).abs() < 1.0, "controls are centred on the row");
+    }
+
+    #[test]
+    fn checkbox_label_toggles_and_disabled_does_not() {
+        let ctx = Context::default();
+        super::super::install_inter(&ctx);
+        let kit = Kit::for_theme(Theme::Light, "arcade.find");
+        let mut value = false;
+        let draw = |events, enabled, value: &mut bool| {
+            let mut out = (Rect::NOTHING, false);
+            let _ = ctx.run(input(460.0, 300.0, events), |ctx| {
+                ::egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.add_enabled_ui(enabled, |ui| {
+                        let r = kit.checkbox(ui, value, "Start at login");
+                        out = (r.rect, r.changed());
+                    });
+                });
+            });
+            out
+        };
+        let (rect, _) = draw(vec![], true, &mut value);
+        assert!(rect.height() >= size::HIT_TARGET, "a 28 px hit target");
+        let on_label = ::egui::pos2(rect.right() - 4.0, rect.center().y);
+        let (_, changed) = draw(click(on_label), true, &mut value);
+        assert!(changed && value, "clicking the label ticks the box");
+        let (_, changed) = draw(click(on_label), false, &mut value);
+        assert!(!changed && value, "a disabled checkbox keeps its state");
+    }
+
+    #[test]
+    fn dialog_actions_align_right_in_order_and_wrap_when_narrow() {
+        for width in [460.0, 260.0] {
+            let ctx = Context::default();
+            super::super::install_inter(&ctx);
+            let kit = Kit::for_theme(Theme::Light, "arcade.find");
+            let mut got = (Vec::new(), Rect::NOTHING);
+            for _ in 0..3 {
+                let _ = ctx.run(input(width, 300.0, vec![]), |ctx| {
+                    ::egui::CentralPanel::default().show(ctx, |ui| {
+                        let area = ui.max_rect();
+                        let buttons = kit.dialog_actions(ui, |ui| {
+                            ["Don't ask again for this file", "Just run it", "Install"].map(|l| kit.button(ui, l, ButtonKind::Default).rect).to_vec()
+                        });
+                        got = (buttons, area);
+                    });
+                });
+            }
+            let (buttons, area) = got;
+            assert!(buttons.iter().all(|b| b.right() <= area.right() + 0.5 && b.left() >= area.left() - 0.5), "{width}: inside the dialog");
+            let last = buttons.last().unwrap();
+            if width > 400.0 {
+                assert!(buttons.windows(2).all(|w| w[0].right() < w[1].left()), "in order on one line");
+                assert!(area.right() - last.right() < 1.0, "the primary action ends at the trailing edge: {area:?} {buttons:?}");
+            } else {
+                assert!(buttons.windows(2).all(|w| w[0].top() < w[1].top() || w[0].right() < w[1].left()), "wrapped, still in order");
+            }
+        }
     }
 
     #[test]

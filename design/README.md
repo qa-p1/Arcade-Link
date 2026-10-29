@@ -123,7 +123,10 @@ reserved for disabled or decorative content.
 on every frame. Use `sidebar`, `page` (Template A content), `page_head`
 (`page_head_with` for actions), `section_head` (`section_head_with`), `list`, `row`,
 `switch_row`, `button`/`button_state`/`icon_button`, `text_input`, `select`,
-`segmented`, `badge`, `notice`, `key_chip` and `empty_state` for shared UI.
+`segmented`, `badge`, `notice`, `key_chip`, `empty_state`, `glyph_tile`,
+`row_with_glyph` (Connected apps rows), `checkbox` (dialog options and list
+selection) and `dialog_head` / `dialog_actions` (dialog title, body and
+right-aligned actions, primary last) for shared UI.
 `Tone` selects readable status/accent inks; `ButtonKind` selects a button's
 role. `path` wraps selectable paths and `ellipsis` retains the full tooltip.
 `ShortcutRecorder::row` (with a `ShortcutSpec`) is the settings row; it validates keys and holds conflicting changes until the
