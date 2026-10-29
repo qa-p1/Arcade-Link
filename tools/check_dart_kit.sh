@@ -41,6 +41,7 @@ import 'package:arcade_design_check/arcade_icons.dart';
 import 'package:arcade_design_check/arcade_theme.dart';
 import 'package:arcade_design_check/arcade_widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -197,6 +198,28 @@ void main() {
     final save = tester.getRect(find.text('Save…'));
     expect(save.left, greaterThan(title.left), reason: 'a short trailing control stays on the title line');
     expect((save.center.dy - title.center.dy).abs(), lessThan(20));
+  });
+  testWidgets('the hint bar gives a long label the room the short ones leave', (tester) async {
+    // Wide enough at the test font's square glyphs, too narrow for equal shares.
+    tester.view.physicalSize = const Size(600, 200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      theme: arcadeTheme(Brightness.light, 'arcade.clipboard'),
+      home: const Scaffold(
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: ArcadeHintBar(<(List<String>, String)>[
+            (<String>['↵'], 'Paste'),
+            (<String>['Ctrl', '↵'], 'Paste as plain text'),
+            (<String>['Esc'], 'Close'),
+          ]),
+        ),
+      ),
+    ));
+    expect(tester.takeException(), isNull);
+    final label = tester.renderObject<RenderParagraph>(find.text('Paste as plain text'));
+    expect(label.didExceedMaxLines, isFalse, reason: 'the label is cut off');
   });
   testWidgets('confirm dialog: Keep is the default, the destructive verb confirms', (tester) async {
     late BuildContext context;

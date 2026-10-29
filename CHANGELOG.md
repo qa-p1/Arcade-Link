@@ -3,6 +3,15 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
+## 0.4.3 (2026-10-29)
+
+Design kit fix; no protocol or API change.
+
+- `ArcadeHintBar` (Flutter) shares the free width between its labels by
+  length. Equal shares cut "Paste as plain text" in Clipboard's 480 px
+  picker while "Paste" and "Close" left space unused.
+- `tools/check_dart_kit.sh` checks that a long hint label isn't cut off.
+
 ## 0.4.2 (2026-10-29)
 
 Design kit fix; no protocol or API change.
