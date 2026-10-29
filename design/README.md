@@ -120,7 +120,7 @@ reserved for disabled or decorative content.
 ### egui components
 
 `design::egui::components::Kit::new(ui, app_id)` resolves the current theme
-on every frame. Use `sidebar`, `page_head`, `section_head`, `list`, `row`,
+on every frame. Use `sidebar`, `page` (Template A content), `page_head`, `section_head`, `list`, `row`,
 `switch_row`, `button`/`button_state`/`icon_button`, `text_input`, `select`,
 `segmented`, `badge`, `notice`, `key_chip` and `empty_state` for shared UI.
 `Tone` selects readable status/accent inks; `ButtonKind` selects a button's

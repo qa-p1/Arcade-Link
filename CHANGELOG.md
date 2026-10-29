@@ -16,6 +16,16 @@ immutable tag; a new tag never changes the wire format.
   wrap setting controls on narrow pages and keep busy-button widths stable.
 - Check minimum-window layouts in both themes at 100% and 125% scale, switch
   mouse/keyboard/disabled behavior and notification lifetime rules.
+- Match the CSS kit's look, checked on rendered screenshots in both themes at
+  720×520, 760×560 and 125 % text: line-strong button borders, a borderless
+  muted ghost, danger's red border on hover, ghost icon buttons, the sunken
+  segmented track, pill badges and sidebar counts, key chips with a bottom
+  edge, notices and toasts with a tone icon and the action beside the text,
+  a dashed empty state, and `page()` for Template A's padded, centred content.
+- Rows keep a control's natural width and left-to-right order beside the text
+  (it moves below the text when it needs more than about half the row), and
+  separate rows with a line only between them. Buttons wrap to the next line
+  instead of shrinking, and a busy button no longer overlaps its neighbour.
 
 ## 0.4.4 (2026-10-29)
 

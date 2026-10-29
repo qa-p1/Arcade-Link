@@ -22,6 +22,21 @@ tests unchanged and require the native Linux/Windows/macOS CI matrix before
 merging/tagging. Qt and Flutter verification is also required from CI; no
 native desktop or release is claimed here.
 
+Review pass (same day): the components were rendered in a real eframe window
+under Xvfb (light and dark at 760×560 and 720×520, dark at 125 % text) and
+compared with `design/css/components.css`. That found layout bugs the earlier
+tests could not see: right-to-left rows reversed multi-part controls (the
+segmented theme picker read Dark, Light, System; the shortcut recorder put
+Reset first and the keys backwards) and let a wide control cover the row
+text; buttons inside wrapping rows shrank and overflowed instead of wrapping,
+which widened the whole page; key chips stretched to the full line; and the
+busy spinner moved the layout cursor so the next button overlapped. Rows now
+measure their control and stack it below the text when it doesn't fit, and
+the colours, borders, pills, notices, toast and empty state follow the CSS kit.
+New tests fail on the earlier code: control order and placement beside the
+text, a busy button beside another, and a wrapped row of every button kind
+inside the 720×520 overflow check.
+
 ## 2026-10-29: shared foreground contrast correction (unreleased)
 
 Look's adoption checks found light status text below 4.5:1 and metadata using

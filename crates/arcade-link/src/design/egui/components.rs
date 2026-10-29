@@ -23,6 +23,17 @@ pub enum Tone {
     Accent,
 }
 
+/// Horizontal padding of list rows and notices (`.row`, `.notice`).
+const ROW_PAD: f32 = 14.0;
+
+fn tone_icon(tone: Tone) -> &'static str {
+    match tone {
+        Tone::Ok => "check",
+        Tone::Warn | Tone::Danger => "alert",
+        Tone::Neutral | Tone::Accent => "info",
+    }
+}
+
 /// Shared button variants. Small and icon-only keep a 28-point hit target.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ButtonKind {
@@ -194,110 +205,207 @@ impl Kit {
     }
 
     pub fn button_state(&self, ui: &mut Ui, label: &str, kind: ButtonKind, enabled: bool, busy: bool, small: bool) -> Response {
+        // Matches components.css `.btn`: line-strong borders, a borderless muted
+        // ghost, and danger's red border only on hover.
         let p = self.palette;
-        let (mut fill, mut fg, mut border) = match kind {
-            ButtonKind::Default => (p.panel, p.text, p.muted),
-            ButtonKind::Primary => (p.accent, p.accent_text, p.accent),
-            ButtonKind::Ghost => (p.bg, self.ink.accent, p.bg),
-            ButtonKind::Danger => (p.panel, self.ink.danger, self.ink.danger),
-            ButtonKind::Destructive => (p.danger, p.on_fill, p.danger),
-        };
         let enabled = enabled && ui.is_enabled();
-        if !enabled {
-            fill = p.sunken;
-            fg = p.muted;
-            border = p.line_strong;
-        }
-        let font = super::font(text::CONTROL);
-        let mut job = ::egui::text::LayoutJob::simple_singleline(label.to_string(), font, colour(fg));
-        let natural_width = ui.fonts_mut(|fonts| fonts.layout_job(job.clone())).size().x;
-        // Reserve the leading status slot even when idle: becoming busy never
-        // changes the button width or its neighbors' positions.
-        let width = (natural_width + 48.0).max(size::HIT_TARGET).min(ui.available_width());
+        let font = super::font(if small { text::SMALL } else { text::CONTROL });
+        let natural_width = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_string(), font.clone(), Color32::PLACEHOLDER)).size().x;
+        // Equal padding on both sides; the busy spinner sits in the leading
+        // padding, so becoming busy never changes the button width. Wrapping
+        // rows move a button to the next line, so only the whole row width
+        // bounds it.
+        let width = (natural_width + 48.0).max(size::HIT_TARGET).min(ui.max_rect().width());
         let height = if small { size::CONTROL_SM } else { size::CONTROL };
-        job.wrap.max_width = (width - 40.0).max(0.0);
-        job.wrap.max_rows = 1;
-        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
-        let r = ui.add_enabled_ui(enabled && !busy, |ui| ui.allocate_exact_size(Vec2::new(width, height), Sense::click()).1).inner;
-        let hover_fill = match kind {
-            ButtonKind::Primary | ButtonKind::Destructive => fill,
-            ButtonKind::Danger => p.danger_soft,
-            _ => p.hover,
+        // Allocated directly in the caller's layout (not a child scope) so
+        // wrapping rows can move the button to the next line.
+        let sense = if enabled && !busy { Sense::click() } else { Sense::hover() };
+        let r = ui.allocate_exact_size(Vec2::new(width, height), sense).1;
+        let hovered = r.hovered() && enabled && !busy;
+        let (fill, fg, border) = match (kind, hovered) {
+            (ButtonKind::Default, false) => (Some(p.panel), p.text, Some(p.line_strong)),
+            (ButtonKind::Default, true) => (Some(p.hover), p.text, Some(p.line_strong)),
+            (ButtonKind::Primary, _) => (Some(p.accent), p.accent_text, Some(p.accent)),
+            (ButtonKind::Ghost, false) => (None, p.muted, None),
+            (ButtonKind::Ghost, true) => (Some(p.hover), p.text, None),
+            (ButtonKind::Danger, false) => (Some(p.panel), self.ink.danger, Some(p.line_strong)),
+            (ButtonKind::Danger, true) => (Some(p.danger_soft), self.ink.danger, Some(p.danger)),
+            (ButtonKind::Destructive, _) => (Some(p.danger), p.on_fill, Some(p.danger)),
         };
-        let active = r.hovered() && enabled && !busy;
-        let pressed = r.is_pointer_button_down_on();
+        let (fill, fg, border) = if enabled { (fill, fg, border) } else { (fill.map(|_| p.sunken), p.muted, border.map(|_| p.line_strong)) };
+        let pressed = r.is_pointer_button_down_on() && enabled && !busy;
         ui.painter().rect(
             r.rect,
             radius::SM,
-            if kind == ButtonKind::Ghost && !active && enabled { Color32::TRANSPARENT } else { colour(if active { hover_fill } else { fill }) },
-            Stroke::new(if pressed { 2.0 } else { 1.0 }, colour(border)),
+            fill.map_or(Color32::TRANSPARENT, colour),
+            border.map_or(Stroke::NONE, |border| Stroke::new(if pressed { 2.0 } else { 1.0 }, colour(border))),
             StrokeKind::Inside,
         );
-        let text_pos = r.rect.center() - galley.size() * 0.5 + Vec2::new(8.0, 0.0);
+        let mut job = ::egui::text::LayoutJob::simple_singleline(label.to_string(), font, colour(fg));
+        job.wrap.max_width = (width - 48.0).max(0.0);
+        job.wrap.max_rows = 1;
+        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+        let text_pos = r.rect.center() - galley.size() * 0.5;
         ui.painter().galley(text_pos, galley, colour(fg));
         r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled && !busy, label));
         self.focus(ui, &r);
         if busy {
-            let rect = Rect::from_center_size(r.rect.left_center() + Vec2::new(16.0, 0.0), Vec2::splat(size::ICON_SMALL));
-            ui.put(rect, ::egui::Spinner::new().size(size::ICON_SMALL).color(colour(fg)));
+            let rect = Rect::from_center_size(r.rect.left_center() + Vec2::new(14.0, 0.0), Vec2::splat(size::ICON_SMALL - 2.0));
+            // Painted, not placed: `ui.put` would move the layout cursor and
+            // the next widget would overlap this button.
+            ::egui::Spinner::new().color(colour(fg)).paint_at(ui, rect);
         }
+        // Only a shortened label needs its full text as a tooltip.
+        if natural_width > width - 48.0 {
+            r.on_hover_text(label)
+        } else {
+            r
+        }
+    }
+
+    /// A ghost icon-only button (`.btn.ghost.icon-only.sm`); `label` is its
+    /// accessible name and tooltip.
+    pub fn icon_button(&self, ui: &mut Ui, name: &str, label: &str) -> Response {
+        let (rect, r) = ui.allocate_exact_size(Vec2::splat(size::CONTROL_SM), Sense::click());
+        let enabled = ui.is_enabled();
+        let hovered = r.hovered() && enabled;
+        if hovered {
+            ui.painter().rect_filled(rect, radius::SM, colour(self.palette.hover));
+        }
+        let fg = if !enabled {
+            self.palette.line_strong
+        } else if hovered {
+            self.palette.text
+        } else {
+            self.palette.muted
+        };
+        self.paint_icon(ui, name, rect.center(), colour(fg));
+        r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, label));
+        self.focus(ui, &r);
         r.on_hover_text(label)
     }
 
-    pub fn icon_button(&self, ui: &mut Ui, name: &str, label: &str) -> Response {
-        let (rect, r) = ui.allocate_exact_size(Vec2::splat(size::CONTROL_SM), Sense::click());
-        let fill = if r.is_pointer_button_down_on() || r.hovered() { self.palette.hover } else { self.palette.panel };
-        ui.painter().rect_filled(rect, radius::SM, colour(fill));
-        self.paint_icon(ui, name, rect.center(), colour(self.palette.text));
-        r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), label));
-        self.focus(ui, &r);
-        r.on_hover_text(label)
+    /// Template A content: the page background, 32/36 px padding, a vertical
+    /// scroll owned by the page, and the kit's maximum content width.
+    pub fn page<R>(&self, ctx: &Context, contents: impl FnOnce(&mut Ui) -> R) -> R {
+        ::egui::CentralPanel::default()
+            .frame(Frame::new().fill(colour(self.palette.bg)))
+            .show(ctx, |ui| {
+                ::egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        // `.page-main`: min(100%, content-max) wide, centred, with
+                        // 36 px sides inside that width.
+                        let full = ui.available_width();
+                        let width = (full.min(size::CONTENT_MAX) - 72.0).max(0.0);
+                        ui.add_space(32.0);
+                        let inner = ui
+                            .horizontal_top(|ui| {
+                                ui.add_space(((full - width) / 2.0 - ui.spacing().item_spacing.x).max(0.0));
+                                ui.vertical(|ui| {
+                                    ui.set_width(width);
+                                    contents(ui)
+                                })
+                                .inner
+                            })
+                            .inner;
+                        ui.add_space(72.0);
+                        inner
+                    })
+                    .inner
+            })
+            .inner
     }
 
     pub fn page_head(&self, ui: &mut Ui, title: &str, description: &str) {
         ui.label(RichText::new(title).font(super::font(text::TITLE)).strong().color(colour(self.palette.text)));
         ui.add(Label::new(RichText::new(description).font(super::font(text::SMALL)).color(colour(self.palette.muted))).wrap());
         ui.add_space(24.0);
+        let end = ui.cursor().top();
+        ui.data_mut(|d| d.insert_temp(ui.id().with("arcade-page-head-end"), end));
     }
 
+    /// `.section`: 32 px above every section except the first on the page.
     pub fn section_head(&self, ui: &mut Ui, title: &str) {
+        let after_head = ui.data(|d| d.get_temp::<f32>(ui.id().with("arcade-page-head-end"))).is_some_and(|end| (end - ui.cursor().top()).abs() < 1.0);
+        if !after_head && ui.cursor().top() > ui.max_rect().top() + 0.5 {
+            ui.add_space(32.0);
+        }
         ui.label(RichText::new(title).font(super::font(text::HEADING)).strong().color(colour(self.palette.text)));
         ui.add_space(10.0);
     }
 
-    /// A bounded list panel; scrolling is owned by the app's page/panel.
+    /// A bounded list panel (`.list`); scrolling is owned by the app's page.
+    /// Put [`Kit::row`]s and [`Kit::switch_row`]s inside it.
     pub fn list<R>(&self, ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
-        Frame::new().fill(colour(self.palette.panel)).stroke(Stroke::new(1.0, colour(self.palette.line))).corner_radius(radius::MD).inner_margin(12.0).show(
-            ui,
-            |ui| {
+        Frame::new()
+            .fill(colour(self.palette.panel))
+            .stroke(Stroke::new(1.0, colour(self.palette.line)))
+            .corner_radius(radius::MD)
+            .inner_margin(Margin::symmetric(ROW_PAD as i8, 0))
+            .show(ui, |ui| {
                 ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 0.0;
                 contents(ui)
-            },
-        )
+            })
     }
 
-    /// Label and optional description, with an app-supplied trailing control.
-    /// On narrow pages the control moves below; it never steals the text width.
+    /// Label and optional description, with an app-supplied trailing control
+    /// (`.setting-row`). The control keeps its natural width and the text gets
+    /// the rest; a control wider than about half the row moves below the text.
     pub fn row<R>(&self, ui: &mut Ui, title: &str, description: &str, control: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
-        let width = ui.available_width();
-        let narrow = width < 480.0 * ui.ctx().zoom_factor();
-        let r = ui.vertical(|ui| {
+        self.row_divider(ui);
+        let id = ui.id().with(("arcade-row", title));
+        ui.vertical(|ui| {
             ui.set_min_height(size::ROW);
-            if narrow {
-                self.row_text(ui, title, description);
-                control(ui)
-            } else {
-                ui.horizontal(|ui| {
-                    ui.allocate_ui_with_layout(Vec2::new((width * 0.52).max(160.0), 0.0), Layout::top_down(Align::Min), |ui| {
-                        self.row_text(ui, title, description);
-                    });
-                    ui.with_layout(Layout::right_to_left(Align::Center), control).inner
-                })
-                .inner
-            }
-        });
-        ui.separator();
-        r
+            ui.spacing_mut().item_spacing.y = 2.0;
+            ui.add_space(10.0);
+            let inner = self.beside(ui, id, 0.55, |ui| self.row_text(ui, title, description), control);
+            ui.add_space(10.0);
+            inner
+        })
+    }
+
+    /// `.row + .row`: a line between rows, none above the first or below the last.
+    fn row_divider(&self, ui: &mut Ui) {
+        if ui.cursor().top() > ui.max_rect().top() + 0.5 {
+            let x = ui.max_rect().x_range().expand(ROW_PAD);
+            ui.painter().hline(x, ui.cursor().top(), Stroke::new(1.0, colour(self.palette.line)));
+        }
+    }
+
+    /// Leading content beside a trailing part that keeps its natural width.
+    /// egui lays out in one pass, so the trailing width is measured and the
+    /// pass discarded when it changes: text never runs under the control, and
+    /// multi-part controls keep their left-to-right order.
+    fn beside<R>(&self, ui: &mut Ui, id: Id, stack_above: f32, leading: impl FnOnce(&mut Ui), trailing: impl FnOnce(&mut Ui) -> R) -> R {
+        let width = ui.available_width();
+        let measured = ui.data(|d| d.get_temp::<f32>(id));
+        // Unmeasured parts start stacked, which can't overflow; the next pass
+        // puts them beside the text if they fit.
+        let stacked = measured.is_none_or(|m| m > width * stack_above);
+        let (inner, actual) = if stacked {
+            leading(ui);
+            ui.add_space(6.0);
+            let r = ui.horizontal_wrapped(trailing);
+            (r.inner, r.response.rect.width())
+        } else {
+            ui.horizontal(|ui| {
+                let lead = (width - measured.unwrap_or(0.0) - ui.spacing().item_spacing.x).max(0.0);
+                ui.allocate_ui_with_layout(Vec2::new(lead, 0.0), Layout::top_down(Align::Min), |ui| {
+                    ui.set_width(lead);
+                    leading(ui);
+                });
+                let r = ui.horizontal(trailing);
+                (r.inner, r.response.rect.width())
+            })
+            .inner
+        };
+        if measured.is_none_or(|m| (m - actual).abs() > 0.5) {
+            ui.data_mut(|d| d.insert_temp(id, actual));
+            ui.ctx().request_discard("Arcade row measured its control");
+        }
+        inner
     }
 
     fn row_text(&self, ui: &mut Ui, title: &str, description: &str) {
@@ -310,24 +418,16 @@ impl Kit {
     /// The whole row toggles, including its label. Keyboard Space/Enter work
     /// through egui's normal click sense; disabled rows cannot change state.
     pub fn switch_row(&self, ui: &mut Ui, value: &mut bool, title: &str, description: &str) -> Response {
-        let width = ui.available_width();
-        let row = ui.horizontal(|ui| {
-            let label = ui
-                .allocate_ui_with_layout(Vec2::new((width - 56.0).max(0.0), size::ROW), Layout::top_down(Align::Min), |ui| {
-                    self.row_text(ui, title, description);
-                })
-                .response;
-            (label, self.switch(ui, value, title))
-        });
-        let (label_area, mut r) = row.inner;
-        let label_rect = Rect::from_min_max(row.response.rect.min, ::egui::pos2(r.rect.left(), row.response.rect.bottom()));
-        let label = ui.interact(label_rect.union(label_area.rect), r.id.with("label"), Sense::CLICK);
-        if label.clicked() && ui.is_enabled() {
+        let enabled = ui.is_enabled();
+        let row = self.row(ui, title, description, |ui| self.switch(ui, value, title));
+        let mut switch = row.inner;
+        // Registered after the switch, so a click anywhere on the row lands here once.
+        let area = ui.interact(row.response.rect, switch.id.with("row"), Sense::CLICK);
+        if area.clicked() && enabled {
             *value = !*value;
-            r.mark_changed();
+            switch.mark_changed();
         }
-        ui.separator();
-        r | label
+        switch | area
     }
 
     pub fn switch(&self, ui: &mut Ui, value: &mut bool, label: &str) -> Response {
@@ -338,6 +438,7 @@ impl Kit {
         }
         r.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, ui.is_enabled(), *value, label));
         let track = Rect::from_center_size(rect.center(), Vec2::new(32.0, 18.0));
+        // Off uses muted rather than CSS line-strong so the track keeps 3:1.
         let fill = if !ui.is_enabled() {
             self.palette.line_strong
         } else if *value {
@@ -359,32 +460,59 @@ impl Kit {
         r
     }
 
+    /// `.segmented`: options on a sunken track; the chosen one is a raised panel.
     pub fn segmented<T: Copy + PartialEq>(&self, ui: &mut Ui, value: &mut T, choices: &[(T, &str)]) -> Response {
-        let mut combined = ui.allocate_response(Vec2::ZERO, Sense::hover());
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            for &(option, label) in choices {
-                let active = *value == option;
-                let mut r = self.button(ui, label, if active { ButtonKind::Primary } else { ButtonKind::Default });
-                if r.clicked() && !active {
-                    *value = option;
-                    r.mark_changed();
-                }
-                r.widget_info(|| WidgetInfo::selected(WidgetType::SelectableLabel, ui.is_enabled(), active, label));
-                combined |= r;
-            }
-        });
-        combined
+        let p = self.palette;
+        let enabled = ui.is_enabled();
+        let font = super::font(text::CONTROL);
+        Frame::new()
+            .fill(colour(p.sunken))
+            .stroke(Stroke::new(1.0, colour(p.line)))
+            .corner_radius(radius::TILE)
+            .inner_margin(3.0)
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                ui.horizontal(|ui| {
+                    let mut combined: Option<Response> = None;
+                    for &(option, label) in choices {
+                        let active = *value == option;
+                        let galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_string(), font.clone(), Color32::PLACEHOLDER));
+                        let (rect, mut r) = ui.allocate_exact_size(Vec2::new(galley.size().x + 24.0, size::CONTROL_SM), Sense::click());
+                        if r.clicked() && !active && enabled {
+                            *value = option;
+                            r.mark_changed();
+                        }
+                        if active {
+                            ui.painter().rect(rect, 6.0, colour(p.panel), Stroke::new(1.0, colour(p.line)), StrokeKind::Inside);
+                        }
+                        let fg = if enabled && (active || r.hovered()) { p.text } else { p.muted };
+                        ui.painter().galley(rect.center() - galley.size() * 0.5, galley, colour(fg));
+                        r.widget_info(|| WidgetInfo::selected(WidgetType::SelectableLabel, enabled, active, label));
+                        self.focus(ui, &r);
+                        combined = Some(match combined {
+                            Some(all) => all | r,
+                            None => r,
+                        });
+                    }
+                    combined.unwrap_or_else(|| ui.allocate_response(Vec2::ZERO, Sense::hover()))
+                })
+                .inner
+            })
+            .inner
     }
 
     pub fn text_input(&self, ui: &mut Ui, value: &mut String, hint: &str, invalid: Option<&str>) -> Response {
         let r = ui.add_sized(
             [ui.available_width(), size::CONTROL],
-            TextEdit::singleline(value).font(super::font(text::CONTROL)).hint_text(RichText::new(hint).color(colour(self.palette.muted))),
+            TextEdit::singleline(value)
+                .font(super::font(text::CONTROL))
+                .margin(Margin::symmetric(10, 0))
+                .vertical_align(Align::Center)
+                .hint_text(RichText::new(hint).color(colour(self.palette.muted))),
         );
         self.focus(ui, &r);
         if let Some(message) = invalid {
-            ui.painter().rect_stroke(r.rect, radius::SM, Stroke::new(1.0, colour(self.ink.danger)), StrokeKind::Inside);
+            ui.painter().rect_stroke(r.rect, radius::SM, Stroke::new(1.0, colour(self.palette.danger)), StrokeKind::Inside);
             ui.add(Label::new(RichText::new(message).font(super::font(text::SMALL)).color(colour(self.ink.danger))).wrap());
         }
         r
@@ -410,50 +538,91 @@ impl Kit {
         r
     }
 
+    /// `.badge`: a 20 px pill; neutral badges carry a hairline.
     pub fn badge(&self, ui: &mut Ui, label: &str, tone: Tone) -> Response {
         let (fg, bg) = self.tones(tone);
         Frame::new()
             .fill(bg)
-            .corner_radius(radius::XS)
-            .inner_margin(Margin::symmetric(6, 2))
+            .stroke(if tone == Tone::Neutral { Stroke::new(1.0, colour(self.palette.line)) } else { Stroke::NONE })
+            .corner_radius(radius::PILL)
+            .inner_margin(Margin::symmetric(7, 3))
             .show(ui, |ui| ui.add(Label::new(RichText::new(label).font(super::font(text::CAPTION)).color(fg)).truncate()).on_hover_text(label))
             .inner
     }
 
+    /// `.key-chip`: 22 px high, at least as wide, with a 2 px bottom edge.
     pub fn key_chip(&self, ui: &mut Ui, key: &str) -> Response {
-        Frame::new()
-            .fill(colour(self.palette.sunken))
-            .stroke(Stroke::new(1.0, colour(self.palette.line_strong)))
-            .corner_radius(radius::XS)
-            .inner_margin(Margin::symmetric(6, 2))
-            .show(ui, |ui| ui.add(Label::new(RichText::new(key).font(super::font(text::CAPTION)).color(colour(self.palette.muted)))))
-            .inner
+        let galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(key.to_string(), super::font(text::CAPTION), colour(self.palette.text)));
+        let size = Vec2::new((galley.size().x + 12.0).max(size::KEY_CHIP), size::KEY_CHIP);
+        let (rect, r) = ui.allocate_exact_size(size, Sense::hover());
+        let edge = Stroke::new(1.0, colour(self.palette.line_strong));
+        ui.painter().rect(rect, radius::XS, colour(self.palette.sunken), edge, StrokeKind::Inside);
+        ui.painter().hline(rect.x_range().shrink(radius::XS), rect.bottom() - 1.5, edge);
+        ui.painter().galley(rect.center() - galley.size() * 0.5 - Vec2::new(0.0, 0.5), galley, colour(self.palette.text));
+        r.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, key));
+        r
     }
 
     pub fn notice(&self, ui: &mut Ui, message: &str, tone: Tone) -> Response {
         self.notice_action(ui, message, tone, |_| ()).response
     }
 
+    /// `.notice`: a tone icon and body-colour text on the tone's soft fill, with
+    /// any action at the trailing edge.
     pub fn notice_action<R>(&self, ui: &mut Ui, message: &str, tone: Tone, action: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
         let (fg, bg) = self.tones(tone);
-        Frame::new().fill(bg).corner_radius(radius::MD).inner_margin(12.0).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.add(Label::new(RichText::new(message).font(super::font(text::SMALL)).color(fg)).wrap());
-            action(ui)
-        })
+        let p = self.palette;
+        let (fill, border) = match tone {
+            Tone::Warn => (bg, colour(p.line).lerp_to_gamma(colour(p.warn), 0.35)),
+            Tone::Danger => (bg, colour(p.line).lerp_to_gamma(colour(p.danger), 0.35)),
+            _ => (colour(p.panel), colour(p.line)),
+        };
+        let id = ui.id().with(("arcade-notice", message));
+        Frame::new()
+            .fill(fill)
+            .stroke(Stroke::new(1.0, border))
+            .corner_radius(radius::MD)
+            .inner_margin(Margin { left: ROW_PAD as i8, right: ROW_PAD as i8, top: 10, bottom: 10 })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                self.beside(
+                    ui,
+                    id,
+                    0.6,
+                    |ui| {
+                        ui.horizontal_top(|ui| {
+                            let (icon, _) = ui.allocate_exact_size(Vec2::splat(size::ICON), Sense::hover());
+                            self.paint_icon(ui, tone_icon(tone), icon.center(), fg);
+                            ui.add(Label::new(RichText::new(message).font(super::font(text::CONTROL)).color(colour(p.text))).wrap());
+                        });
+                    },
+                    action,
+                )
+            })
     }
 
+    /// The empty state (`.empty-state`): dashed outline, icon, title, text, actions.
     pub fn empty_state<R>(&self, ui: &mut Ui, icon: &str, title: &str, description: &str, actions: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
-        Frame::new().stroke(Stroke::new(1.0, colour(self.palette.line_strong))).corner_radius(radius::MD).inner_margin(24.0).show(ui, |ui| {
+        let r = Frame::new().corner_radius(radius::MD).inner_margin(24.0).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.vertical_centered(|ui| {
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(size::TILE), Sense::hover());
+                ui.painter().rect(r, radius::TILE, colour(self.palette.sunken), Stroke::new(1.0, colour(self.palette.line)), StrokeKind::Inside);
                 self.paint_icon(ui, icon, r.center(), colour(self.palette.muted));
-                self.row_text(ui, title, description);
+                ui.add_space(4.0);
+                ui.label(RichText::new(title).font(super::font(text::HEADING)).color(colour(self.palette.text)));
+                if !description.is_empty() {
+                    ui.add(Label::new(RichText::new(description).font(super::font(text::SMALL)).color(colour(self.palette.muted))).wrap());
+                }
+                ui.add_space(6.0);
                 actions(ui)
             })
             .inner
-        })
+        });
+        let rect = r.response.rect;
+        let corners = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom(), rect.left_top()];
+        ui.painter().extend(::egui::Shape::dashed_line(&corners, Stroke::new(1.0, colour(self.palette.line_strong)), 5.0, 4.0));
+        r
     }
 
     pub fn skeleton_row(&self, ui: &mut Ui) {
@@ -552,8 +721,8 @@ impl Kit {
         let old = *selected;
         let collapsed = ctx.content_rect().width() < size::COLLAPSE_BELOW;
         let width = if collapsed { size::SIDEBAR_COLLAPSED } else { size::SIDEBAR };
-        ::egui::SidePanel::left("arcade-sidebar").exact_width(width).resizable(false).show(ctx, |ui| {
-            ui.add_space(12.0);
+        let frame = Frame::new().fill(colour(self.palette.bg)).inner_margin(Margin { left: 12, right: 12, top: 16, bottom: 14 });
+        ::egui::SidePanel::left("arcade-sidebar").exact_width(width).resizable(false).frame(frame).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let (tile, _) = ui.allocate_exact_size(Vec2::splat(size::TILE_SM), Sense::hover());
                 ui.painter().rect_filled(tile, radius::TILE_SM, colour(self.palette.text));
@@ -566,7 +735,8 @@ impl Kit {
                     ui.label(RichText::new(app_name).font(super::font(text::HEADING)).strong());
                 }
             });
-            ui.add_space(20.0);
+            ui.add_space(24.0);
+            ui.spacing_mut().item_spacing.y = 2.0;
             for (i, item) in items.iter().enumerate() {
                 let active = i == *selected;
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), size::NAV), Sense::hover());
@@ -590,33 +760,35 @@ impl Kit {
                         ui.memory_mut(|m| m.request_focus(Id::new("arcade-nav").with(*selected)));
                     }
                 }
-                if active || r.hovered() {
-                    ui.painter().rect(
-                        rect,
-                        radius::SM,
-                        colour(if active { self.palette.panel } else { self.palette.hover }),
-                        Stroke::new(1.0, colour(self.palette.line)),
-                        StrokeKind::Inside,
-                    );
+                // `.tab-button`: muted until hovered or active; the active item is a
+                // raised panel with an accent icon.
+                if active {
+                    ui.painter().rect(rect, radius::SM, colour(self.palette.panel), Stroke::new(1.0, colour(self.palette.line)), StrokeKind::Inside);
+                } else if r.hovered() {
+                    ui.painter().rect_filled(rect, radius::SM, colour(self.palette.hover));
                 }
-                self.paint_icon(ui, item.icon, rect.left_center() + Vec2::new(18.0, 0.0), colour(if active { self.ink.accent } else { self.palette.muted }));
+                let fg = if active || r.hovered() { self.palette.text } else { self.palette.muted };
+                let icon_x = if collapsed { rect.center().x } else { rect.left() + 18.0 };
+                self.paint_icon(ui, item.icon, ::egui::pos2(icon_x, rect.center().y), colour(if active { self.ink.accent } else { fg }));
                 if !collapsed {
-                    ui.painter().text(
-                        rect.left_center() + Vec2::new(36.0, 0.0),
-                        Align2::LEFT_CENTER,
-                        item.label,
-                        super::font_weight(text::BODY.size, 500),
-                        colour(self.palette.text),
-                    );
+                    let mut right = rect.right() - 8.0;
                     if let Some(count) = item.count {
-                        ui.painter().text(
-                            rect.right_center() - Vec2::new(8.0, 0.0),
-                            Align2::RIGHT_CENTER,
-                            crate::design::format::format_count(count.min(i64::MAX as usize) as i64),
-                            super::font(text::CAPTION),
-                            colour(self.palette.muted),
+                        let text = crate::design::format::format_count(count.min(i64::MAX as usize) as i64);
+                        let galley =
+                            ui.fonts_mut(|fonts| fonts.layout_no_wrap(text, super::font_weight(text::CAPTION.size, 600), colour(self.palette.accent_text)));
+                        let pill = Rect::from_min_max(
+                            ::egui::pos2(right - (galley.size().x + 12.0).max(18.0), rect.center().y - 9.0),
+                            ::egui::pos2(right, rect.center().y + 9.0),
                         );
+                        ui.painter().rect_filled(pill, radius::PILL, colour(self.palette.accent));
+                        ui.painter().galley(pill.center() - galley.size() * 0.5, galley, colour(self.palette.accent_text));
+                        right = pill.left() - 8.0;
                     }
+                    let mut job = ::egui::text::LayoutJob::simple_singleline(item.label.to_string(), super::font_weight(text::BODY.size, 500), colour(fg));
+                    job.wrap.max_width = (right - rect.left() - 36.0).max(0.0);
+                    job.wrap.max_rows = 1;
+                    let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+                    ui.painter().galley(::egui::pos2(rect.left() + 36.0, rect.center().y - galley.size().y * 0.5), galley, colour(fg));
                 }
                 r.widget_info(|| WidgetInfo::selected(WidgetType::SelectableLabel, ui.is_enabled(), active, item.label));
                 self.focus(ui, &r);
@@ -625,9 +797,24 @@ impl Kit {
                     r.request_focus();
                 }
             }
+            // `.sidebar-foot` / `.sidebar-meta`: "Version" and the number; collapsed, the number only.
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                let label = if collapsed { version.to_string() } else { format!("Version {version}") };
-                ui.add(Label::new(RichText::new(label).font(super::font(text::CAPTION)).color(colour(self.palette.muted))).selectable(true));
+                let meta = |text: &str| RichText::new(text).font(super::font(text::CAPTION)).color(colour(self.palette.muted));
+                ui.horizontal(|ui| {
+                    if collapsed {
+                        ui.add(Label::new(meta(version)).selectable(true));
+                    } else {
+                        ui.add_space(8.0);
+                        ui.label(meta("Version"));
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.add_space(8.0);
+                            ui.add(Label::new(meta(version)).selectable(true));
+                        });
+                    }
+                });
+                ui.add_space(12.0);
+                let y = ui.cursor().bottom();
+                ui.painter().hline(ui.max_rect().x_range(), y, Stroke::new(1.0, colour(self.palette.line)));
             });
         });
         old != *selected
@@ -660,13 +847,33 @@ impl Toast {
             return false;
         }
         let mut open = true;
-        ::egui::Area::new(Id::new("arcade-toast")).anchor(Align2::RIGHT_BOTTOM, [-16.0, -16.0]).order(::egui::Order::Foreground).show(ctx, |ui| {
-            ui.set_max_width(360.0_f32.min(ctx.content_rect().width() - 32.0));
-            kit.notice_action(ui, &self.message, self.tone, |ui| {
-                if kit.icon_button(ui, "x", "Close notification").clicked() {
-                    open = false;
-                }
-            });
+        // `.toast`: a raised panel at the bottom right with a tone icon, the
+        // message and a close button at the trailing edge.
+        let p = kit.palette;
+        let (fg, _) = kit.tones(self.tone);
+        ::egui::Area::new(Id::new("arcade-toast")).anchor(Align2::RIGHT_BOTTOM, [-20.0, -20.0]).order(::egui::Order::Foreground).show(ctx, |ui| {
+            let width = 380.0_f32.min(ctx.content_rect().width() - 40.0).max(0.0);
+            Frame::new()
+                .fill(colour(p.panel))
+                .stroke(Stroke::new(1.0, colour(p.line)))
+                .corner_radius(radius::MD)
+                .shadow(ui.visuals().popup_shadow)
+                .inner_margin(Margin { left: ROW_PAD as i8, right: 12, top: 10, bottom: 10 })
+                .show(ui, |ui| {
+                    ui.set_width(width - 26.0);
+                    ui.horizontal_top(|ui| {
+                        let (icon, _) = ui.allocate_exact_size(Vec2::splat(size::ICON), Sense::hover());
+                        kit.paint_icon(ui, tone_icon(self.tone), icon.center(), fg);
+                        let text = (ui.available_width() - size::CONTROL_SM - ui.spacing().item_spacing.x).max(0.0);
+                        ui.allocate_ui_with_layout(Vec2::new(text, 0.0), Layout::top_down(Align::Min), |ui| {
+                            ui.set_width(text);
+                            ui.add(Label::new(RichText::new(&self.message).font(super::font(text::CONTROL)).color(colour(p.text))).wrap());
+                        });
+                        if kit.icon_button(ui, "x", "Close notification").clicked() {
+                            open = false;
+                        }
+                    });
+                });
         });
         if let Some(lifetime) = self.lifetime {
             ctx.request_repaint_after(lifetime.saturating_sub(self.created.elapsed()));
@@ -765,6 +972,13 @@ mod tests {
                                     kit.ellipsis(ui, "A very long result name that needs an ellipsis and a tooltip instead of stretching the panel");
                                 });
                                 ui.horizontal_wrapped(|ui| {
+                                    for kind in [ButtonKind::Default, ButtonKind::Primary, ButtonKind::Ghost, ButtonKind::Danger, ButtonKind::Destructive] {
+                                        kit.button(ui, "Rescan the whole index", kind);
+                                    }
+                                    kit.button_state(ui, "Rescanning", ButtonKind::Primary, true, true, false);
+                                    kit.button_state(ui, "Disabled", ButtonKind::Default, false, false, true);
+                                });
+                                ui.horizontal_wrapped(|ui| {
                                     for tone in [Tone::Neutral, Tone::Ok, Tone::Warn, Tone::Danger, Tone::Accent] {
                                         kit.badge(ui, "Connected", tone);
                                     }
@@ -784,6 +998,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn rows_keep_control_order_beside_the_text_and_busy_buttons_do_not_move_neighbours() {
+        let ctx = Context::default();
+        super::super::install_inter(&ctx);
+        let kit = Kit::for_theme(Theme::Light, "arcade.find");
+        let appearance = 0;
+        let mut rects = (Vec::new(), Rect::NOTHING, Rect::NOTHING, Rect::NOTHING);
+        // The first pass measures each row's control; the second lays it out.
+        for _ in 0..3 {
+            let _ = ctx.run(input(720.0, 520.0, vec![]), |ctx| {
+                ::egui::CentralPanel::default().show(ctx, |ui| {
+                    let row = kit.list(ui, |ui| {
+                        kit.row(ui, "Theme", "Follow the system, or always use light or dark", |ui| {
+                            let mut parts = Vec::new();
+                            for (value, label) in [(0, "System"), (1, "Light"), (2, "Dark")] {
+                                parts.push(kit.button(ui, label, if appearance == value { ButtonKind::Primary } else { ButtonKind::Default }).rect);
+                            }
+                            parts
+                        })
+                    });
+                    ui.horizontal(|ui| {
+                        let busy = kit.button_state(ui, "Rescanning", ButtonKind::Primary, true, true, false).rect;
+                        let next = kit.button(ui, "Small", ButtonKind::Default).rect;
+                        rects = (row.inner.inner.clone(), row.response.rect, busy, next);
+                    });
+                });
+            });
+        }
+        let (parts, list, busy, next) = rects;
+        assert!(parts.windows(2).all(|pair| pair[0].right() <= pair[1].left()), "controls keep their left-to-right order: {parts:?}");
+        assert!(parts.iter().all(|part| part.right() <= list.right() + 0.5), "the control stays inside the list");
+        assert!(parts[0].left() > list.left() + list.width() * 0.3, "a narrow control sits beside the text, not under it");
+        assert!(next.left() >= busy.right(), "a busy button must not overlap the next widget");
     }
 
     #[test]
