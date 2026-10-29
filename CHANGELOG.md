@@ -3,6 +3,16 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
+## Unreleased (2026-10-29)
+
+- Fix low-contrast status badges, accent links and small metadata in the shared
+  kit. Generated readable inks meet 4.5:1 on neutral, hovered, sunken and
+  matching tinted surfaces in both themes; brand and status fills are unchanged.
+- Keep the existing Rust palette and Flutter constructors compatible. Rust's
+  `design::ink()` and additive Flutter/QML/CSS ink tokens expose the foregrounds.
+- Check these pairs in generator, Rust and Flutter tests; reject metadata
+  colours below AA before generating files.
+
 ## 0.4.3 (2026-10-29)
 
 Design kit fix; no protocol or API change.

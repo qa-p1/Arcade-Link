@@ -29,25 +29,29 @@ QtObject {
     readonly property color warnSoft: dark ? "#2d2617" : "#fbf1dc"
     readonly property color danger: dark ? "#f07a7a" : "#c43d3d"
     readonly property color dangerSoft: dark ? "#2f1c1e" : "#fbe9e9"
+    readonly property color okInk: dark ? "#5fd08f" : "#167c47"
+    readonly property color warnInk: dark ? "#e8b04b" : "#92630d"
+    readonly property color dangerInk: dark ? "#f07a7a" : "#c13c3c"
+    readonly property color accentInk: accentFor(appId, "ink")
     readonly property color accent: accentFor(appId, "accent")
     readonly property color accentText: accentFor(appId, "text")
     readonly property color accentSoft: accentFor(appId, "soft")
 
     readonly property var accents: ({
-        "arcade.tools": { "light": "#16884b", "dark": "#5fd08f", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#e3f1e9", "softDark": "#1d312a" },
-        "arcade.box": { "light": "#724fff", "dark": "#a58fff", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#eeeaff", "softDark": "#29273c" },
-        "arcade.lens": { "light": "#1e7e72", "dark": "#2bb3a3", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#e4f0ee", "softDark": "#152d2d" },
-        "arcade.look": { "light": "#1268f4", "dark": "#69a0f8", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#e3edfe", "softDark": "#1f2a3b" },
-        "arcade.wheel": { "light": "#9e6506", "dark": "#f59e0b", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#f3ede1", "softDark": "#352915" },
-        "arcade.clipboard": { "light": "#d91676", "dark": "#f176b3", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#fae3ef", "softDark": "#352330" },
-        "arcade.shelf": { "light": "#bf13d8", "dark": "#e273f3", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#f7e3fa", "softDark": "#32223a" },
-        "arcade.find": { "light": "#517e0e", "dark": "#84cc16", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#eaf0e2", "softDark": "#233117" },
+        "arcade.tools": { "light": "#16884b", "dark": "#5fd08f", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#e3f1e9", "softDark": "#1d312a", "inkLight": "#167b46", "inkDark": "#5fd08f" },
+        "arcade.box": { "light": "#724fff", "dark": "#a58fff", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#eeeaff", "softDark": "#29273c", "inkLight": "#6c4cf2", "inkDark": "#a58fff" },
+        "arcade.lens": { "light": "#1e7e72", "dark": "#2bb3a3", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#e4f0ee", "softDark": "#152d2d", "inkLight": "#1e786d", "inkDark": "#2bb3a3" },
+        "arcade.look": { "light": "#1268f4", "dark": "#69a0f8", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#e3edfe", "softDark": "#1f2a3b", "inkLight": "#1262e5", "inkDark": "#69a0f8" },
+        "arcade.wheel": { "light": "#9e6506", "dark": "#f59e0b", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#f3ede1", "softDark": "#352915", "inkLight": "#966008", "inkDark": "#f59e0b" },
+        "arcade.clipboard": { "light": "#d91676", "dark": "#f176b3", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#fae3ef", "softDark": "#352330", "inkLight": "#c9166f", "inkDark": "#f176b3" },
+        "arcade.shelf": { "light": "#bf13d8", "dark": "#e273f3", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#f7e3fa", "softDark": "#32223a", "inkLight": "#b113c9", "inkDark": "#e273f3" },
+        "arcade.find": { "light": "#517e0e", "dark": "#84cc16", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#eaf0e2", "softDark": "#233117", "inkLight": "#4d780f", "inkDark": "#84cc16" },
     })
 
     // An app's accent in the current theme. part: "accent", "text" or "soft".
     function accentFor(id, part) {
         const a = accents[id] || accents["arcade.tools"]
-        const key = part === "text" ? (dark ? "textDark" : "textLight") : part === "soft" ? (dark ? "softDark" : "softLight") : (dark ? "dark" : "light")
+        const key = part === "text" ? (dark ? "textDark" : "textLight") : part === "soft" ? (dark ? "softDark" : "softLight") : part === "ink" ? (dark ? "inkDark" : "inkLight") : (dark ? "dark" : "light")
         return a[key]
     }
     function accent(id) { return accentFor(id, "accent") }

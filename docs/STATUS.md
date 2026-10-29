@@ -1,5 +1,14 @@
 # Arcade Link status
 
+## 2026-10-29: shared foreground contrast correction (unreleased)
+
+Look's adoption checks found light status text below 4.5:1 and metadata using
+`faint` in both themes. The kit now derives readable text inks and maps its
+shared components to them, retaining the existing fill palette. Small metadata
+uses `muted`. Regression checks cover neutral, hover, sunken and matching soft
+surfaces for every app accent and theme. No protocol change or release has been
+published for this correction.
+
 ## 2026-10-28: v0.4.0 (design kit)
 
 Protocol 1 and manifest schema 1 are unchanged. v0.4.0 adds the design kit

@@ -104,3 +104,15 @@ operations) and `inter_font_bytes()`.
   on every start.
 - `arcade_link::diagnostics::Header` (Qt: `DiagnosticsHeader`): the first lines
   of every app's "Copy diagnostics".
+
+### Readable foregrounds
+
+Keep status and app accent tokens for fills. Use `--ok-ink`, `--warn-ink`,
+`--danger-ink` and `--accent-ink` for text and action icons on neutral or
+matching soft surfaces. Flutter exposes `okInk`/`warnInk`/`dangerInk`/`accentInk`,
+QML exposes the same properties, and Rust exposes `design::ink(theme, app_id)`.
+The generator derives these from the existing colours, moving toward the
+theme's text only as far as necessary to meet 4.5:1 on panel, background,
+sunken, hover and the matching soft fill. Fill colours and existing palette
+APIs stay unchanged. Metadata, placeholders and hints use `muted`; `faint` is
+reserved for disabled or decorative content.

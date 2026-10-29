@@ -22,6 +22,7 @@ fn corner(r: f32) -> CornerRadius {
 /// egui Visuals for one theme with `app_id`'s accent.
 pub fn visuals(theme: Theme, app_id: &str) -> ::egui::Visuals {
     let p: Palette = palette(theme, app_id);
+    let ink = super::ink(theme, app_id);
     let mut v = if theme.is_dark() { ::egui::Visuals::dark() } else { ::egui::Visuals::light() };
     let line = Stroke::new(1.0_f32, colour(p.line));
     let control = Stroke::new(1.0_f32, colour(p.line_strong));
@@ -40,13 +41,13 @@ pub fn visuals(theme: Theme, app_id: &str) -> ::egui::Visuals {
     v.widgets.open = widget(p.sunken, control, p.text);
     v.selection.bg_fill = colour(p.accent_soft);
     v.selection.stroke = Stroke::new(1.0_f32, colour(p.accent));
-    v.hyperlink_color = colour(p.accent);
+    v.hyperlink_color = colour(ink.accent);
     v.faint_bg_color = colour(p.sunken);
     v.extreme_bg_color = colour(p.panel);
     v.text_edit_bg_color = Some(colour(p.panel));
     v.code_bg_color = colour(p.sunken);
-    v.warn_fg_color = colour(p.warn);
-    v.error_fg_color = colour(p.danger);
+    v.warn_fg_color = colour(ink.warn);
+    v.error_fg_color = colour(ink.danger);
     v.window_fill = colour(p.panel);
     v.panel_fill = colour(p.bg);
     v.window_stroke = line;
