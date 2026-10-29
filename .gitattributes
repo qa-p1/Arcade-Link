@@ -1,0 +1,5 @@
+# Font instances and source glyphs must retain their exact bytes on Windows.
+design/fonts/** -text
+design/icons/** -text
+design/glyphs/** -text
+design/app-icons/** -text

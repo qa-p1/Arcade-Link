@@ -1,5 +1,47 @@
 # Arcade Link status
 
+## 2026-10-29: egui component set for Find and Lens (0.4.5 candidate)
+
+The `design-egui` feature now exposes shared components alongside the existing
+palette/style API. Find and Lens can use one shell, rows, controls, recorder
+and feedback components while keeping their own native surfaces. Real Inter
+500/600 instances supply the specified weights; hashes and SFNT weight tables
+are checked without adding a runtime or CI Python dependency.
+
+Local Rust 1.88 verification: generated design/contrast checks, all-features
+workspace Clippy with `-D warnings`, and the focused design/component tests.
+The layout tests render egui shapes at 720×520, in both themes and at 100% and
+125% scale; switch label/keyboard/disabled and busy-button behavior are checked.
+Python's 43-test suite completes with its two pre-existing optional
+schema skips.
+
+The full workspace test command has not passed locally: two inherited-file-
+descriptor tests inspect `/proc/$$/fd` in a shell child; this environment's
+PID namespace resolves that numeric PID to a different host process. Keep the
+tests unchanged and require the native Linux/Windows/macOS CI matrix before
+merging/tagging. Qt and Flutter verification is also required from CI; no
+native desktop or release is claimed here.
+
+Review pass (same day): the components were rendered in a real eframe window
+under Xvfb (light and dark at 760×560 and 720×520, dark at 125 % text) and
+compared with `design/css/components.css`. That found layout bugs the earlier
+tests could not see: right-to-left rows reversed multi-part controls (the
+segmented theme picker read Dark, Light, System; the shortcut recorder put
+Reset first and the keys backwards) and let a wide control cover the row
+text; buttons inside wrapping rows shrank and overflowed instead of wrapping,
+which widened the whole page; key chips stretched to the full line; and the
+busy spinner moved the layout cursor so the next button overlapped. Rows now
+measure their control and stack it below the text when it doesn't fit, and
+the colours, borders, pills, notices, toast and empty state follow the CSS kit.
+New tests fail on the earlier code: control order and placement beside the
+text, a busy button beside another, and a wrapped row of every button kind
+inside the 720×520 overflow check.
+A second pass on a realistic Find settings page (page and section actions,
+location rows, the shortcut recorder, notices with Retry, danger rows) centred
+both sides of every row and head on each other, moved buttons to the CSS
+padding, made the shortcut recorder a compact 28 px control beside its label,
+and gave selects the 32 px control height and kit chevron.
+
 ## 2026-10-29: shared foreground contrast correction (unreleased)
 
 Look's adoption checks found light status text below 4.5:1 and metadata using

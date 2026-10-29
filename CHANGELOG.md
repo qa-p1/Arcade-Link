@@ -3,6 +3,38 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
+## 0.4.5 (2026-10-29)
+
+- Add the shared egui component set for Find and Lens: sidebar, page/section
+  heads, lists and settings rows, switches, buttons, inputs, selects,
+  segmented controls, badges, notices, key chips, empty states and toasts.
+- Add a keyboard shortcut recorder with modifier validation, platform display,
+  reset and explicit conflict handling. Apps supply registry/desktop conflicts.
+- Bundle real 500/600 Inter instances for egui, whose `strong()` changes only
+  colour, with reproducible generation, provenance hashes and weight checks.
+- Use readable foreground inks, bundled Inter and the shared measurements;
+  wrap setting controls on narrow pages and keep busy-button widths stable.
+- Check minimum-window layouts in both themes at 100% and 125% scale, switch
+  mouse/keyboard/disabled behavior and notification lifetime rules.
+- Match the CSS kit's look, checked on rendered screenshots in both themes at
+  720×520, 760×560 and 125 % text: line-strong button borders, a borderless
+  muted ghost, danger's red border on hover, ghost icon buttons, the sunken
+  segmented track, pill badges and sidebar counts, key chips with a bottom
+  edge, notices and toasts with a tone icon and the action beside the text,
+  a dashed empty state, and `page()` for Template A's padded, centred content.
+- Rows keep a control's natural width and left-to-right order beside the text
+  (it moves below the text when it needs more than about half the row), and
+  separate rows with a line only between them. Buttons wrap to the next line
+  instead of shrinking, and a busy button no longer overlaps its neighbour.
+- Both sides of a row, section head, page head and notice are measured and
+  centred on each other, so buttons line up with their titles. Buttons use the
+  CSS padding (12 px, 10 px small); a busy button shows a centred spinner at
+  the same width. Selects are 32 px high with the kit chevron.
+- Add `page_head_with` and `section_head_with` for trailing actions, and
+  `ShortcutRecorder::row` (with `ShortcutSpec`): key chips, "Change…" and,
+  only when it differs from the default, "Reset", all 28 px high beside the
+  label, with conflicts shown under the row.
+
 ## 0.4.4 (2026-10-29)
 
 Design kit fix; no protocol or API change.
