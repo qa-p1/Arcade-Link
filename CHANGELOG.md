@@ -10,6 +10,8 @@ immutable tag; a new tag never changes the wire format.
   segmented controls, badges, notices, key chips, empty states and toasts.
 - Add a keyboard shortcut recorder with modifier validation, platform display,
   reset and explicit conflict handling. Apps supply registry/desktop conflicts.
+- Bundle real 500/600 Inter instances for egui, whose `strong()` changes only
+  colour, with reproducible generation, provenance hashes and weight checks.
 - Use readable foreground inks, bundled Inter and the shared measurements;
   wrap setting controls on narrow pages and keep busy-button widths stable.
 - Check minimum-window layouts in both themes at 100% and 125% scale, switch

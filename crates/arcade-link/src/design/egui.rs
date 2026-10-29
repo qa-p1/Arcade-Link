@@ -11,6 +11,21 @@ use ::egui::{Color32, CornerRadius, FontData, FontFamily, FontId, Margin, Shadow
 
 pub mod components;
 
+/// egui does not expose variable-font axes, so the kit uses real static
+/// Inter instances for medium and semibold text.
+pub fn font_weight(size: f32, weight: u16) -> FontId {
+    let family = match weight {
+        600.. => FontFamily::Name("Arcade Semibold".into()),
+        500.. => FontFamily::Name("Arcade Medium".into()),
+        _ => FontFamily::Proportional,
+    };
+    FontId::new(size, family)
+}
+
+pub fn font(style: super::TypeStyle) -> FontId {
+    font_weight(style.size, style.weight)
+}
+
 /// A token colour as an opaque egui colour.
 pub fn colour(c: u32) -> Color32 {
     let [r, g, b] = super::rgb(c);
@@ -81,12 +96,11 @@ pub fn style(theme: Theme, app_id: &str) -> ::egui::Style {
     s.spacing.icon_width = 16.0;
     s.spacing.icon_spacing = 8.0;
     s.animation_time = super::motion::FAST_MS as f32 / 1000.0;
-    let sans = |t: super::TypeStyle| FontId::new(t.size, FontFamily::Proportional);
     s.text_styles = [
-        (TextStyle::Heading, sans(text::TITLE)),
-        (TextStyle::Body, sans(text::BODY)),
-        (TextStyle::Button, sans(text::CONTROL)),
-        (TextStyle::Small, sans(text::SMALL)),
+        (TextStyle::Heading, font(text::TITLE)),
+        (TextStyle::Body, font(text::BODY)),
+        (TextStyle::Button, font(text::CONTROL)),
+        (TextStyle::Small, font(text::SMALL)),
         (TextStyle::Monospace, FontId::new(text::MONO.size, FontFamily::Monospace)),
     ]
     .into();
@@ -96,11 +110,38 @@ pub fn style(theme: Theme, app_id: &str) -> ::egui::Style {
 /// Adds Inter ahead of the app's existing proportional fonts, which stay as
 /// fallbacks for glyphs Inter lacks.
 pub fn install_inter(ctx: &::egui::Context) {
+    let medium = FontFamily::Name("Arcade Medium".into());
+    let semibold = FontFamily::Name("Arcade Semibold".into());
     ctx.add_font(FontInsert::new(
         "Inter",
         FontData::from_static(super::inter_font_bytes()),
-        vec![InsertFontFamily { family: FontFamily::Proportional, priority: FontPriority::Highest }],
+        vec![
+            InsertFontFamily { family: FontFamily::Proportional, priority: FontPriority::Highest },
+            InsertFontFamily { family: medium.clone(), priority: FontPriority::Lowest },
+            InsertFontFamily { family: semibold.clone(), priority: FontPriority::Lowest },
+        ],
     ));
+    for (family, name, bytes) in [
+        (medium.clone(), "Inter Medium", include_bytes!("../../../../design/fonts/InterMedium.ttf").as_slice()),
+        (semibold.clone(), "Inter Semibold", include_bytes!("../../../../design/fonts/InterSemibold.ttf").as_slice()),
+    ] {
+        ctx.add_font(FontInsert::new(name, FontData::from_static(bytes), vec![InsertFontFamily { family, priority: FontPriority::Highest }]));
+    }
+    // Named weight families also keep egui's normal symbol/emoji fallbacks.
+    // Unique aliases add family links without replacing any app font.
+    let defaults = ::egui::FontDefinitions::default();
+    for name in defaults.families.get(&FontFamily::Proportional).into_iter().flatten() {
+        if let Some(data) = defaults.font_data.get(name) {
+            ctx.add_font(FontInsert::new(
+                &format!("Arcade fallback {name}"),
+                data.as_ref().clone(),
+                vec![
+                    InsertFontFamily { family: medium.clone(), priority: FontPriority::Lowest },
+                    InsertFontFamily { family: semibold.clone(), priority: FontPriority::Lowest },
+                ],
+            ));
+        }
+    }
 }
 
 /// Styles `ctx` for `app_id` in both themes and selects the Appearance
@@ -137,5 +178,23 @@ mod tests {
         apply(&ctx, "dark", "arcade.find");
         assert_eq!(ctx.theme(), ::egui::Theme::Dark);
         assert_eq!(ctx.style().visuals.hyperlink_color, colour(0x84cc16));
+    }
+
+    #[test]
+    fn real_inter_weights_and_symbol_fallbacks_are_installed() {
+        let ctx = ::egui::Context::default();
+        install_inter(&ctx);
+        let _ = ctx.run(::egui::RawInput::default(), |ctx| {
+            ctx.fonts(|fonts| {
+                let definitions = fonts.definitions();
+                assert_eq!(definitions.families[&FontFamily::Proportional][0], "Inter");
+                for (weight, name) in [(500, "Inter Medium"), (600, "Inter Semibold")] {
+                    let family = font_weight(text::BODY.size, weight).family;
+                    let names = &definitions.families[&family];
+                    assert_eq!(names[0], name);
+                    assert!(names.iter().any(|name| name.starts_with("Arcade fallback")), "retain symbol/emoji fonts");
+                }
+            });
+        });
     }
 }

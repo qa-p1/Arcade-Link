@@ -1,6 +1,8 @@
 """Design kit checks: generated files current, format helpers agree (TS, QML JS)."""
 import json
 import copy
+import hashlib
+import struct
 from pathlib import Path
 import shutil
 import subprocess
@@ -26,6 +28,21 @@ console.log(JSON.stringify(out));
 
 
 class DesignTests(unittest.TestCase):
+    def test_egui_font_instances_have_the_documented_weights_and_hashes(self):
+        root = ROOT / "design/fonts"
+        hashes = json.loads((root / "egui-weights.json").read_text())
+        for name, expected in hashes.items():
+            self.assertEqual(hashlib.sha256((root / name).read_bytes()).hexdigest(), expected, name)
+        for name, weight in [("InterMedium.ttf", 500), ("InterSemibold.ttf", 600)]:
+            data = (root / name).read_bytes()
+            count = struct.unpack_from(">H", data, 4)[0]
+            tables = {}
+            for index in range(count):
+                tag, checksum, offset, size = struct.unpack_from(">4sIII", data, 12 + index * 16)
+                tables[tag] = (offset, size)
+            self.assertNotIn(b"fvar", tables, "egui needs an actual static instance")
+            self.assertEqual(struct.unpack_from(">H", data, tables[b"OS/2"][0] + 4)[0], weight)
+
     def test_small_text_and_badges_pass_aa_on_every_component_surface(self):
         tokens = json.loads((ROOT / "design/tokens.json").read_text())
         for theme in ("light", "dark"):

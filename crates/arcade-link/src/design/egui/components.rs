@@ -7,8 +7,8 @@
 use super::colour;
 use crate::design::{ink, motion, palette, radius, size, text, Ink, Palette, PathOp, Theme};
 use ::egui::{
-    Align, Align2, Color32, Context, FontId, Frame, Id, InnerResponse, Key, Label, Layout, Margin, Rect, Response, RichText, Sense, Stroke, StrokeKind,
-    TextEdit, Ui, Vec2, WidgetInfo, WidgetType,
+    Align, Align2, Color32, Context, Frame, Id, InnerResponse, Key, Label, Layout, Margin, Rect, Response, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui,
+    Vec2, WidgetInfo, WidgetType,
 };
 use std::time::{Duration, Instant};
 
@@ -195,14 +195,20 @@ impl Kit {
 
     pub fn button_state(&self, ui: &mut Ui, label: &str, kind: ButtonKind, enabled: bool, busy: bool, small: bool) -> Response {
         let p = self.palette;
-        let (fill, fg, border) = match kind {
+        let (mut fill, mut fg, mut border) = match kind {
             ButtonKind::Default => (p.panel, p.text, p.muted),
             ButtonKind::Primary => (p.accent, p.accent_text, p.accent),
             ButtonKind::Ghost => (p.bg, self.ink.accent, p.bg),
             ButtonKind::Danger => (p.panel, self.ink.danger, self.ink.danger),
             ButtonKind::Destructive => (p.danger, p.on_fill, p.danger),
         };
-        let font = FontId::proportional(text::CONTROL.size);
+        let enabled = enabled && ui.is_enabled();
+        if !enabled {
+            fill = p.sunken;
+            fg = p.muted;
+            border = p.line_strong;
+        }
+        let font = super::font(text::CONTROL);
         let mut job = ::egui::text::LayoutJob::simple_singleline(label.to_string(), font, colour(fg));
         let natural_width = ui.fonts_mut(|fonts| fonts.layout_job(job.clone())).size().x;
         // Reserve the leading status slot even when idle: becoming busy never
@@ -223,7 +229,7 @@ impl Kit {
         ui.painter().rect(
             r.rect,
             radius::SM,
-            colour(if active { hover_fill } else { fill }),
+            if kind == ButtonKind::Ghost && !active && enabled { Color32::TRANSPARENT } else { colour(if active { hover_fill } else { fill }) },
             Stroke::new(if pressed { 2.0 } else { 1.0 }, colour(border)),
             StrokeKind::Inside,
         );
@@ -249,13 +255,13 @@ impl Kit {
     }
 
     pub fn page_head(&self, ui: &mut Ui, title: &str, description: &str) {
-        ui.label(RichText::new(title).size(text::TITLE.size).strong().color(colour(self.palette.text)));
-        ui.add(Label::new(RichText::new(description).size(text::SMALL.size).color(colour(self.palette.muted))).wrap());
+        ui.label(RichText::new(title).font(super::font(text::TITLE)).strong().color(colour(self.palette.text)));
+        ui.add(Label::new(RichText::new(description).font(super::font(text::SMALL)).color(colour(self.palette.muted))).wrap());
         ui.add_space(24.0);
     }
 
     pub fn section_head(&self, ui: &mut Ui, title: &str) {
-        ui.label(RichText::new(title).size(text::HEADING.size).strong().color(colour(self.palette.text)));
+        ui.label(RichText::new(title).font(super::font(text::HEADING)).strong().color(colour(self.palette.text)));
         ui.add_space(10.0);
     }
 
@@ -295,9 +301,9 @@ impl Kit {
     }
 
     fn row_text(&self, ui: &mut Ui, title: &str, description: &str) {
-        ui.add(Label::new(RichText::new(title).size(text::BODY.size).strong().color(colour(self.palette.text))).wrap());
+        ui.add(Label::new(RichText::new(title).font(super::font_weight(text::BODY.size, 500)).color(colour(self.palette.text))).wrap());
         if !description.is_empty() {
-            ui.add(Label::new(RichText::new(description).size(text::SMALL.size).color(colour(self.palette.muted))).wrap());
+            ui.add(Label::new(RichText::new(description).font(super::font(text::SMALL)).color(colour(self.palette.muted))).wrap());
         }
     }
 
@@ -314,7 +320,8 @@ impl Kit {
             (label, self.switch(ui, value, title))
         });
         let (label_area, mut r) = row.inner;
-        let label = ui.interact(label_area.rect, r.id.with("label"), Sense::CLICK);
+        let label_rect = Rect::from_min_max(row.response.rect.min, ::egui::pos2(r.rect.left(), row.response.rect.bottom()));
+        let label = ui.interact(label_rect.union(label_area.rect), r.id.with("label"), Sense::CLICK);
         if label.clicked() && ui.is_enabled() {
             *value = !*value;
             r.mark_changed();
@@ -331,10 +338,23 @@ impl Kit {
         }
         r.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, ui.is_enabled(), *value, label));
         let track = Rect::from_center_size(rect.center(), Vec2::new(32.0, 18.0));
-        let fill = if *value { self.palette.accent } else { self.palette.muted };
+        let fill = if !ui.is_enabled() {
+            self.palette.line_strong
+        } else if *value {
+            self.palette.accent
+        } else {
+            self.palette.muted
+        };
         ui.painter().rect_filled(track, radius::PILL, colour(fill));
         let center = ::egui::pos2(if *value { track.right() - 9.0 } else { track.left() + 9.0 }, track.center().y);
-        ui.painter().circle_filled(center, 6.0, colour(if *value { self.palette.accent_text } else { self.palette.knob }));
+        let knob = if !ui.is_enabled() {
+            self.palette.muted
+        } else if *value {
+            self.palette.accent_text
+        } else {
+            self.palette.knob
+        };
+        ui.painter().circle_filled(center, 6.0, colour(knob));
         self.focus(ui, &r);
         r
     }
@@ -358,12 +378,14 @@ impl Kit {
     }
 
     pub fn text_input(&self, ui: &mut Ui, value: &mut String, hint: &str, invalid: Option<&str>) -> Response {
-        let r =
-            ui.add_sized([ui.available_width(), size::CONTROL], TextEdit::singleline(value).hint_text(RichText::new(hint).color(colour(self.palette.muted))));
+        let r = ui.add_sized(
+            [ui.available_width(), size::CONTROL],
+            TextEdit::singleline(value).font(super::font(text::CONTROL)).hint_text(RichText::new(hint).color(colour(self.palette.muted))),
+        );
         self.focus(ui, &r);
         if let Some(message) = invalid {
             ui.painter().rect_stroke(r.rect, radius::SM, Stroke::new(1.0, colour(self.ink.danger)), StrokeKind::Inside);
-            ui.add(Label::new(RichText::new(message).size(text::SMALL.size).color(colour(self.ink.danger))).wrap());
+            ui.add(Label::new(RichText::new(message).font(super::font(text::SMALL)).color(colour(self.ink.danger))).wrap());
         }
         r
     }
@@ -373,7 +395,8 @@ impl Kit {
         let before = value.clone();
         let mut r = ::egui::ComboBox::from_id_salt(id)
             .selected_text(selected)
-            .height(size::CONTROL)
+            .width(ui.available_width().min(240.0))
+            .truncate()
             .show_ui(ui, |ui| {
                 for (option, label) in options {
                     ui.selectable_value(value, option.clone(), *label);
@@ -393,7 +416,7 @@ impl Kit {
             .fill(bg)
             .corner_radius(radius::XS)
             .inner_margin(Margin::symmetric(6, 2))
-            .show(ui, |ui| ui.add(Label::new(RichText::new(label).size(text::CAPTION.size).color(fg)).truncate()).on_hover_text(label))
+            .show(ui, |ui| ui.add(Label::new(RichText::new(label).font(super::font(text::CAPTION)).color(fg)).truncate()).on_hover_text(label))
             .inner
     }
 
@@ -403,7 +426,7 @@ impl Kit {
             .stroke(Stroke::new(1.0, colour(self.palette.line_strong)))
             .corner_radius(radius::XS)
             .inner_margin(Margin::symmetric(6, 2))
-            .show(ui, |ui| ui.add(Label::new(RichText::new(key).size(text::CAPTION.size).color(colour(self.palette.muted)))))
+            .show(ui, |ui| ui.add(Label::new(RichText::new(key).font(super::font(text::CAPTION)).color(colour(self.palette.muted)))))
             .inner
     }
 
@@ -415,7 +438,7 @@ impl Kit {
         let (fg, bg) = self.tones(tone);
         Frame::new().fill(bg).corner_radius(radius::MD).inner_margin(12.0).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.add(Label::new(RichText::new(message).size(text::SMALL.size).color(fg)).wrap());
+            ui.add(Label::new(RichText::new(message).font(super::font(text::SMALL)).color(fg)).wrap());
             action(ui)
         })
     }
@@ -540,7 +563,7 @@ impl Kit {
                     self.paint_icon(ui, "apps", tile.center(), colour(self.palette.bg));
                 }
                 if !collapsed {
-                    ui.label(RichText::new(app_name).size(text::HEADING.size).strong());
+                    ui.label(RichText::new(app_name).font(super::font(text::HEADING)).strong());
                 }
             });
             ui.add_space(20.0);
@@ -582,7 +605,7 @@ impl Kit {
                         rect.left_center() + Vec2::new(36.0, 0.0),
                         Align2::LEFT_CENTER,
                         item.label,
-                        FontId::proportional(text::BODY.size),
+                        super::font_weight(text::BODY.size, 500),
                         colour(self.palette.text),
                     );
                     if let Some(count) = item.count {
@@ -590,7 +613,7 @@ impl Kit {
                             rect.right_center() - Vec2::new(8.0, 0.0),
                             Align2::RIGHT_CENTER,
                             crate::design::format::format_count(count.min(i64::MAX as usize) as i64),
-                            FontId::proportional(text::CAPTION.size),
+                            super::font(text::CAPTION),
                             colour(self.palette.muted),
                         );
                     }
@@ -604,7 +627,7 @@ impl Kit {
             }
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                 let label = if collapsed { version.to_string() } else { format!("Version {version}") };
-                ui.add(Label::new(RichText::new(label).size(text::CAPTION.size).color(colour(self.palette.muted))).selectable(true));
+                ui.add(Label::new(RichText::new(label).font(super::font(text::CAPTION)).color(colour(self.palette.muted))).selectable(true));
             });
         });
         old != *selected
@@ -672,6 +695,7 @@ mod tests {
     #[test]
     fn switch_label_and_keyboard_toggle_and_disabled_state_does_not() {
         let ctx = Context::default();
+        super::super::install_inter(&ctx);
         let kit = Kit::for_theme(Theme::Light, "arcade.find");
         let mut value = false;
         let draw = |events, enabled, value: &mut bool| {
@@ -785,6 +809,7 @@ mod tests {
     #[test]
     fn busy_buttons_keep_their_width_and_cannot_be_activated() {
         let ctx = Context::default();
+        super::super::install_inter(&ctx);
         let kit = Kit::for_theme(Theme::Light, "arcade.find");
         let draw = |busy, events| {
             let mut result = (Rect::NOTHING, false);

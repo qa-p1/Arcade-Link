@@ -4,13 +4,15 @@
 
 The `design-egui` feature now exposes shared components alongside the existing
 palette/style API. Find and Lens can use one shell, rows, controls, recorder
-and feedback components while keeping their own native surfaces.
+and feedback components while keeping their own native surfaces. Real Inter
+500/600 instances supply the specified weights; hashes and SFNT weight tables
+are checked without adding a runtime or CI Python dependency.
 
 Local Rust 1.88 verification: generated design/contrast checks, all-features
 workspace Clippy with `-D warnings`, and the focused design/component tests.
 The layout tests render egui shapes at 720×520, in both themes and at 100% and
 125% scale; switch label/keyboard/disabled and busy-button behavior are checked.
-Python's existing 42-test suite completes with its two pre-existing optional
+Python's 43-test suite completes with its two pre-existing optional
 schema skips.
 
 The full workspace test command has not passed locally: two inherited-file-

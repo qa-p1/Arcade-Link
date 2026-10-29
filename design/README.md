@@ -13,7 +13,7 @@ this folder holds the values and the code.
 | `qml/Arcade/` | QML module: `Theme` (singleton: colours per theme, `accent(appId)`, type, space, radius, motion), `Fonts` (Inter via `FontLoader`), `Icon`, `Format.js`. Component sets are added by the first QML app spec. |
 | `dart/` | `arcade_theme.dart` (`ArcadeTokens`, `ArcadeColors`, `arcadeTheme(Brightness, appId)`), `arcade_icons.dart` (`ArcadeIcon`, painter), `arcade_format.dart`, and the hand-written components in `arcade_widgets.dart` (`ArcadeButton`, `ArcadeSwitchRow`, `ArcadeListSection` + `ArcadeRow`, `ArcadeBadge`/`ArcadeDot`, `ArcadeKeyChip`/`ArcadeKeyCombo`, `ArcadeNotice`, `ArcadeEmptyState`, `showArcadeToast`, `ArcadeSidebar` + `ArcadeNavItem`, `ArcadePageHead`, `ArcadeSegmented`, `ArcadeSearchField`, `ArcadeOverlayRow`, `ArcadeHintBar`, `showArcadeDialog`, `confirmArcadeDestroy`, `ArcadeSkeletonRow`). |
 | `../crates/arcade-link/src/design.rs` | Rust, behind the `design` feature: `palette(theme, app_id)`, type/space/radius/size consts, `ICONS`, `inter_font_bytes()`, `format`; `design-egui` adds `apply_egui` and the shared `egui::components` set. |
-| `fonts/` | Inter 4.1 variable (`InterVariable.ttf`, `.woff2`) under the SIL Open Font License (`OFL.txt`). |
+| `fonts/` | Inter 4.1 variable (`InterVariable.ttf`, `.woff2`) plus static 500/600 egui instances, under the SIL Open Font License (`OFL.txt`). |
 | `icons/` | The outline icon set: `icons.json` (name → 24×24 path data) and one SVG per icon (generated). Stroke 1.5, round caps and joins, `currentColor`. |
 | `glyphs/` | The app marks `arcade.<app>.svg` (16-unit grid). `assets/glyphs/` keeps generated copies for older consumers. |
 | `app-icons/` | `make.py` (needs `rsvg-convert`) and every app's launcher icon set: PNG 16-1024, `.ico`, macOS `.icns` and AppIcon PNGs inside the 10 % safe area, iOS, Android adaptive, and Tauri's `icons/` names. |
@@ -133,3 +133,9 @@ and uses 1.5 seconds for `Toast::copied()`.
 Each data panel owns its own scroll area. Keep the page head outside it.
 Install Inter once when the egui context is created, apply Appearance whenever
 it changes, and rebuild `Kit` each frame to follow live system changes.
+
+The egui kit uses `font(type_token)` / `font_weight(size, weight)` and real
+Inter Medium/Semibold families. egui 0.33's `RichText.strong()` changes only
+colour. `fonts/make-egui.py` (fonttools 4.61.1) creates deterministic instances
+from the bundled variable font; `egui-weights.json` records the source and
+output hashes. The design check verifies the hashes and SFNT weight tables.
