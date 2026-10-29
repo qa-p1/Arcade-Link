@@ -3,7 +3,9 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
-## Unreleased (2026-10-29)
+## 0.4.4 (2026-10-29)
+
+Design kit fix; no protocol or API change.
 
 - Fix low-contrast status badges, accent links and small metadata in the shared
   kit. Generated readable inks meet 4.5:1 on neutral, hovered, sunken and
