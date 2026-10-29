@@ -3,6 +3,19 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
+## 0.4.7 (2026-10-29)
+
+- Keep egui row descriptions above their dividers when text, font scale or
+  window width changes. Allocate the current text bounds even when egui's
+  layout-pass budget is exhausted, then finish centring on the next frame.
+- Ellipsize long row names with their full tooltip; descriptions and paths
+  continue wrapping inside the row.
+- Add `page_with_head` / `page_with_head_actions`: the page head and sidebar
+  stay in place while long content scrolls in its own panel.
+- Add regressions for changed-description overlap, long glyph names and paths,
+  stable layout, resizing and the body scroll clip. The overlap and ellipsis
+  checks fail with the previous row implementation.
+
 ## 0.4.6 (2026-10-29)
 
 - egui kit: `glyph_tile` and `row_with_glyph` (a settings row with a leading

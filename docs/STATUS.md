@@ -1,5 +1,18 @@
 # Arcade Link status
 
+## 2026-10-29: egui layout fixes (0.4.7 candidate)
+
+Find's 48 real eframe screenshots exposed descriptions crossing row dividers,
+long folder names wrapping repeatedly, and repeated layout-pass warnings.
+Rows now reserve current content bounds before advancing to the next row,
+request a repaint when another measurement is needed, and ellipsize names with
+tooltips. New page helpers keep headings outside the body's scroll area.
+
+The changed-description regression failed on 0.4.6. The focused component suite
+passes locally on Linux. Native screenshots of Find using this candidate,
+full three-OS Rust CI, Qt and Flutter checks remain required. No tag or release
+is claimed by this entry.
+
 ## 2026-10-29: egui component set for Find and Lens (0.4.5 candidate)
 
 The `design-egui` feature now exposes shared components alongside the existing
