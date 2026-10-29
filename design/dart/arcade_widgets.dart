@@ -398,6 +398,7 @@ class ArcadeRow extends StatelessWidget {
     this.minHeight = ArcadeTokens.row,
     this.titleMaxLines = 1,
     this.subtitleMaxLines = 2,
+    this.stackTrailing = true,
   });
 
   final String title;
@@ -405,6 +406,9 @@ class ArcadeRow extends StatelessWidget {
   final Widget? leading;
   final Widget? trailing;
   final Widget? extra;
+  /// Below [ArcadeTokens.compactBelow], [trailing] moves under the title.
+  /// Small trailing widgets (an icon, a chevron) can stay inline with false.
+  final bool stackTrailing;
   final VoidCallback? onTap;
   final bool selected;
   final double minHeight;
@@ -414,6 +418,9 @@ class ArcadeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = arcadeColors(context);
+    // On a phone-width window the trailing control goes under the title, so
+    // a segmented control or a badge and button never squeeze it out.
+    final stacked = stackTrailing && MediaQuery.sizeOf(context).width < ArcadeTokens.compactBelow;
     final content = ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight),
       child: Padding(
@@ -431,8 +438,13 @@ class ArcadeRow extends StatelessWidget {
                   Text(subtitle!, maxLines: subtitleMaxLines, overflow: TextOverflow.ellipsis, style: ArcadeTokens.textSmall.copyWith(color: c.muted)),
               ]),
             ),
-            if (trailing != null) ...<Widget>[const SizedBox(width: ArcadeTokens.space12), trailing!],
+            if (trailing != null && !stacked) ...<Widget>[const SizedBox(width: ArcadeTokens.space12), trailing!],
           ]),
+          if (trailing != null && stacked)
+            Padding(
+              padding: const EdgeInsets.only(top: ArcadeTokens.space8),
+              child: Align(alignment: AlignmentDirectional.centerStart, child: trailing),
+            ),
           if (extra != null) Padding(padding: const EdgeInsets.only(top: ArcadeTokens.space10), child: extra),
         ]),
       ),

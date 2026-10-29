@@ -137,6 +137,42 @@ void main() {
       expect(search.text, isEmpty);
     });
   }
+  testWidgets('rows put a wide trailing control under the title on a phone-width window', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      theme: arcadeTheme(Brightness.light, 'arcade.clipboard'),
+      home: Scaffold(
+        body: Padding(
+          padding: const EdgeInsets.all(ArcadeTokens.space16),
+          child: ArcadeListSection(title: 'General', children: <Widget>[
+            ArcadeRow(
+              title: 'Appearance',
+              subtitle: 'Follows your system unless you pick one',
+              trailing: ArcadeSegmented<String>(
+                options: const <(String, String)>[('system', 'System'), ('light', 'Light'), ('dark', 'Dark')],
+                value: 'system',
+                onChanged: (_) {},
+              ),
+            ),
+            ArcadeRow(
+              title: 'Arcade Shelf',
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
+                const ArcadeBadge('Not installed'),
+                const SizedBox(width: ArcadeTokens.space8),
+                ArcadeButton(label: 'Install', small: true, onPressed: () {}),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    ));
+    expect(tester.takeException(), isNull);
+    final title = tester.getRect(find.text('Appearance'));
+    final control = tester.getRect(find.text('System'));
+    expect(control.top, greaterThan(title.bottom), reason: 'the segmented control sits under the title');
+  });
   testWidgets('confirm dialog: Keep is the default, the destructive verb confirms', (tester) async {
     late BuildContext context;
     await tester.pumpWidget(MaterialApp(

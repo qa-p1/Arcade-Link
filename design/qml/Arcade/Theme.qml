@@ -124,6 +124,7 @@ QtObject {
     readonly property real sidebar: 212
     readonly property real sidebarCollapsed: 64
     readonly property real collapseBelow: 760
+    readonly property real compactBelow: 600
     readonly property real contentMax: 980
     readonly property real windowMinWidth: 720
     readonly property real windowMinHeight: 520

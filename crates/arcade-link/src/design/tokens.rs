@@ -106,6 +106,7 @@ pub mod size {
     pub const SIDEBAR: f32 = 212.0;
     pub const SIDEBAR_COLLAPSED: f32 = 64.0;
     pub const COLLAPSE_BELOW: f32 = 760.0;
+    pub const COMPACT_BELOW: f32 = 600.0;
     pub const CONTENT_MAX: f32 = 980.0;
     pub const WINDOW_MIN_WIDTH: f32 = 720.0;
     pub const WINDOW_MIN_HEIGHT: f32 = 520.0;

@@ -3,6 +3,16 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
+## 0.4.2 (2026-10-29)
+
+Design kit fix; no protocol or API change.
+
+- `ArcadeRow` (Flutter) moves its trailing control under the title on
+  windows narrower than the new `compact-below` size token (600 px), so a
+  segmented control or a badge and button never overflow a phone-width row.
+  `stackTrailing: false` keeps a small trailing widget inline.
+- `tools/check_dart_kit.sh` checks rows at phone width.
+
 ## 0.4.1 (2026-10-28)
 
 Flutter components for the design kit; no protocol or API change.
