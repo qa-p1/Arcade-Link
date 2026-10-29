@@ -3,6 +3,21 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
+## 0.4.1 (2026-10-28)
+
+Flutter components for the design kit; no protocol or API change.
+
+- `design/dart/arcade_widgets.dart`: the kit's components for Flutter apps
+  (Clipboard), as thin wrappers over Material themed by `arcadeTheme()`:
+  buttons in every variant (busy and icon-only included), settings and list
+  rows, switch rows, badges and dots, key chips, notices, the dashed empty
+  state, toasts, sidebar and nav items, page head, segmented control, search
+  field (Esc clears, then leaves), overlay rows and hint bar, the kit dialog,
+  the confirm-before-destroying dialog and skeleton rows.
+- `tools/check_dart_kit.sh` renders every component in light and dark and
+  fails on overflow, and checks the confirm dialog.
+- `tools/e2e.py` finds Box's data in `arcade/box` from Box 0.4.0.
+
 ## 0.4.0 (2026-10-28)
 
 Arcade design kit; shared app folders and diagnostics; a stricter test harness.
