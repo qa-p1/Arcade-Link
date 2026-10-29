@@ -137,6 +137,7 @@ QtObject {
     readonly property real focusOffset: 2
     readonly property real selectionBar: 2
     readonly property real hitTarget: 28
+    readonly property real launcherWidth: 680
     readonly property real iconSize: 16
     readonly property real iconStroke: 1.5
     // Set from the platform's reduced-motion preference; durations become 0.

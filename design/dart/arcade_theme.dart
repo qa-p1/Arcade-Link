@@ -52,6 +52,7 @@ abstract final class ArcadeTokens {
   static const double focusOffset = 2;
   static const double selectionBar = 2;
   static const double hitTarget = 28;
+  static const double launcherWidth = 680;
   static const double iconSize = 16;
   static const double iconStroke = 1.5;
   static const Duration fast = Duration(milliseconds: 120);

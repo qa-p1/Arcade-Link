@@ -126,6 +126,7 @@ pub mod size {
     pub const FOCUS_OFFSET: f32 = 2.0;
     pub const SELECTION_BAR: f32 = 2.0;
     pub const HIT_TARGET: f32 = 28.0;
+    pub const LAUNCHER_WIDTH: f32 = 680.0;
     pub const ICON: f32 = 16.0;
     pub const ICON_SMALL: f32 = 15.0;
     pub const ICON_TILE: f32 = 18.0;
