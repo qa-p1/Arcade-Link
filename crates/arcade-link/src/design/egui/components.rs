@@ -377,6 +377,49 @@ impl Kit {
         self.page_head_with(ui, title, description, |_| ());
     }
 
+    /// Template A with a fixed page head and a separately scrolling body.
+    /// Long lists scroll below the title without moving the sidebar or head.
+    pub fn page_with_head<R>(&self, ctx: &Context, title: &str, description: &str, contents: impl FnOnce(&mut Ui) -> R) -> R {
+        self.page_with_head_actions(ctx, title, description, |_| (), contents)
+    }
+
+    /// [`Kit::page_with_head`] with actions at the trailing edge of the head.
+    pub fn page_with_head_actions<R>(
+        &self,
+        ctx: &Context,
+        title: &str,
+        description: &str,
+        actions: impl FnOnce(&mut Ui),
+        contents: impl FnOnce(&mut Ui) -> R,
+    ) -> R {
+        ::egui::CentralPanel::default()
+            .frame(Frame::new().fill(colour(self.palette.bg)))
+            .show(ctx, |ui| {
+                let full = ui.available_width();
+                let width = (full.min(size::CONTENT_MAX) - 72.0).max(0.0);
+                ui.add_space(32.0);
+                ui.horizontal_top(|ui| {
+                    ui.add_space(((full - width) / 2.0 - ui.spacing().item_spacing.x).max(0.0));
+                    ui.vertical(|ui| {
+                        ui.set_width(width);
+                        self.page_head_with(ui, title, description, actions);
+                        ::egui::ScrollArea::vertical()
+                            .id_salt(("arcade-page-body", title))
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                let result = contents(ui);
+                                ui.add_space(72.0);
+                                result
+                            })
+                            .inner
+                    })
+                    .inner
+                })
+                .inner
+            })
+            .inner
+    }
+
     /// `.page-head` with `.page-actions` at the trailing edge.
     pub fn page_head_with<R>(&self, ui: &mut Ui, title: &str, description: &str, actions: impl FnOnce(&mut Ui) -> R) -> R {
         let id = ui.id().with(("arcade-page-head", title));
@@ -483,15 +526,22 @@ impl Kit {
             let gap = if m.trailing.x > 0.0 { GAP } else { 0.0 };
             let lead_width = (width - m.trailing.x - gap).max(0.0);
             let height = m.leading.max(m.trailing.y).max(min_height);
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+            let rect = Rect::from_min_size(ui.next_widget_position(), Vec2::new(width, height));
             let lead_rect = Rect::from_min_size(::egui::pos2(rect.left(), rect.center().y - m.leading * 0.5), Vec2::new(lead_width, m.leading));
-            let mut lead = ui.new_child(UiBuilder::new().max_rect(lead_rect).layout(Layout::top_down(Align::Min)));
+            let mut lead = ui.new_child(UiBuilder::new().id_salt(id.with("leading")).max_rect(lead_rect).layout(Layout::top_down(Align::Min)));
             lead.set_width(lead_width);
             leading(&mut lead);
-            let trail_rect = Rect::from_min_size(::egui::pos2(rect.right() - m.trailing.x, rect.center().y - m.trailing.y * 0.5), m.trailing);
-            let mut trail = ui.new_child(UiBuilder::new().max_rect(trail_rect).layout(Layout::left_to_right(Align::Center)));
+            // A changed description or width may need more height than the
+            // previous measurement. Reserve its actual bounds in this pass;
+            // a discarded pass can still be painted when the pass budget ends.
+            let height = (lead.min_rect().bottom() - rect.top()).max(m.trailing.y).max(min_height);
+            let trail_rect = Rect::from_min_size(::egui::pos2(rect.right() - m.trailing.x, rect.top() + (height - m.trailing.y) * 0.5), m.trailing);
+            let mut trail = ui.new_child(UiBuilder::new().id_salt(id.with("trailing")).max_rect(trail_rect).layout(Layout::left_to_right(Align::Center)));
             let inner = trailing(&mut trail);
-            (inner, Beside { leading: lead.min_rect().height(), trailing: trail.min_rect().size() })
+            let now = Beside { leading: lead.min_rect().height(), trailing: trail.min_rect().size() };
+            let bottom = lead.min_rect().bottom().max(trail.min_rect().bottom()).max(rect.top() + min_height);
+            ui.advance_cursor_after_rect(Rect::from_min_max(rect.min, ::egui::pos2(rect.right(), bottom)));
+            (inner, now)
         } else {
             // Unmeasured (the first pass) or too wide: stacked, which can't overflow.
             let lead = ui.scope(leading).response;
@@ -505,13 +555,16 @@ impl Kit {
         if !known.is_some_and(|m| m.close_to(now)) {
             ui.data_mut(|d| d.insert_temp(id, now));
             ui.ctx().request_discard("Arcade layout measured a row");
+            // If the pass budget is exhausted, finish centring on a new frame.
+            ui.ctx().request_repaint();
         }
         inner
     }
 
     fn row_text(&self, ui: &mut Ui, title: &str, description: &str) {
         ui.spacing_mut().item_spacing.y = 2.0;
-        ui.add(Label::new(RichText::new(title).font(super::font_weight(text::BODY.size, 500)).color(colour(self.palette.text))).wrap());
+        ui.add(Label::new(RichText::new(title).font(super::font_weight(text::BODY.size, 500)).color(colour(self.palette.text))).truncate())
+            .on_hover_text(title);
         if !description.is_empty() {
             ui.add(Label::new(RichText::new(description).font(super::font(text::SMALL)).color(colour(self.palette.muted))).wrap());
         }
@@ -1139,6 +1192,208 @@ mod tests {
             Event::PointerButton { pos: position, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE },
             Event::PointerButton { pos: position, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE },
         ]
+    }
+
+    #[test]
+    fn glyph_row_names_ellipsize_and_keep_wrapping_paths_in_the_row() {
+        let ctx = Context::default();
+        super::super::install_inter(&ctx);
+        super::super::apply(&ctx, "light", "arcade.find");
+        let kit = Kit::for_theme(Theme::Light, "arcade.find");
+        let name = "a-long-folder-name-".repeat(7);
+        let path = format!("/home/me/Documents/{name}");
+        for _ in 0..4 {
+            let mut row = Rect::NOTHING;
+            let output = ctx.run(input(440.0, 520.0, vec![]), |ctx| {
+                ::egui::CentralPanel::default().show(ctx, |ui| {
+                    row = kit
+                        .list(ui, |ui| {
+                            kit.row_with_glyph(ui, None, "folder", &name, &path, |ui| {
+                                kit.button_state(ui, "Remove", ButtonKind::Ghost, true, false, true);
+                            })
+                        })
+                        .inner
+                        .response
+                        .rect;
+                });
+            });
+            let mut names = 0;
+            let mut paths = 0;
+            for shape in &output.shapes {
+                if let ::egui::Shape::Text(text) = &shape.shape {
+                    if text.galley.job.text == name {
+                        names += 1;
+                        assert_eq!(text.galley.rows.len(), 1, "a long folder name uses one line");
+                        assert!(text.galley.elided, "the full name remains available through its tooltip");
+                    }
+                    if text.galley.job.text == path {
+                        paths += 1;
+                        assert!(text.galley.rows.len() > 1, "the path wraps");
+                        assert!(text.pos.y + text.galley.size().y <= row.bottom() - 8.0, "the wrapped path stays above the divider");
+                    }
+                }
+            }
+            assert_eq!((names, paths), (1, 1));
+        }
+    }
+
+    #[test]
+    fn fixed_page_head_is_outside_the_body_scroll_clip() {
+        let ctx = Context::default();
+        super::super::install_inter(&ctx);
+        super::super::apply(&ctx, "dark", "arcade.find");
+        let kit = Kit::for_theme(Theme::Dark, "arcade.find");
+        let mut body = Rect::NOTHING;
+        for _ in 0..4 {
+            let output = ctx.run(input(720.0, 520.0, vec![]), |ctx| {
+                kit.page_with_head(ctx, "Locations", "Choose the folders to index.", |ui| {
+                    body = ui.clip_rect();
+                    for n in 0..20 {
+                        kit.row(ui, &format!("Folder {n}"), "/home/me/Documents", |_| ());
+                    }
+                });
+            });
+            let title = output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    ::egui::Shape::Text(text) if text.galley.job.text == "Locations" => Some(text),
+                    _ => None,
+                })
+                .expect("the fixed heading is painted");
+            assert!(title.pos.y + title.galley.size().y < body.top(), "the scroll clip starts below the fixed page heading");
+            assert!(body.bottom() <= 520.0, "only the body can scroll outside its content bounds");
+        }
+    }
+
+    #[test]
+    fn changing_description_never_paints_across_the_next_divider() {
+        let ctx = Context::default();
+        super::super::install_inter(&ctx);
+        super::super::apply(&ctx, "light", "arcade.find");
+        // A frame must be safe even when egui has used its other layout passes.
+        ctx.options_mut(|options| options.max_passes = std::num::NonZeroUsize::new(1).unwrap());
+        let kit = Kit::for_theme(Theme::Light, "arcade.find");
+        let long = "App, version, desktop and Link details for a bug report. No file names.";
+        for frame in 0..8 {
+            let description = if frame < 4 { "" } else { long };
+            let mut row = Rect::NOTHING;
+            let output = ctx.run(input(420.0, 300.0, vec![]), |ctx| {
+                ::egui::CentralPanel::default().show(ctx, |ui| {
+                    kit.list(ui, |ui| {
+                        row = kit
+                            .row(ui, "Diagnostics", description, |ui| kit.button_state(ui, "Copy diagnostics", ButtonKind::Default, true, false, true))
+                            .response
+                            .rect;
+                        kit.row(ui, "Licences", "Third-party licences ship with the app.", |_| ());
+                    });
+                });
+            });
+            if !description.is_empty() {
+                let text = output
+                    .shapes
+                    .iter()
+                    .find_map(|shape| match &shape.shape {
+                        ::egui::Shape::Text(text) if text.galley.job.text == description => Some(text),
+                        _ => None,
+                    })
+                    .expect("the description is drawn");
+                assert!(text.pos.y + text.galley.size().y <= row.bottom() - 8.0, "frame {frame}: changed description must fit its row, above its divider");
+            }
+        }
+    }
+
+    #[test]
+    fn wrapped_description_stays_above_the_next_row_divider_after_resize() {
+        let ctx = Context::default();
+        super::super::install_inter(&ctx);
+        super::super::apply(&ctx, "light", "arcade.find");
+        let kit = Kit::for_theme(Theme::Light, "arcade.find");
+        let description = "App, version, desktop and Link details for a bug report. No file names.";
+        let mut selected = 0;
+        ctx.set_zoom_factor(1.25);
+        for width in [720.0, 760.0, 720.0, 760.0] {
+            for _ in 0..8 {
+                let mut row = Rect::NOTHING;
+                let output = ctx.run(input(width / 1.25, 560.0 / 1.25, vec![]), |ctx| {
+                    kit.sidebar(ctx, "Arcade Find", "0.5.0", &[NavItem { label: "About", icon: "info", count: None }], &mut selected);
+                    kit.page(ctx, |ui| {
+                        kit.page_head(ui, "About", "Version, updates, help and licences.");
+                        kit.list(ui, |ui| {
+                            kit.row_with_glyph(ui, None, "search", "Version 0.4.3", "Press a shortcut, type, and any file or folder shows up.", |ui| {
+                                kit.badge(ui, "Not installed", Tone::Neutral);
+                            });
+                            kit.row(ui, "Updates", "Install Arcade Tools to get updates automatically.", |ui| {
+                                kit.button_state(ui, "Check for updates", ButtonKind::Default, true, false, true)
+                            });
+                            kit.row(ui, "User guide", "How to search, filter and use Find with other apps.", |ui| {
+                                kit.button_state(ui, "Open user guide", ButtonKind::Default, true, false, true)
+                            });
+                            kit.row(ui, "Logs", "/tmp/arcade-e2e-profile/find/data/logs", |ui| {
+                                kit.button_state(ui, "Open logs folder", ButtonKind::Default, true, false, true)
+                            });
+                            row = kit
+                                .row(ui, "Diagnostics", description, |ui| kit.button_state(ui, "Copy diagnostics", ButtonKind::Default, true, false, true))
+                                .response
+                                .rect;
+                            kit.row(ui, "Licences", "Third-party licences ship with the app.", |ui| {
+                                kit.button_state(ui, "Open", ButtonKind::Default, true, false, true)
+                            });
+                        });
+                    });
+                });
+                let mut matched = 0;
+                for shape in &output.shapes {
+                    if let ::egui::Shape::Text(text) = &shape.shape {
+                        if text.galley.job.text == description {
+                            matched += 1;
+                            let bottom = text.pos.y + text.galley.size().y;
+                            assert!(bottom <= row.bottom() - 8.0, "description crosses the next divider: bottom {bottom}, row {row:?}");
+                        }
+                    }
+                }
+                assert_eq!(matched, 1, "inspect the actual description geometry");
+            }
+        }
+    }
+
+    #[test]
+    fn long_glyph_rows_settle_without_repeated_discard() {
+        let ctx = Context::default();
+        super::super::install_inter(&ctx);
+        super::super::apply(&ctx, "light", "arcade.find");
+        let kit = Kit::for_theme(Theme::Light, "arcade.find");
+        let path = format!("/tmp/arcade-e2e-profile/{}", "a-long-folder-name-".repeat(7));
+        let mut pending = true;
+        let mut selected = 0;
+        ctx.set_zoom_factor(1.25);
+        for frame in 0..8 {
+            let output = ctx.run(input(760.0 / 1.25, 560.0 / 1.25, vec![]), |ctx| {
+                kit.sidebar(ctx, "Arcade Find", "0.5.0", &[NavItem { label: "Locations", icon: "folder", count: None }], &mut selected);
+                kit.page(ctx, |ui| {
+                    kit.page_head(ui, "Locations", "The folders Find indexes, and what it skips.");
+                    kit.section_head(ui, "Folders to index");
+                    kit.list(ui, |ui| {
+                        kit.row_with_glyph(ui, None, "folder", &path, &path, |ui| {
+                            kit.button_state(ui, "Remove", ButtonKind::Ghost, false, false, true);
+                        });
+                    });
+                    kit.section_head(ui, "Skip");
+                    kit.list(ui, |ui| {
+                        for i in 0..10 {
+                            kit.row(ui, &format!("Excluded folder {i}"), "Skipped with everything inside it.", |ui| {
+                                kit.button_state(ui, "Remove", ButtonKind::Ghost, true, false, true);
+                            });
+                        }
+                    });
+                });
+            });
+            pending = output.platform_output.requested_discard();
+            if frame >= 4 {
+                assert!(!pending, "frame {frame}: a stable long glyph row must stop requesting layout passes");
+            }
+        }
+        assert!(!pending);
     }
 
     #[test]
