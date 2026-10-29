@@ -1,5 +1,25 @@
 # Arcade Link status
 
+## 2026-10-29: egui component set for Find and Lens (0.4.5 candidate)
+
+The `design-egui` feature now exposes shared components alongside the existing
+palette/style API. Find and Lens can use one shell, rows, controls, recorder
+and feedback components while keeping their own native surfaces.
+
+Local Rust 1.88 verification: generated design/contrast checks, all-features
+workspace Clippy with `-D warnings`, and the focused design/component tests.
+The layout tests render egui shapes at 720×520, in both themes and at 100% and
+125% scale; switch label/keyboard/disabled and busy-button behavior are checked.
+Python's existing 42-test suite completes with its two pre-existing optional
+schema skips.
+
+The full workspace test command has not passed locally: two inherited-file-
+descriptor tests inspect `/proc/$$/fd` in a shell child; this environment's
+PID namespace resolves that numeric PID to a different host process. Keep the
+tests unchanged and require the native Linux/Windows/macOS CI matrix before
+merging/tagging. Qt and Flutter verification is also required from CI; no
+native desktop or release is claimed here.
+
 ## 2026-10-29: shared foreground contrast correction (unreleased)
 
 Look's adoption checks found light status text below 4.5:1 and metadata using

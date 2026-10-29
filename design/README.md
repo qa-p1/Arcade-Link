@@ -12,7 +12,7 @@ this folder holds the values and the code.
 | `css/icons.ts`, `css/format.ts` | The icon path map and the shared format helpers (`formatSize`, `formatCount`, `formatDuration`, `formatRelative`). |
 | `qml/Arcade/` | QML module: `Theme` (singleton: colours per theme, `accent(appId)`, type, space, radius, motion), `Fonts` (Inter via `FontLoader`), `Icon`, `Format.js`. Component sets are added by the first QML app spec. |
 | `dart/` | `arcade_theme.dart` (`ArcadeTokens`, `ArcadeColors`, `arcadeTheme(Brightness, appId)`), `arcade_icons.dart` (`ArcadeIcon`, painter), `arcade_format.dart`, and the hand-written components in `arcade_widgets.dart` (`ArcadeButton`, `ArcadeSwitchRow`, `ArcadeListSection` + `ArcadeRow`, `ArcadeBadge`/`ArcadeDot`, `ArcadeKeyChip`/`ArcadeKeyCombo`, `ArcadeNotice`, `ArcadeEmptyState`, `showArcadeToast`, `ArcadeSidebar` + `ArcadeNavItem`, `ArcadePageHead`, `ArcadeSegmented`, `ArcadeSearchField`, `ArcadeOverlayRow`, `ArcadeHintBar`, `showArcadeDialog`, `confirmArcadeDestroy`, `ArcadeSkeletonRow`). |
-| `../crates/arcade-link/src/design.rs` | Rust, behind the `design` feature: `palette(theme, app_id)`, type/space/radius/size consts, `ICONS`, `inter_font_bytes()`, `format`; `design-egui` adds `apply_egui`. |
+| `../crates/arcade-link/src/design.rs` | Rust, behind the `design` feature: `palette(theme, app_id)`, type/space/radius/size consts, `ICONS`, `inter_font_bytes()`, `format`; `design-egui` adds `apply_egui` and the shared `egui::components` set. |
 | `fonts/` | Inter 4.1 variable (`InterVariable.ttf`, `.woff2`) under the SIL Open Font License (`OFL.txt`). |
 | `icons/` | The outline icon set: `icons.json` (name → 24×24 path data) and one SVG per icon (generated). Stroke 1.5, round caps and joins, `currentColor`. |
 | `glyphs/` | The app marks `arcade.<app>.svg` (16-unit grid). `assets/glyphs/` keeps generated copies for older consumers. |
@@ -116,3 +116,20 @@ theme's text only as far as necessary to meet 4.5:1 on panel, background,
 sunken, hover and the matching soft fill. Fill colours and existing palette
 APIs stay unchanged. Metadata, placeholders and hints use `muted`; `faint` is
 reserved for disabled or decorative content.
+
+### egui components
+
+`design::egui::components::Kit::new(ui, app_id)` resolves the current theme
+on every frame. Use `sidebar`, `page_head`, `section_head`, `list`, `row`,
+`switch_row`, `button`/`button_state`/`icon_button`, `text_input`, `select`,
+`segmented`, `badge`, `notice`, `key_chip` and `empty_state` for shared UI.
+`Tone` selects readable status/accent inks; `ButtonKind` selects a button's
+role. `path` wraps selectable paths and `ellipsis` retains the full tooltip.
+`ShortcutRecorder` validates keys and holds conflicting changes until the
+user chooses; its callback must combine Link registry and desktop conflicts.
+`Toast` keeps errors until closed, expires other messages after five seconds,
+and uses 1.5 seconds for `Toast::copied()`.
+
+Each data panel owns its own scroll area. Keep the page head outside it.
+Install Inter once when the egui context is created, apply Appearance whenever
+it changes, and rebuild `Kit` each frame to follow live system changes.

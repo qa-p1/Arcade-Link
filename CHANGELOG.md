@@ -3,6 +3,18 @@
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
+## 0.4.5 (2026-10-29)
+
+- Add the shared egui component set for Find and Lens: sidebar, page/section
+  heads, lists and settings rows, switches, buttons, inputs, selects,
+  segmented controls, badges, notices, key chips, empty states and toasts.
+- Add a keyboard shortcut recorder with modifier validation, platform display,
+  reset and explicit conflict handling. Apps supply registry/desktop conflicts.
+- Use readable foreground inks, bundled Inter and the shared measurements;
+  wrap setting controls on narrow pages and keep busy-button widths stable.
+- Check minimum-window layouts in both themes at 100% and 125% scale, switch
+  mouse/keyboard/disabled behavior and notification lifetime rules.
+
 ## 0.4.4 (2026-10-29)
 
 Design kit fix; no protocol or API change.

@@ -9,6 +9,8 @@ use super::{palette, radius, size, text, Palette, Theme};
 use ::egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
 use ::egui::{Color32, CornerRadius, FontData, FontFamily, FontId, Margin, Shadow, Stroke, TextStyle, ThemePreference, Vec2};
 
+pub mod components;
+
 /// A token colour as an opaque egui colour.
 pub fn colour(c: u32) -> Color32 {
     let [r, g, b] = super::rgb(c);
