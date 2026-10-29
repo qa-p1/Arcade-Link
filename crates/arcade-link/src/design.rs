@@ -75,6 +75,23 @@ pub struct Palette {
     pub accent_soft: u32,
 }
 
+/// Readable text/action-icon colours on neutral and soft component surfaces.
+/// Fill colours remain in [`Palette`]; these foregrounds meet 4.5:1 in both
+/// themes, including hovered and sunken controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ink {
+    pub ok: u32,
+    pub warn: u32,
+    pub danger: u32,
+    pub accent: u32,
+}
+
+/// Text colours for `app_id` (unknown IDs use Tools, as [`palette`] does).
+pub fn ink(theme: Theme, app_id: &str) -> Ink {
+    let row = tokens::INKS.iter().find(|(id, _)| *id == app_id).unwrap_or(&tokens::INKS[0]);
+    row.1[usize::from(theme.is_dark())]
+}
+
 /// The shared neutrals and status colours of one theme.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Base {
@@ -255,6 +272,25 @@ mod tests {
             assert!(contrast(a.dark, palette(Theme::Dark, a.app_id).bg) >= 7.0, "{}", a.app_id);
             assert!(contrast(a.text_light, a.light) >= 4.5, "{}", a.app_id);
             assert!(contrast(a.text_dark, a.dark) >= 4.5, "{}", a.app_id);
+        }
+    }
+
+    #[test]
+    fn text_inks_meet_aa_on_neutral_and_tinted_surfaces() {
+        for theme in [Theme::Light, Theme::Dark] {
+            for app in ACCENTS {
+                let p = palette(theme, app.app_id);
+                let i = ink(theme, app.app_id);
+                for foreground in [p.text, p.muted, i.ok, i.warn, i.danger, i.accent] {
+                    for background in [p.bg, p.panel, p.sunken, p.hover] {
+                        assert!(contrast(foreground, background) >= 4.5, "{} {theme:?}: {foreground:x} on {background:x}", app.app_id);
+                    }
+                }
+                for (foreground, background) in [(i.ok, p.ok_soft), (i.warn, p.warn_soft), (i.danger, p.danger_soft), (i.accent, p.accent_soft)] {
+                    assert!(contrast(foreground, background) >= 4.5, "{} {theme:?}", app.app_id);
+                }
+            }
+            assert_eq!(ink(theme, "unknown"), ink(theme, "arcade.tools"));
         }
     }
 

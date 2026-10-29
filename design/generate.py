@@ -55,6 +55,33 @@ def mix(fg: str, bg: str, amount: float) -> str:
     return "#" + "".join(f"{round(b[i] + amount * (f[i] - b[i])):02x}" for i in range(3))
 
 
+def readable_ink(tokens: dict, theme: str, colour: str, soft: str) -> str:
+    """Keep the hue, moving toward text until all component surfaces pass AA.
+
+    Fill colours remain the exact brand/status tokens. Small text and action
+    icons need a separate foreground on tinted, hovered and sunken surfaces.
+    Generate it once here so CSS, Dart, QML and Rust agree byte for byte.
+    """
+    neutral = tokens["neutral"][theme]
+    surfaces = [neutral[name] for name in ("bg", "panel", "sunken", "hover")] + [soft]
+    for step in range(101):
+        candidate = mix(neutral["text"], colour, step / 100)
+        if all(contrast(candidate, background) >= 4.5 for background in surfaces):
+            return candidate
+    raise TokenError(f"{theme}: no readable ink for {colour} on {surfaces}")
+
+
+def status_inks(tokens: dict, theme: str) -> dict[str, str]:
+    status = tokens["status"][theme]
+    return {name: readable_ink(tokens, theme, status[name], status[f"{name}-soft"])
+            for name in ("ok", "warn", "danger")}
+
+
+def accent_ink(tokens: dict, app: str, theme: str) -> str:
+    accent = tokens["accent"][app]
+    return readable_ink(tokens, theme, accent[theme], accent["soft"][theme])
+
+
 # ---- validation -------------------------------------------------------------
 
 def colour_tokens(tokens: dict):
@@ -81,6 +108,14 @@ def validate(tokens: dict, shortcuts: dict, components: str) -> list[str]:
     if set(tokens["neutral"]["light"]) != set(tokens["neutral"]["dark"]) or set(tokens["status"]["light"]) != set(tokens["status"]["dark"]):
         errors.append("light and dark themes must define the same tokens")
     bg_dark, panel_light = tokens["neutral"]["dark"]["bg"], tokens["neutral"]["light"]["panel"]
+    for theme in ("light", "dark"):
+        neutral = tokens["neutral"][theme]
+        for foreground in ("text", "muted"):
+            for background in ("bg", "panel", "sunken", "hover"):
+                ratio = contrast(neutral[foreground], neutral[background])
+                if ratio < 4.5:
+                    errors.append(f"{theme}: {foreground} on {background} is {ratio:.2f}:1, needs 4.5:1")
+        status_inks(tokens, theme)
     for app, accent in tokens["accent"].items():
         pairs = (
             ("light accent vs white", accent["light"], "#ffffff", 4.5),
@@ -323,22 +358,23 @@ def snake(name: str) -> str:
 def css_vars(tokens: dict, theme: str) -> list[str]:
     lines = [f"  --{name}: {value};" for name, value in tokens["neutral"][theme].items()]
     lines += [f"  --{name}: {value};" for name, value in tokens["status"][theme].items()]
+    lines += [f"  --{name}-ink: {value};" for name, value in status_inks(tokens, theme).items()]
     lines.append(f"  --shadow: {tokens['shadow'][theme]['rest']};")
     lines.append(f"  --shadow-pop: {tokens['shadow'][theme]['pop']};")
     lines.append(f"  color-scheme: {theme};")
     return lines
 
 
-def accent_vars(accent: dict, theme: str) -> str:
-    return f"--accent: {accent[theme]}; --accent-text: {accent['text'][theme]}; --accent-soft: {accent['soft'][theme]};"
+def accent_vars(tokens: dict, app: str, theme: str) -> str:
+    accent = tokens["accent"][app]
+    return f"--accent: {accent[theme]}; --accent-text: {accent['text'][theme]}; --accent-soft: {accent['soft'][theme]}; --accent-ink: {accent_ink(tokens, app, theme)};"
 
 
 def emit_css(tokens: dict, components: str) -> str:
     out = [f"/* {HEADER}\n   Arcade kit stylesheet: tokens, light/dark themes, [data-app] accents and\n   the shared components. Set <html data-app=\"arcade.<app>\"> for the app's\n   accent and data-theme=\"light|dark\" to override the system theme. */", ""]
-    default = tokens["accent"]["arcade.tools"]
     out.append(":root {")
     out += css_vars(tokens, "light")
-    out.append("  " + accent_vars(default, "light"))
+    out.append("  " + accent_vars(tokens, "arcade.tools", "light"))
     t = tokens["type"]
     out.append(f"  --font-sans: {t['family']['sans']}, ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif;")
     out.append(f"  --font-mono: {t['family']['mono']};")
@@ -363,12 +399,12 @@ def emit_css(tokens: dict, components: str) -> str:
     m = tokens["motion"]
     out.append(f"  --dur-fast: {m['fast']}ms; --dur-base: {m['base']}ms; --dur-slow: {m['slow']}ms; --ease: {m['easing']};")
     out.append("}")
-    dark = ["html[data-theme=\"dark\"] {"] + css_vars(tokens, "dark") + ["  " + accent_vars(default, "dark"), "}"]
+    dark = ["html[data-theme=\"dark\"] {"] + css_vars(tokens, "dark") + ["  " + accent_vars(tokens, "arcade.tools", "dark"), "}"]
     out += dark
     out.append("@media (prefers-color-scheme: dark) {")
     out.append("  html:not([data-theme=\"light\"]):not([data-theme=\"dark\"]) {")
     out += ["  " + line for line in css_vars(tokens, "dark")]
-    out.append("    " + accent_vars(default, "dark"))
+    out.append("    " + accent_vars(tokens, "arcade.tools", "dark"))
     out.append("  }")
     out.append("}")
     out.append("")
@@ -376,9 +412,9 @@ def emit_css(tokens: dict, components: str) -> str:
     auto_dark = 'html:not([data-theme="light"]):not([data-theme="dark"])'
     for app, accent in tokens["accent"].items():
         sel = f'[data-app="{app}"]'
-        out.append(f"{sel} {{ {accent_vars(accent, 'light')} }}")
-        out.append(f'html[data-theme="dark"]{sel}, html[data-theme="dark"] {sel} {{ {accent_vars(accent, "dark")} }}')
-        out.append(f"@media (prefers-color-scheme: dark) {{ {auto_dark}{sel}, {auto_dark} {sel} {{ {accent_vars(accent, 'dark')} }} }}")
+        out.append(f"{sel} {{ {accent_vars(tokens, app, 'light')} }}")
+        out.append(f'html[data-theme="dark"]{sel}, html[data-theme="dark"] {sel} {{ {accent_vars(tokens, app, "dark")} }}')
+        out.append(f"@media (prefers-color-scheme: dark) {{ {auto_dark}{sel}, {auto_dark} {sel} {{ {accent_vars(tokens, app, 'dark')} }} }}")
     out.append("")
     out.append(components.rstrip())
     return "\n".join(out) + "\n"
@@ -426,19 +462,23 @@ def emit_qml_theme(tokens: dict) -> str:
         group = "neutral" if name in tokens["neutral"]["light"] else "status"
         light, dark = tokens[group]["light"][name], tokens[group]["dark"][name]
         lines.append(f"    readonly property color {camel(name)}: dark ? {qml_colour(dark)} : {qml_colour(light)}")
+    for name in ("ok", "warn", "danger"):
+        light, dark = (status_inks(tokens, theme)[name] for theme in ("light", "dark"))
+        lines.append(f"    readonly property color {name}Ink: dark ? {qml_colour(dark)} : {qml_colour(light)}")
+    lines.append('    readonly property color accentInk: accentFor(appId, "ink")')
     lines.append("    readonly property color accent: accentFor(appId, \"accent\")")
     lines.append("    readonly property color accentText: accentFor(appId, \"text\")")
     lines.append("    readonly property color accentSoft: accentFor(appId, \"soft\")")
     lines.append("")
     lines.append("    readonly property var accents: ({")
     for app, accent in tokens["accent"].items():
-        lines.append(f'        "{app}": {{ "light": "{accent["light"]}", "dark": "{accent["dark"]}", "textLight": "{accent["text"]["light"]}", "textDark": "{accent["text"]["dark"]}", "softLight": "{accent["soft"]["light"]}", "softDark": "{accent["soft"]["dark"]}" }},')
+        lines.append(f'        "{app}": {{ "light": "{accent["light"]}", "dark": "{accent["dark"]}", "textLight": "{accent["text"]["light"]}", "textDark": "{accent["text"]["dark"]}", "softLight": "{accent["soft"]["light"]}", "softDark": "{accent["soft"]["dark"]}", "inkLight": "{accent_ink(tokens, app, "light")}", "inkDark": "{accent_ink(tokens, app, "dark")}" }},')
     lines.append("    })")
     lines.append("")
     lines.append("    // An app's accent in the current theme. part: \"accent\", \"text\" or \"soft\".")
     lines.append("    function accentFor(id, part) {")
     lines.append("        const a = accents[id] || accents[\"arcade.tools\"]")
-    lines.append("        const key = part === \"text\" ? (dark ? \"textDark\" : \"textLight\") : part === \"soft\" ? (dark ? \"softDark\" : \"softLight\") : (dark ? \"dark\" : \"light\")")
+    lines.append("        const key = part === \"text\" ? (dark ? \"textDark\" : \"textLight\") : part === \"soft\" ? (dark ? \"softDark\" : \"softLight\") : part === \"ink\" ? (dark ? \"inkDark\" : \"inkLight\") : (dark ? \"dark\" : \"light\")")
     lines.append("        return a[key]")
     lines.append("    }")
     lines.append("    function accent(id) { return accentFor(id, \"accent\") }")
@@ -563,7 +603,10 @@ def emit_dart_theme(tokens: dict) -> str:
     L.append("@immutable")
     L.append("class ArcadeColors extends ThemeExtension<ArcadeColors> {")
     fields = [camel(n) for n in names] + ["accent", "accentText", "accentSoft"]
-    L.append("  const ArcadeColors({" + ", ".join(f"required this.{f}" for f in fields) + "});")
+    original_fields = fields.copy()
+    inks = ["okInk", "warnInk", "dangerInk", "accentInk"]
+    fields += inks
+    L.append("  const ArcadeColors({" + ", ".join(f"required this.{f}" for f in original_fields) + ", " + ", ".join(f"Color? {f}" for f in inks) + "}) : " + ", ".join(f"{f} = {f} ?? {f[:-3]}" for f in inks) + ";")
     for f in fields:
         L.append(f"  final Color {f};")
     L.append("")
@@ -576,6 +619,8 @@ def emit_dart_theme(tokens: dict) -> str:
             group = "neutral" if n in tokens["neutral"]["light"] else "status"
             args.append(f"{camel(n)}: const {dart_colour(tokens[group][theme][n])}")
         args += [f"accent: a.{theme}", f"accentText: a.text{theme.capitalize()}", f"accentSoft: a.soft{theme.capitalize()}"]
+        args += [f"{name}Ink: const {dart_colour(value)}" for name, value in status_inks(tokens, theme).items()]
+        args += [f"accentInk: a.ink{theme.capitalize()}"]
         L.append("    return ArcadeColors(" + ", ".join(args) + ");")
         L.append("  }")
     L.append("")
@@ -593,14 +638,14 @@ def emit_dart_theme(tokens: dict) -> str:
     L.append("/// One app's accent pair (STANDARD.md §2).")
     L.append("@immutable")
     L.append("class ArcadeAccent {")
-    L.append("  const ArcadeAccent({required this.light, required this.dark, required this.textLight, required this.textDark, required this.softLight, required this.softDark});")
-    for f in ("light", "dark", "textLight", "textDark", "softLight", "softDark"):
+    L.append("  const ArcadeAccent({required this.light, required this.dark, required this.textLight, required this.textDark, required this.softLight, required this.softDark, Color? inkLight, Color? inkDark}) : inkLight = inkLight ?? light, inkDark = inkDark ?? dark;")
+    for f in ("light", "dark", "textLight", "textDark", "softLight", "softDark", "inkLight", "inkDark"):
         L.append(f"  final Color {f};")
     L.append("}")
     L.append("")
     L.append("const Map<String, ArcadeAccent> arcadeAccents = <String, ArcadeAccent>{")
     for app, a in tokens["accent"].items():
-        L.append(f"  '{app}': ArcadeAccent(light: {dart_colour(a['light'])}, dark: {dart_colour(a['dark'])}, textLight: {dart_colour(a['text']['light'])}, textDark: {dart_colour(a['text']['dark'])}, softLight: {dart_colour(a['soft']['light'])}, softDark: {dart_colour(a['soft']['dark'])}),")
+        L.append(f"  '{app}': ArcadeAccent(light: {dart_colour(a['light'])}, dark: {dart_colour(a['dark'])}, textLight: {dart_colour(a['text']['light'])}, textDark: {dart_colour(a['text']['dark'])}, softLight: {dart_colour(a['soft']['light'])}, softDark: {dart_colour(a['soft']['dark'])}, inkLight: {dart_colour(accent_ink(tokens, app, 'light'))}, inkDark: {dart_colour(accent_ink(tokens, app, 'dark'))}),")
     L.append("};")
     L.append("")
     L.append(DART_THEME_FN)
@@ -622,7 +667,7 @@ ThemeData arcadeTheme(Brightness brightness, String appId) {
     error: c.danger,
     onError: c.onFill,
     errorContainer: c.dangerSoft,
-    onErrorContainer: c.danger,
+    onErrorContainer: c.dangerInk,
     surface: c.panel,
     onSurface: c.text,
     onSurfaceVariant: c.muted,
@@ -676,7 +721,7 @@ ThemeData arcadeTheme(Brightness brightness, String appId) {
       isDense: true,
       filled: true,
       fillColor: c.panel,
-      hintStyle: tone(ArcadeTokens.textControl, c.faint),
+      hintStyle: tone(ArcadeTokens.textControl, c.muted),
       contentPadding: const EdgeInsets.symmetric(horizontal: ArcadeTokens.space10, vertical: ArcadeTokens.space8),
       border: border,
       enabledBorder: border,
@@ -869,7 +914,7 @@ def rust_colour(value: str) -> str:
 
 def emit_rust_tokens(tokens: dict, icons: dict) -> str:
     L = [f"// {HEADER}", "//! Token values for [`crate::design`]. Colours are `0xRRGGBB`; `scrim` is `0xRRGGBBAA`.", "",
-         "use super::{Accent, Base, Icon, TypeStyle};", ""]
+         "use super::{Accent, Base, Icon, Ink, TypeStyle};", ""]
     for theme in ("light", "dark"):
         n, s = tokens["neutral"][theme], tokens["status"][theme]
         L.append(f"pub(crate) const {theme.upper()}: Base = Base {{")
@@ -879,6 +924,15 @@ def emit_rust_tokens(tokens: dict, icons: dict) -> str:
         for name in ("ok", "ok-soft", "warn", "warn-soft", "danger", "danger-soft"):
             L.append(f"    {snake(name)}: {rust_colour(s[name])},")
         L.append("};")
+    L.append("")
+    L.append("pub(crate) const INKS: &[(&str, [Ink; 2])] = &[")
+    for app in tokens["accent"]:
+        values = []
+        for theme in ("light", "dark"):
+            colours = status_inks(tokens, theme) | {"accent": accent_ink(tokens, app, theme)}
+            values.append("Ink { " + ", ".join(f"{name}: {rust_colour(value)}" for name, value in colours.items()) + " }")
+        L.append(f'    ("{app}", [' + ", ".join(values) + "]),")
+    L.append("];")
     L.append("")
     L.append("/// Every app's accent, in Link id order of tokens.json.")
     L.append("pub const ACCENTS: &[Accent] = &[")

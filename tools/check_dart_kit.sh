@@ -53,6 +53,29 @@ void main() {
       }
     }
   });
+  test('readable inks and metadata meet AA in every theme', () {
+    double contrast(Color a, Color b) {
+      final x = a.computeLuminance();
+      final y = b.computeLuminance();
+      return x > y ? (x + 0.05) / (y + 0.05) : (y + 0.05) / (x + 0.05);
+    }
+    for (final id in arcadeAccents.keys) {
+      for (final b in Brightness.values) {
+        final c = b == Brightness.light ? ArcadeColors.light(id) : ArcadeColors.dark(id);
+        final surfaces = <Color>[c.bg, c.panel, c.sunken, c.hover];
+        for (final foreground in <Color>[c.text, c.muted, c.okInk, c.warnInk, c.dangerInk, c.accentInk]) {
+          for (final background in surfaces) {
+            expect(contrast(foreground, background), greaterThanOrEqualTo(4.5), reason: '$id $b');
+          }
+        }
+        for (final pair in <(Color, Color)>[(c.okInk, c.okSoft), (c.warnInk, c.warnSoft), (c.dangerInk, c.dangerSoft), (c.accentInk, c.accentSoft)]) {
+          expect(contrast(pair.$1, pair.$2), greaterThanOrEqualTo(4.5), reason: '$id $b');
+        }
+        expect(c.copyWith().warnInk, c.warnInk);
+        expect(c.lerp(c, 0.5).accentInk, c.accentInk);
+      }
+    }
+  });
   testWidgets('icons paint', (tester) async {
     await tester.pumpWidget(MaterialApp(theme: arcadeTheme(Brightness.dark, 'arcade.clipboard'), home: const Center(child: ArcadeIcon('clipboard', size: 24))));
     expect(find.byType(ArcadeIcon), findsOneWidget);
