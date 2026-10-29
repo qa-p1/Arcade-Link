@@ -3,6 +3,7 @@
 // arcade_theme.dart and arcade_icons.dart beside it are generated.
 // ignore_for_file: public_member_api_docs
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'arcade_icons.dart';
@@ -241,22 +242,22 @@ class ArcadeNotice extends StatelessWidget {
       ArcadeTone.warn || ArcadeTone.danger => 'alert',
       _ => 'info',
     };
+    final main = Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+      Padding(padding: const EdgeInsets.only(top: 2), child: ArcadeIcon(icon, color: t.fg)),
+      const SizedBox(width: ArcadeTokens.space10),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          if (title != null) Text(title!, style: ArcadeTokens.textBody.copyWith(color: c.text, fontWeight: FontWeight.w600)),
+          Text(message, style: ArcadeTokens.textBody.copyWith(color: c.text)),
+        ]),
+      ),
+    ]);
     return Semantics(
       liveRegion: tone == ArcadeTone.danger,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: ArcadeTokens.space12, vertical: ArcadeTokens.space10),
         decoration: BoxDecoration(color: t.bg, borderRadius: _radiusMd),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          Padding(padding: const EdgeInsets.only(top: 2), child: ArcadeIcon(icon, color: t.fg)),
-          const SizedBox(width: ArcadeTokens.space10),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-              if (title != null) Text(title!, style: ArcadeTokens.textBody.copyWith(color: c.text, fontWeight: FontWeight.w600)),
-              Text(message, style: ArcadeTokens.textBody.copyWith(color: c.text)),
-            ]),
-          ),
-          if (action != null) ...<Widget>[const SizedBox(width: ArcadeTokens.space10), action!],
-        ]),
+        child: action == null ? main : _TrailingLayout(main: main, trailing: action!),
       ),
     );
   }
@@ -398,7 +399,6 @@ class ArcadeRow extends StatelessWidget {
     this.minHeight = ArcadeTokens.row,
     this.titleMaxLines = 1,
     this.subtitleMaxLines = 2,
-    this.stackTrailing = true,
   });
 
   final String title;
@@ -406,9 +406,6 @@ class ArcadeRow extends StatelessWidget {
   final Widget? leading;
   final Widget? trailing;
   final Widget? extra;
-  /// Below [ArcadeTokens.compactBelow], [trailing] moves under the title.
-  /// Small trailing widgets (an icon, a chevron) can stay inline with false.
-  final bool stackTrailing;
   final VoidCallback? onTap;
   final bool selected;
   final double minHeight;
@@ -418,33 +415,25 @@ class ArcadeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = arcadeColors(context);
-    // On a phone-width window the trailing control goes under the title, so
-    // a segmented control or a badge and button never squeeze it out.
-    final stacked = stackTrailing && MediaQuery.sizeOf(context).width < ArcadeTokens.compactBelow;
+    final main = Row(children: <Widget>[
+      if (leading != null) ...<Widget>[leading!, const SizedBox(width: ArcadeTokens.space12)],
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: <Widget>[
+          Text(title,
+              maxLines: titleMaxLines,
+              overflow: TextOverflow.ellipsis,
+              style: ArcadeTokens.textBody.copyWith(color: c.text, fontWeight: FontWeight.w500)),
+          if (subtitle != null)
+            Text(subtitle!, maxLines: subtitleMaxLines, overflow: TextOverflow.ellipsis, style: ArcadeTokens.textSmall.copyWith(color: c.muted)),
+        ]),
+      ),
+    ]);
     final content = ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: ArcadeTokens.space14, vertical: ArcadeTokens.space8),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
-          Row(children: <Widget>[
-            if (leading != null) ...<Widget>[leading!, const SizedBox(width: ArcadeTokens.space12)],
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: <Widget>[
-                Text(title,
-                    maxLines: titleMaxLines,
-                    overflow: TextOverflow.ellipsis,
-                    style: ArcadeTokens.textBody.copyWith(color: c.text, fontWeight: FontWeight.w500)),
-                if (subtitle != null)
-                  Text(subtitle!, maxLines: subtitleMaxLines, overflow: TextOverflow.ellipsis, style: ArcadeTokens.textSmall.copyWith(color: c.muted)),
-              ]),
-            ),
-            if (trailing != null && !stacked) ...<Widget>[const SizedBox(width: ArcadeTokens.space12), trailing!],
-          ]),
-          if (trailing != null && stacked)
-            Padding(
-              padding: const EdgeInsets.only(top: ArcadeTokens.space8),
-              child: Align(alignment: AlignmentDirectional.centerStart, child: trailing),
-            ),
+          if (trailing == null) main else _TrailingLayout(main: main, trailing: trailing!),
           if (extra != null) Padding(padding: const EdgeInsets.only(top: ArcadeTokens.space10), child: extra),
         ]),
       ),
@@ -454,6 +443,107 @@ class ArcadeRow extends StatelessWidget {
       child: onTap == null ? content : InkWell(onTap: onTap, hoverColor: c.hover, child: content),
     );
   }
+}
+
+/// Lays out a row's (or notice's) main part and its trailing control: side by side when
+/// the title keeps at least [_minTitle] px (or its whole width), otherwise
+/// the trailing control goes under the title. Unlike a LayoutBuilder it
+/// reports intrinsic sizes, so rows work inside dialogs.
+class _TrailingLayout extends MultiChildRenderObjectWidget {
+  _TrailingLayout({required Widget main, required Widget trailing}) : super(children: <Widget>[main, trailing]);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderTrailingLayout();
+}
+
+class _TrailingParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderTrailingLayout extends RenderBox
+    with ContainerRenderObjectMixin<RenderBox, _TrailingParentData>, RenderBoxContainerDefaultsMixin<RenderBox, _TrailingParentData> {
+  static const double _gap = ArcadeTokens.space12;
+  static const double _stackGap = ArcadeTokens.space8;
+  static const double _minTitle = 160;
+
+  RenderBox get _main => firstChild!;
+  RenderBox get _trailing => lastChild!;
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _TrailingParentData) child.parentData = _TrailingParentData();
+  }
+
+  bool _inline(double width) {
+    if (!width.isFinite) return true;
+    final title = _main.getMaxIntrinsicWidth(double.infinity);
+    final trailing = _trailing.getMaxIntrinsicWidth(double.infinity);
+    return trailing + _gap + (title < _minTitle ? title : _minTitle) <= width;
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) =>
+      _main.getMinIntrinsicWidth(double.infinity) > _trailing.getMinIntrinsicWidth(double.infinity)
+          ? _main.getMinIntrinsicWidth(double.infinity)
+          : _trailing.getMinIntrinsicWidth(double.infinity);
+
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      _main.getMaxIntrinsicWidth(double.infinity) + _gap + _trailing.getMaxIntrinsicWidth(double.infinity);
+
+  double _height(double width) {
+    final trailingWidth = _trailing.getMaxIntrinsicWidth(double.infinity);
+    if (_inline(width)) {
+      final main = _main.getMinIntrinsicHeight(width.isFinite ? width - trailingWidth - _gap : double.infinity);
+      final trailing = _trailing.getMinIntrinsicHeight(trailingWidth);
+      return main > trailing ? main : trailing;
+    }
+    return _main.getMinIntrinsicHeight(width) + _stackGap + _trailing.getMinIntrinsicHeight(width);
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _height(width);
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => _height(width);
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => _layout(constraints, dry: true);
+
+  @override
+  void performLayout() => size = _layout(constraints, dry: false);
+
+  Size _layout(BoxConstraints constraints, {required bool dry}) {
+    final width = constraints.maxWidth;
+    Size measure(RenderBox child, BoxConstraints c) {
+      if (dry) return child.getDryLayout(c);
+      child.layout(c, parentUsesSize: true);
+      return child.size;
+    }
+
+    if (_inline(width)) {
+      final trailing = measure(_trailing, BoxConstraints(maxWidth: width.isFinite ? width : double.infinity));
+      final mainWidth = width.isFinite ? width - trailing.width - _gap : _main.getMaxIntrinsicWidth(double.infinity);
+      final main = measure(_main, BoxConstraints.tightFor(width: mainWidth < 0 ? 0 : mainWidth));
+      final height = main.height > trailing.height ? main.height : trailing.height;
+      if (!dry) {
+        (_main.parentData! as _TrailingParentData).offset = Offset(0, (height - main.height) / 2);
+        (_trailing.parentData! as _TrailingParentData).offset = Offset(mainWidth + _gap, (height - trailing.height) / 2);
+      }
+      return constraints.constrain(Size(mainWidth + _gap + trailing.width, height));
+    }
+    final main = measure(_main, BoxConstraints.tightFor(width: width));
+    final trailing = measure(_trailing, BoxConstraints(maxWidth: width));
+    if (!dry) {
+      (_main.parentData! as _TrailingParentData).offset = Offset.zero;
+      (_trailing.parentData! as _TrailingParentData).offset = Offset(0, main.height + _stackGap);
+    }
+    return constraints.constrain(Size(width, main.height + _stackGap + trailing.height));
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) => defaultHitTestChildren(result, position: position);
+
+  @override
+  void paint(PaintingContext context, Offset offset) => defaultPaint(context, offset);
 }
 
 /// A settings row with a switch on the right; the whole row toggles it.

@@ -7,11 +7,13 @@ immutable tag; a new tag never changes the wire format.
 
 Design kit fix; no protocol or API change.
 
-- `ArcadeRow` (Flutter) moves its trailing control under the title on
-  windows narrower than the new `compact-below` size token (600 px), so a
-  segmented control or a badge and button never overflow a phone-width row.
-  `stackTrailing: false` keeps a small trailing widget inline.
-- `tools/check_dart_kit.sh` checks rows at phone width.
+- `ArcadeRow` and `ArcadeNotice` (Flutter) put their trailing control or
+  action under the text when it doesn't fit beside it (the text keeps at
+  least 160 px), so a segmented control, a badge and button, or two notice
+  buttons never overflow a narrow window or a phone. The layout reports
+  intrinsic sizes, so rows still work inside dialogs.
+- `tools/check_dart_kit.sh` checks rows and notices at phone width and a
+  row inside a dialog.
 
 ## 0.4.1 (2026-10-28)
 

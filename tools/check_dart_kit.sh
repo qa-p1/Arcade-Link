@@ -137,7 +137,7 @@ void main() {
       expect(search.text, isEmpty);
     });
   }
-  testWidgets('rows put a wide trailing control under the title on a phone-width window', (tester) async {
+  testWidgets('rows put a wide trailing control under the title when it does not fit', (tester) async {
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -166,12 +166,37 @@ void main() {
             ),
           ]),
         ),
+        bottomSheet: ArcadeNotice('Connections are off in this app, so other Arcade apps can not reach it.',
+            tone: ArcadeTone.warn, action: Wrap(spacing: 8, children: <Widget>[
+              ArcadeButton(label: 'Choose another', small: true, onPressed: () {}),
+              ArcadeButton(label: 'Use anyway', small: true, onPressed: () {}),
+            ])),
       ),
     ));
     expect(tester.takeException(), isNull);
     final title = tester.getRect(find.text('Appearance'));
     final control = tester.getRect(find.text('System'));
     expect(control.top, greaterThan(title.bottom), reason: 'the segmented control sits under the title');
+  });
+  testWidgets('rows with a trailing control work inside a dialog (intrinsic sizes)', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: arcadeTheme(Brightness.dark, 'arcade.clipboard'),
+      home: Builder(builder: (context) => Scaffold(body: Center(child: ArcadeButton(label: 'Open', onPressed: () {
+        showArcadeDialog<void>(
+          context: context,
+          title: 'Clip',
+          body: ArcadeRow(title: 'report.pdf', subtitle: '1.2 MB', trailing: ArcadeButton(label: 'Save…', small: true, onPressed: () {})),
+          actions: (dialog) => <Widget>[ArcadeButton(label: 'Close', onPressed: () => Navigator.of(dialog).pop())],
+        );
+      })))),
+    ));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final title = tester.getRect(find.text('report.pdf'));
+    final save = tester.getRect(find.text('Save…'));
+    expect(save.left, greaterThan(title.left), reason: 'a short trailing control stays on the title line');
+    expect((save.center.dy - title.center.dy).abs(), lessThan(20));
   });
   testWidgets('confirm dialog: Keep is the default, the destructive verb confirms', (tester) async {
     late BuildContext context;

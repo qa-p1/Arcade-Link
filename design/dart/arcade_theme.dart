@@ -43,7 +43,6 @@ abstract final class ArcadeTokens {
   static const double sidebar = 212;
   static const double sidebarCollapsed = 64;
   static const double collapseBelow = 760;
-  static const double compactBelow = 600;
   static const double contentMax = 980;
   static const double windowMinWidth = 720;
   static const double windowMinHeight = 520;
