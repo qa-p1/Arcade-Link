@@ -120,12 +120,13 @@ reserved for disabled or decorative content.
 ### egui components
 
 `design::egui::components::Kit::new(ui, app_id)` resolves the current theme
-on every frame. Use `sidebar`, `page` (Template A content), `page_head`, `section_head`, `list`, `row`,
+on every frame. Use `sidebar`, `page` (Template A content), `page_head`
+(`page_head_with` for actions), `section_head` (`section_head_with`), `list`, `row`,
 `switch_row`, `button`/`button_state`/`icon_button`, `text_input`, `select`,
 `segmented`, `badge`, `notice`, `key_chip` and `empty_state` for shared UI.
 `Tone` selects readable status/accent inks; `ButtonKind` selects a button's
 role. `path` wraps selectable paths and `ellipsis` retains the full tooltip.
-`ShortcutRecorder` validates keys and holds conflicting changes until the
+`ShortcutRecorder::row` (with a `ShortcutSpec`) is the settings row; it validates keys and holds conflicting changes until the
 user chooses; its callback must combine Link registry and desktop conflicts.
 `Toast` keeps errors until closed, expires other messages after five seconds,
 and uses 1.5 seconds for `Toast::copied()`.

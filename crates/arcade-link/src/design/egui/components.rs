@@ -8,7 +8,7 @@ use super::colour;
 use crate::design::{ink, motion, palette, radius, size, text, Ink, Palette, PathOp, Theme};
 use ::egui::{
     Align, Align2, Color32, Context, Frame, Id, InnerResponse, Key, Label, Layout, Margin, Rect, Response, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui,
-    Vec2, WidgetInfo, WidgetType,
+    UiBuilder, Vec2, WidgetInfo, WidgetType,
 };
 use std::time::{Duration, Instant};
 
@@ -25,6 +25,19 @@ pub enum Tone {
 
 /// Horizontal padding of list rows and notices (`.row`, `.notice`).
 const ROW_PAD: f32 = 14.0;
+
+/// Measured sizes for [`Kit::beside`], kept between passes.
+#[derive(Clone, Copy, Debug, Default)]
+struct Beside {
+    leading: f32,
+    trailing: Vec2,
+}
+
+impl Beside {
+    fn close_to(self, other: Self) -> bool {
+        (self.leading - other.leading).abs() < 0.5 && (self.trailing - other.trailing).length() < 0.5
+    }
+}
 
 fn tone_icon(tone: Tone) -> &'static str {
     match tone {
@@ -61,78 +74,123 @@ pub struct ShortcutRecorder {
     error: Option<String>,
 }
 
+/// What a shortcut row shows: its label, description and default binding.
+pub struct ShortcutSpec<'a> {
+    pub title: &'a str,
+    pub description: &'a str,
+    pub default: &'a str,
+    /// Backspace while recording clears the binding.
+    pub allow_clear: bool,
+}
+
 impl ShortcutRecorder {
+    /// A settings row: the binding's key chips, "Change…" and (when it differs
+    /// from the default) "Reset" beside the label, all 28 px high; conflicts and
+    /// errors appear under the row. Returns true when `value` changed.
+    pub fn row(&mut self, ui: &mut Ui, kit: &Kit, spec: &ShortcutSpec<'_>, value: &mut String, conflict: impl Fn(&str) -> Option<String>) -> bool {
+        let candidate = kit.row(ui, spec.title, spec.description, |ui| self.controls(ui, kit, value, spec.default, spec.allow_clear)).inner;
+        let mut changed = self.resolve(candidate, value, conflict);
+        if self.pending.is_some() || self.error.is_some() {
+            changed |= self.feedback(ui, kit, value);
+            ui.add_space(10.0);
+        }
+        changed
+    }
+
+    /// The recorder on its own, with any feedback below it.
     pub fn show(&mut self, ui: &mut Ui, kit: &Kit, value: &mut String, default: &str, allow_clear: bool, conflict: impl Fn(&str) -> Option<String>) -> bool {
-        let mut changed = false;
+        let candidate = ui.horizontal(|ui| self.controls(ui, kit, value, default, allow_clear)).inner;
+        let changed = self.resolve(candidate, value, conflict);
+        changed | self.feedback(ui, kit, value)
+    }
+
+    fn controls(&mut self, ui: &mut Ui, kit: &Kit, value: &str, default: &str, allow_clear: bool) -> Option<String> {
         let mut candidate = None;
-        ui.horizontal_wrapped(|ui| {
-            if self.recording {
-                let r = kit.button(ui, "Press keys…", ButtonKind::Default);
-                r.request_focus();
-                let event = ui.input(|input| {
-                    input.events.iter().find_map(|event| match event {
-                        ::egui::Event::Key { key, pressed: true, modifiers, repeat: false, .. } => Some((*key, *modifiers)),
-                        _ => None,
-                    })
-                });
-                if let Some((key, modifiers)) = event {
-                    if key == Key::Escape {
-                        self.recording = false;
-                    } else if key == Key::Backspace && allow_clear {
-                        candidate = Some(String::new());
-                    } else {
-                        match recorded_accelerator(key, modifiers) {
-                            Ok(value) => candidate = Some(value),
-                            Err(message) => self.error = Some(message.into()),
-                        }
+        ui.spacing_mut().item_spacing.x = 6.0;
+        if self.recording {
+            let r = kit.button_state(ui, "Press keys…", ButtonKind::Primary, true, false, true);
+            r.request_focus();
+            let event = ui.input(|input| {
+                input.events.iter().find_map(|event| match event {
+                    ::egui::Event::Key { key, pressed: true, modifiers, repeat: false, .. } => Some((*key, *modifiers)),
+                    _ => None,
+                })
+            });
+            if let Some((key, modifiers)) = event {
+                if key == Key::Escape {
+                    self.recording = false;
+                } else if key == Key::Backspace && allow_clear {
+                    candidate = Some(String::new());
+                } else {
+                    match recorded_accelerator(key, modifiers) {
+                        Ok(value) => candidate = Some(value),
+                        Err(message) => self.error = Some(message.into()),
                     }
                 }
-            } else {
-                let platform = if cfg!(target_os = "macos") {
-                    crate::accelerator::Platform::Macos
-                } else if cfg!(windows) {
-                    crate::accelerator::Platform::Windows
-                } else {
-                    crate::accelerator::Platform::Linux
-                };
-                let display = crate::accelerator::display(value, platform).unwrap_or_else(|_| value.clone());
-                for key in display.split('+') {
-                    kit.key_chip(ui, if key.is_empty() { "None" } else { key });
-                }
-                if kit.button(ui, "Change…", ButtonKind::Default).clicked() {
-                    self.recording = true;
-                    self.pending = None;
-                    self.error = None;
-                }
             }
-            if kit.button(ui, "Reset to default", ButtonKind::Ghost).clicked() {
+            if kit.button_state(ui, "Cancel", ButtonKind::Ghost, true, false, true).clicked() {
+                self.recording = false;
+            }
+        } else {
+            let platform = if cfg!(target_os = "macos") {
+                crate::accelerator::Platform::Macos
+            } else if cfg!(windows) {
+                crate::accelerator::Platform::Windows
+            } else {
+                crate::accelerator::Platform::Linux
+            };
+            if value.is_empty() {
+                ui.label(RichText::new("None").font(super::font(text::SMALL)).color(colour(kit.palette.muted)));
+            } else {
+                let display = crate::accelerator::display(value, platform).unwrap_or_else(|_| value.to_string());
+                ui.spacing_mut().item_spacing.x = 4.0;
+                for key in display.split('+') {
+                    kit.key_chip(ui, key);
+                }
+                ui.add_space(4.0);
+                ui.spacing_mut().item_spacing.x = 6.0;
+            }
+            if kit.button_state(ui, "Change…", ButtonKind::Default, true, false, true).clicked() {
+                self.recording = true;
+                self.pending = None;
+                self.error = None;
+            }
+            if value != default && kit.button_state(ui, "Reset", ButtonKind::Ghost, true, false, true).on_hover_text("Reset to default").clicked() {
                 candidate = Some(default.to_string());
             }
-        });
-        if let Some(candidate) = candidate {
-            self.error = None;
-            self.recording = false;
-            if let Some(owner) = (!candidate.is_empty()).then(|| conflict(&candidate)).flatten() {
-                self.pending = Some((candidate, owner));
-            } else {
-                changed = *value != candidate;
-                *value = candidate;
-                self.pending = None;
-            }
         }
+        candidate
+    }
+
+    fn resolve(&mut self, candidate: Option<String>, value: &mut String, conflict: impl Fn(&str) -> Option<String>) -> bool {
+        let Some(candidate) = candidate else { return false };
+        self.error = None;
+        self.recording = false;
+        if let Some(owner) = (!candidate.is_empty()).then(|| conflict(&candidate)).flatten() {
+            self.pending = Some((candidate, owner));
+            false
+        } else {
+            self.pending = None;
+            let changed = *value != candidate;
+            *value = candidate;
+            changed
+        }
+    }
+
+    fn feedback(&mut self, ui: &mut Ui, kit: &Kit, value: &mut String) -> bool {
+        let mut changed = false;
         if let Some((candidate, owner)) = self.pending.clone() {
             kit.notice_action(ui, &format!("Used by {owner}"), Tone::Warn, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    if kit.button(ui, "Use anyway", ButtonKind::Default).clicked() {
-                        changed = *value != candidate;
-                        *value = candidate;
-                        self.pending = None;
-                    }
-                    if kit.button(ui, "Choose another", ButtonKind::Ghost).clicked() {
-                        self.pending = None;
-                        self.recording = true;
-                    }
-                });
+                ui.spacing_mut().item_spacing.x = 6.0;
+                if kit.button_state(ui, "Use anyway", ButtonKind::Default, true, false, true).clicked() {
+                    changed = *value != candidate;
+                    *value = candidate;
+                    self.pending = None;
+                }
+                if kit.button_state(ui, "Choose another", ButtonKind::Ghost, true, false, true).clicked() {
+                    self.pending = None;
+                    self.recording = true;
+                }
             });
         }
         if let Some(error) = &self.error {
@@ -211,11 +269,11 @@ impl Kit {
         let enabled = enabled && ui.is_enabled();
         let font = super::font(if small { text::SMALL } else { text::CONTROL });
         let natural_width = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_string(), font.clone(), Color32::PLACEHOLDER)).size().x;
-        // Equal padding on both sides; the busy spinner sits in the leading
-        // padding, so becoming busy never changes the button width. Wrapping
-        // rows move a button to the next line, so only the whole row width
-        // bounds it.
-        let width = (natural_width + 48.0).max(size::HIT_TARGET).min(ui.max_rect().width());
+        // `.btn` padding (12 px, 10 px small). Busy swaps the label for a
+        // centred spinner, so the width never changes. Wrapping rows move a
+        // button to the next line, so only the whole row width bounds it.
+        let pad = if small { 10.0 } else { 12.0 };
+        let width = (natural_width + 2.0 * pad).max(size::HIT_TARGET).min(ui.max_rect().width());
         let height = if small { size::CONTROL_SM } else { size::CONTROL };
         // Allocated directly in the caller's layout (not a child scope) so
         // wrapping rows can move the button to the next line.
@@ -241,22 +299,20 @@ impl Kit {
             border.map_or(Stroke::NONE, |border| Stroke::new(if pressed { 2.0 } else { 1.0 }, colour(border))),
             StrokeKind::Inside,
         );
-        let mut job = ::egui::text::LayoutJob::simple_singleline(label.to_string(), font, colour(fg));
-        job.wrap.max_width = (width - 48.0).max(0.0);
-        job.wrap.max_rows = 1;
-        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
-        let text_pos = r.rect.center() - galley.size() * 0.5;
-        ui.painter().galley(text_pos, galley, colour(fg));
+        if busy {
+            let rect = Rect::from_center_size(r.rect.center(), Vec2::splat(size::ICON));
+            ::egui::Spinner::new().color(colour(fg)).paint_at(ui, rect);
+        } else {
+            let mut job = ::egui::text::LayoutJob::simple_singleline(label.to_string(), font, colour(fg));
+            job.wrap.max_width = (width - 2.0 * pad).max(0.0);
+            job.wrap.max_rows = 1;
+            let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+            ui.painter().galley(r.rect.center() - galley.size() * 0.5, galley, colour(fg));
+        }
         r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled && !busy, label));
         self.focus(ui, &r);
-        if busy {
-            let rect = Rect::from_center_size(r.rect.left_center() + Vec2::new(14.0, 0.0), Vec2::splat(size::ICON_SMALL - 2.0));
-            // Painted, not placed: `ui.put` would move the layout cursor and
-            // the next widget would overlap this button.
-            ::egui::Spinner::new().color(colour(fg)).paint_at(ui, rect);
-        }
         // Only a shortened label needs its full text as a tooltip.
-        if natural_width > width - 48.0 {
+        if natural_width > width - 2.0 * pad {
             r.on_hover_text(label)
         } else {
             r
@@ -318,21 +374,58 @@ impl Kit {
     }
 
     pub fn page_head(&self, ui: &mut Ui, title: &str, description: &str) {
-        ui.label(RichText::new(title).font(super::font(text::TITLE)).strong().color(colour(self.palette.text)));
-        ui.add(Label::new(RichText::new(description).font(super::font(text::SMALL)).color(colour(self.palette.muted))).wrap());
+        self.page_head_with(ui, title, description, |_| ());
+    }
+
+    /// `.page-head` with `.page-actions` at the trailing edge.
+    pub fn page_head_with<R>(&self, ui: &mut Ui, title: &str, description: &str, actions: impl FnOnce(&mut Ui) -> R) -> R {
+        let id = ui.id().with(("arcade-page-head", title));
+        let inner = self.beside(
+            ui,
+            id,
+            0.0,
+            |ui| {
+                ui.label(RichText::new(title).font(super::font(text::TITLE)).color(colour(self.palette.text)));
+                ui.add_space(2.0);
+                ui.add(Label::new(RichText::new(description).font(super::font(text::SMALL)).color(colour(self.palette.muted))).wrap());
+            },
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                actions(ui)
+            },
+        );
         ui.add_space(24.0);
         let end = ui.cursor().top();
         ui.data_mut(|d| d.insert_temp(ui.id().with("arcade-page-head-end"), end));
+        inner
     }
 
-    /// `.section`: 32 px above every section except the first on the page.
     pub fn section_head(&self, ui: &mut Ui, title: &str) {
+        self.section_head_with(ui, title, |_| ());
+    }
+
+    /// `.section`: 32 px above every section except the first on the page, and
+    /// an optional trailing action (for example "Add folder").
+    pub fn section_head_with<R>(&self, ui: &mut Ui, title: &str, actions: impl FnOnce(&mut Ui) -> R) -> R {
         let after_head = ui.data(|d| d.get_temp::<f32>(ui.id().with("arcade-page-head-end"))).is_some_and(|end| (end - ui.cursor().top()).abs() < 1.0);
         if !after_head && ui.cursor().top() > ui.max_rect().top() + 0.5 {
             ui.add_space(32.0);
         }
-        ui.label(RichText::new(title).font(super::font(text::HEADING)).strong().color(colour(self.palette.text)));
+        let id = ui.id().with(("arcade-section-head", title));
+        let inner = self.beside(
+            ui,
+            id,
+            0.0,
+            |ui| {
+                ui.label(RichText::new(title).font(super::font(text::HEADING)).color(colour(self.palette.text)));
+            },
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                actions(ui)
+            },
+        );
         ui.add_space(10.0);
+        inner
     }
 
     /// A bounded list panel (`.list`); scrolling is owned by the app's page.
@@ -357,10 +450,10 @@ impl Kit {
         self.row_divider(ui);
         let id = ui.id().with(("arcade-row", title));
         ui.vertical(|ui| {
-            ui.set_min_height(size::ROW);
-            ui.spacing_mut().item_spacing.y = 2.0;
+            // Exactly 10 px above and below: no item spacing inside the row.
+            ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(10.0);
-            let inner = self.beside(ui, id, 0.55, |ui| self.row_text(ui, title, description), control);
+            let inner = self.beside(ui, id, size::ROW - 20.0, |ui| self.row_text(ui, title, description), control);
             ui.add_space(10.0);
             inner
         })
@@ -374,41 +467,50 @@ impl Kit {
         }
     }
 
-    /// Leading content beside a trailing part that keeps its natural width.
-    /// egui lays out in one pass, so the trailing width is measured and the
-    /// pass discarded when it changes: text never runs under the control, and
-    /// multi-part controls keep their left-to-right order.
-    fn beside<R>(&self, ui: &mut Ui, id: Id, stack_above: f32, leading: impl FnOnce(&mut Ui), trailing: impl FnOnce(&mut Ui) -> R) -> R {
+    /// Leading content beside a trailing part that keeps its natural size,
+    /// both centred on one line at least `min_height` high. egui lays out in a
+    /// single pass, so both sides are measured and the pass discarded when a
+    /// size changes: text never runs under the trailing part, multi-part
+    /// controls keep their left-to-right order, and a trailing part that
+    /// leaves the text less than 40 % of the width moves below it.
+    fn beside<R>(&self, ui: &mut Ui, id: Id, min_height: f32, leading: impl FnOnce(&mut Ui), trailing: impl FnOnce(&mut Ui) -> R) -> R {
+        const GAP: f32 = 12.0;
         let width = ui.available_width();
-        let measured = ui.data(|d| d.get_temp::<f32>(id));
-        // Unmeasured parts start stacked, which can't overflow; the next pass
-        // puts them beside the text if they fit.
-        let stacked = measured.is_none_or(|m| m > width * stack_above);
-        let (inner, actual) = if stacked {
-            leading(ui);
-            ui.add_space(6.0);
-            let r = ui.horizontal_wrapped(trailing);
-            (r.inner, r.response.rect.width())
+        let known = ui.data(|d| d.get_temp::<Beside>(id));
+        let min_lead = (width * 0.4).max(150.0).min(width);
+        let fits = known.filter(|m| m.trailing.x + GAP <= width - min_lead);
+        let (inner, now) = if let Some(m) = fits {
+            let gap = if m.trailing.x > 0.0 { GAP } else { 0.0 };
+            let lead_width = (width - m.trailing.x - gap).max(0.0);
+            let height = m.leading.max(m.trailing.y).max(min_height);
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+            let lead_rect = Rect::from_min_size(::egui::pos2(rect.left(), rect.center().y - m.leading * 0.5), Vec2::new(lead_width, m.leading));
+            let mut lead = ui.new_child(UiBuilder::new().max_rect(lead_rect).layout(Layout::top_down(Align::Min)));
+            lead.set_width(lead_width);
+            leading(&mut lead);
+            let trail_rect = Rect::from_min_size(::egui::pos2(rect.right() - m.trailing.x, rect.center().y - m.trailing.y * 0.5), m.trailing);
+            let mut trail = ui.new_child(UiBuilder::new().max_rect(trail_rect).layout(Layout::left_to_right(Align::Center)));
+            let inner = trailing(&mut trail);
+            (inner, Beside { leading: lead.min_rect().height(), trailing: trail.min_rect().size() })
         } else {
-            ui.horizontal(|ui| {
-                let lead = (width - measured.unwrap_or(0.0) - ui.spacing().item_spacing.x).max(0.0);
-                ui.allocate_ui_with_layout(Vec2::new(lead, 0.0), Layout::top_down(Align::Min), |ui| {
-                    ui.set_width(lead);
-                    leading(ui);
-                });
-                let r = ui.horizontal(trailing);
-                (r.inner, r.response.rect.width())
-            })
-            .inner
+            // Unmeasured (the first pass) or too wide: stacked, which can't overflow.
+            let lead = ui.scope(leading).response;
+            if known.is_some() {
+                ui.add_space(6.0);
+            }
+            let r = ui.horizontal_wrapped(trailing);
+            let size = r.response.rect.size();
+            (r.inner, Beside { leading: lead.rect.height(), trailing: if size.x > 0.5 { size } else { Vec2::ZERO } })
         };
-        if measured.is_none_or(|m| (m - actual).abs() > 0.5) {
-            ui.data_mut(|d| d.insert_temp(id, actual));
-            ui.ctx().request_discard("Arcade row measured its control");
+        if !known.is_some_and(|m| m.close_to(now)) {
+            ui.data_mut(|d| d.insert_temp(id, now));
+            ui.ctx().request_discard("Arcade layout measured a row");
         }
         inner
     }
 
     fn row_text(&self, ui: &mut Ui, title: &str, description: &str) {
+        ui.spacing_mut().item_spacing.y = 2.0;
         ui.add(Label::new(RichText::new(title).font(super::font_weight(text::BODY.size, 500)).color(colour(self.palette.text))).wrap());
         if !description.is_empty() {
             ui.add(Label::new(RichText::new(description).font(super::font(text::SMALL)).color(colour(self.palette.muted))).wrap());
@@ -518,19 +620,28 @@ impl Kit {
         r
     }
 
+    /// `.select`: 32 px high like the other controls, with the kit chevron.
     pub fn select<T: PartialEq + Clone>(&self, ui: &mut Ui, id: impl std::hash::Hash, value: &mut T, options: &[(T, &str)]) -> Response {
         let selected = options.iter().find(|(v, _)| v == value).map_or("Choose…", |(_, label)| *label);
         let before = value.clone();
-        let mut r = ::egui::ComboBox::from_id_salt(id)
-            .selected_text(selected)
-            .width(ui.available_width().min(240.0))
-            .truncate()
-            .show_ui(ui, |ui| {
-                for (option, label) in options {
-                    ui.selectable_value(value, option.clone(), *label);
-                }
+        let kit = *self;
+        let mut r = ui
+            .scope(|ui| {
+                ui.spacing_mut().interact_size.y = size::CONTROL;
+                ui.spacing_mut().button_padding = Vec2::new(10.0, 8.0);
+                ::egui::ComboBox::from_id_salt(id)
+                    .selected_text(RichText::new(selected).font(super::font(text::CONTROL)))
+                    .width(ui.available_width().min(240.0))
+                    .truncate()
+                    .icon(move |ui, rect, _, _| kit.paint_icon(ui, "chevronDown", rect.center(), colour(kit.palette.muted)))
+                    .show_ui(ui, |ui| {
+                        for (option, label) in options {
+                            ui.selectable_value(value, option.clone(), *label);
+                        }
+                    })
+                    .response
             })
-            .response;
+            .inner;
         if before != *value {
             r.mark_changed();
         }
@@ -588,7 +699,7 @@ impl Kit {
                 self.beside(
                     ui,
                     id,
-                    0.6,
+                    0.0,
                     |ui| {
                         ui.horizontal_top(|ui| {
                             let (icon, _) = ui.allocate_exact_size(Vec2::splat(size::ICON), Sense::hover());
@@ -1006,6 +1117,7 @@ mod tests {
         super::super::install_inter(&ctx);
         let kit = Kit::for_theme(Theme::Light, "arcade.find");
         let appearance = 0;
+        let mut centred = (Rect::NOTHING, Rect::NOTHING);
         let mut rects = (Vec::new(), Rect::NOTHING, Rect::NOTHING, Rect::NOTHING);
         // The first pass measures each row's control; the second lays it out.
         for _ in 0..3 {
@@ -1020,6 +1132,8 @@ mod tests {
                             parts
                         })
                     });
+                    let plain = kit.list(ui, |ui| kit.row(ui, "Index folder", "", |ui| kit.button(ui, "Copy path", ButtonKind::Default).rect));
+                    centred = (plain.inner.response.rect, plain.inner.inner);
                     ui.horizontal(|ui| {
                         let busy = kit.button_state(ui, "Rescanning", ButtonKind::Primary, true, true, false).rect;
                         let next = kit.button(ui, "Small", ButtonKind::Default).rect;
@@ -1033,6 +1147,8 @@ mod tests {
         assert!(parts.iter().all(|part| part.right() <= list.right() + 0.5), "the control stays inside the list");
         assert!(parts[0].left() > list.left() + list.width() * 0.3, "a narrow control sits beside the text, not under it");
         assert!(next.left() >= busy.right(), "a busy button must not overlap the next widget");
+        let (row, control) = centred;
+        assert!((row.center().y - control.center().y).abs() < 1.0, "a row's control is centred on the row: {row:?} {control:?}");
     }
 
     #[test]

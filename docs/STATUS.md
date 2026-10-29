@@ -36,6 +36,11 @@ the colours, borders, pills, notices, toast and empty state follow the CSS kit.
 New tests fail on the earlier code: control order and placement beside the
 text, a busy button beside another, and a wrapped row of every button kind
 inside the 720×520 overflow check.
+A second pass on a realistic Find settings page (page and section actions,
+location rows, the shortcut recorder, notices with Retry, danger rows) centred
+both sides of every row and head on each other, moved buttons to the CSS
+padding, made the shortcut recorder a compact 28 px control beside its label,
+and gave selects the 32 px control height and kit chevron.
 
 ## 2026-10-29: shared foreground contrast correction (unreleased)
 

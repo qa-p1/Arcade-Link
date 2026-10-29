@@ -26,6 +26,14 @@ immutable tag; a new tag never changes the wire format.
   (it moves below the text when it needs more than about half the row), and
   separate rows with a line only between them. Buttons wrap to the next line
   instead of shrinking, and a busy button no longer overlaps its neighbour.
+- Both sides of a row, section head, page head and notice are measured and
+  centred on each other, so buttons line up with their titles. Buttons use the
+  CSS padding (12 px, 10 px small); a busy button shows a centred spinner at
+  the same width. Selects are 32 px high with the kit chevron.
+- Add `page_head_with` and `section_head_with` for trailing actions, and
+  `ShortcutRecorder::row` (with `ShortcutSpec`): key chips, "Change…" and,
+  only when it differs from the default, "Reset", all 28 px high beside the
+  label, with conflicts shown under the row.
 
 ## 0.4.4 (2026-10-29)
 
