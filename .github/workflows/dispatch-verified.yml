@@ -1,0 +1,21 @@
+name: Dispatch verified tag.yml
+on:
+  push:
+    branches: [ops/dispatch-link-v0.4.9]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Verify CI and dispatch existing workflow
+        run: |
+          gh api repos/$GH_REPO/actions/runs/41009447630 > /tmp/verified-ci.json
+          python3 -c 'import json; r=json.load(open("/tmp/verified-ci.json")); assert r["head_sha"]=="124d44178909601afc20e957a6a37f7fc6df660f" and r["conclusion"]=="success"'
+          gh api --method POST repos/$GH_REPO/actions/workflows/tag.yml/dispatches --input - <<'JSON'
+          {"ref":"main","inputs":{"tag":"v0.4.9","sha":"124d44178909601afc20e957a6a37f7fc6df660f"}}
+          JSON
