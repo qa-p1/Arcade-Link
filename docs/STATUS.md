@@ -1,5 +1,13 @@
 # Arcade Link status
 
+## 2026-10-30: neutral welcome mark (0.4.11)
+
+Reviewing Find's real 125% welcome captures found an accent-coloured hero
+tile. STANDARD §2 keeps brand marks and glyph tiles neutral. The welcome
+hero now uses sunken/text like the shared glyph tiles. A paint-output test
+fails on 0.4.10 and checks both themes after this change. Full CI and the
+updated Find welcome captures remain required.
+
 ## 2026-10-30: unchecked checkbox contrast (0.4.10)
 
 Find's real installer screenshots exposed faint unchecked boxes. The new

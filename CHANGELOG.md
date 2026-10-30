@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.11 — 2026-10-30
+
+- Keep the egui welcome mark neutral, using the same sunken tile and text ink as the shared glyph tiles.
+
 ## 0.4.10 — 2026-10-30
 
 - Keep enabled unchecked egui checkboxes visible without hover. Their painted boundary now meets 3:1 against every neutral surface in both themes.
