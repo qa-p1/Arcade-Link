@@ -913,13 +913,13 @@ impl Kit {
     /// Apps supply up to three steps and keep Skip in their fixed page actions.
     pub fn welcome_head(&self, ui: &mut Ui, glyph: Option<::egui::TextureId>, icon: &str, title: &str, body: &str) {
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(size::TILE_LG), Sense::hover());
-        ui.painter().rect(rect, 13, colour(self.palette.accent_soft), Stroke::NONE, StrokeKind::Inside);
+        ui.painter().rect(rect, 13, colour(self.palette.sunken), Stroke::NONE, StrokeKind::Inside);
         match glyph {
             Some(texture) => {
                 let mark = Rect::from_center_size(rect.center(), Vec2::splat(size::ICON_TILE_LARGE));
-                ui.painter().image(texture, mark, Rect::from_min_max(::egui::pos2(0.0, 0.0), ::egui::pos2(1.0, 1.0)), colour(self.ink.accent));
+                ui.painter().image(texture, mark, Rect::from_min_max(::egui::pos2(0.0, 0.0), ::egui::pos2(1.0, 1.0)), colour(self.palette.text));
             }
-            None => self.paint_icon_sized(ui, icon, rect.center(), size::ICON_TILE_LARGE, colour(self.ink.accent)),
+            None => self.paint_icon_sized(ui, icon, rect.center(), size::ICON_TILE_LARGE, colour(self.palette.text)),
         }
         ui.add_space(16.0);
         ui.add(Label::new(RichText::new(title).font(super::font(text::DISPLAY)).color(colour(self.palette.text))).wrap());
@@ -1718,6 +1718,31 @@ mod tests {
         assert!(controls[0].right() <= controls[1].left(), "controls keep their order");
         assert!(controls[1].right() <= list.right() + 0.5 && controls[0].left() > list.center().x, "controls sit at the trailing edge");
         assert!((controls[1].center().y - row.center().y).abs() < 1.0, "controls are centred on the row");
+    }
+
+    #[test]
+    fn welcome_mark_uses_the_neutral_glyph_tile_palette() {
+        for theme in [Theme::Light, Theme::Dark] {
+            let ctx = Context::default();
+            super::super::install_inter(&ctx);
+            let kit = Kit::for_theme(theme, "arcade.find");
+            let output = ctx.run(input(720.0, 520.0, vec![]), |ctx| {
+                ::egui::CentralPanel::default().show(ctx, |ui| {
+                    kit.welcome_head(ui, None, "search", "Arcade Find", "Press a shortcut, type, and any file or folder shows up.");
+                });
+            });
+            let tile = output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    ::egui::Shape::Rect(shape) if (shape.rect.width() - size::TILE_LG).abs() < 0.1 && (shape.rect.height() - size::TILE_LG).abs() < 0.1 => {
+                        Some(shape)
+                    }
+                    _ => None,
+                })
+                .expect("the actual 52 px welcome tile is painted");
+            assert_eq!(tile.fill, colour(kit.palette.sunken), "{theme:?}: brand tiles are neutral, including welcome");
+        }
     }
 
     #[test]

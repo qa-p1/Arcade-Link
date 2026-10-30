@@ -152,6 +152,6 @@ from the bundled variable font; `egui-weights.json` records the source and
 output hashes. The design check verifies the hashes and SFNT weight tables.
 
 The egui kit also provides `welcome_head` (52 px mark, display title and one
-sentence) and `disclosure` for collapsible secondary information. Apps keep
+sentence, with the neutral glyph-tile palette) and `disclosure` for collapsible secondary information. Apps keep
 Skip in their fixed page actions and use at most three welcome steps. Use
 `manifest::peer_description(app, peer)` for Connected apps descriptions.
