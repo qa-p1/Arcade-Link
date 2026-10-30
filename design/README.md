@@ -131,6 +131,8 @@ Use `page_with_head` or `page_with_head_actions` for settings and data pages
 whose heading must stay visible: the body owns the scroll area. `page` remains
 available for existing callers. Row names ellipsize with their complete tooltip;
 descriptions and paths wrap, and changes in their height never cross a divider.
+Repeated row labels have independent cached measurements. Disabled controls use
+readable muted inks without an additional opacity reduction.
 `Tone` selects readable status/accent inks; `ButtonKind` selects a button's
 role. `path` wraps selectable paths and `ellipsis` retains the full tooltip.
 `ShortcutRecorder::row` (with a `ShortcutSpec`) is the settings row; it validates keys and holds conflicting changes until the

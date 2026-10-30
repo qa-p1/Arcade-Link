@@ -80,6 +80,9 @@ pub fn visuals(theme: Theme, app_id: &str) -> ::egui::Visuals {
     v.text_cursor.stroke = Stroke::new(2.0_f32, colour(p.accent));
     v.override_text_color = Some(colour(p.text));
     v.weak_text_color = Some(colour(p.muted));
+    // Components already choose muted disabled inks. Additional alpha fading
+    // would make their labels unreadable on the panel.
+    v.disabled_alpha = 1.0;
     v.striped = false;
     v
 }

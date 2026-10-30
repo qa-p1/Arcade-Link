@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.8 — 2026-10-30
+
+- Give repeated egui row titles independent measurement caches. Shortcut sheets with repeated labels now settle without continuous layout discards.
+- Keep disabled egui labels readable by using the kit disabled inks without a second opacity reduction. Rendered text contrast is tested in both themes.
+
 Arcade Link follows the frozen protocol v1 and manifest schema 1. Apps pin an
 immutable tag; a new tag never changes the wire format.
 
