@@ -32,7 +32,7 @@ dependencies = [
 
 [[package]]
 name = "arcade-link"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "egui",
  "getrandom",
@@ -48,7 +48,7 @@ dependencies = [
 
 [[package]]
 name = "arcade-link-cli"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "arcade-link",
  "libc",
