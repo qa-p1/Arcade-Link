@@ -158,6 +158,21 @@ pub fn app_pitch(id: &str) -> &'static str {
     }
 }
 
+/// One sentence about what this app and its peer do together, for Connected
+/// apps (STANDARD §6). Unknown pairs retain the peer's canonical summary.
+pub fn peer_description(app: &str, peer: &str) -> &'static str {
+    match (app, peer) {
+        (ids::FIND, ids::BOX) => "Run tools on files from your search.",
+        (ids::FIND, ids::LENS) => "Search for files from a screen selection.",
+        (ids::FIND, ids::LOOK) => "Preview files from your search.",
+        (ids::FIND, ids::WHEEL) => "Open a file search from the wheel.",
+        (ids::FIND, ids::CLIPBOARD) => "Send search results to your copy history.",
+        (ids::FIND, ids::SHELF) => "Keep search results on a shelf.",
+        (ids::FIND, ids::TOOLS) => "Manage Find's updates and shortcuts.",
+        _ => app_pitch(peer),
+    }
+}
+
 /// The app's OS identifier (STANDARD.md §10): bundle id, Windows
 /// AppUserModelID, desktop file name and Wayland app_id / X11 WM_CLASS, such as
 /// `dev.arcade.Box`. `None` for an id that isn't an Arcade app.
@@ -521,6 +536,16 @@ mod tests {
 #[cfg(test)]
 mod onboarding_tests {
     use super::*;
+    #[test]
+    fn find_peer_copy_describes_the_pair_instead_of_repeating_taglines() {
+        for peer in ids::APPS.iter().copied().chain([ids::TOOLS]).filter(|id| *id != ids::FIND) {
+            let description = peer_description(ids::FIND, peer);
+            assert!(!description.is_empty() && description.ends_with('.'));
+            assert_ne!(description, app_pitch(peer));
+        }
+        assert_eq!(peer_description("unknown", ids::LOOK), app_pitch(ids::LOOK));
+    }
+
     #[test]
     fn shelf_and_find_have_distinct_metadata_and_stable_ids() {
         for (id, name, repository) in [(ids::SHELF, "Arcade Shelf", "Arcade-Shelf"), (ids::FIND, "Arcade Find", "Arcade-Find")] {

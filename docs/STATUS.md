@@ -1,5 +1,11 @@
 # Arcade Link status
 
+## 2026-10-30: Find standard controls (0.4.9)
+
+Added the shared egui welcome hero, disclosure and Find peer descriptions.
+The local component layout and metadata tests and all-features Clippy pass.
+Full CI is pending. No native screenshot approval is claimed here.
+
 ## 2026-10-30: repeated egui row labels and disabled text (0.4.8)
 
 Find's real Settings matrix exposed repeated layout discards on Shortcuts.

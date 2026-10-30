@@ -907,6 +907,29 @@ impl Kit {
         }
     }
 
+    /// The common onboarding hero: 52 px mark, display title and one sentence.
+    /// Apps supply up to three steps and keep Skip in their fixed page actions.
+    pub fn welcome_head(&self, ui: &mut Ui, glyph: Option<::egui::TextureId>, icon: &str, title: &str, body: &str) {
+        let (rect, _) = ui.allocate_exact_size(Vec2::splat(size::TILE_LG), Sense::hover());
+        ui.painter().rect(rect, 13, colour(self.palette.accent_soft), Stroke::NONE, StrokeKind::Inside);
+        match glyph {
+            Some(texture) => {
+                let mark = Rect::from_center_size(rect.center(), Vec2::splat(size::ICON_TILE_LARGE));
+                ui.painter().image(texture, mark, Rect::from_min_max(::egui::pos2(0.0, 0.0), ::egui::pos2(1.0, 1.0)), colour(self.ink.accent));
+            }
+            None => self.paint_icon_sized(ui, icon, rect.center(), size::ICON_TILE_LARGE, colour(self.ink.accent)),
+        }
+        ui.add_space(16.0);
+        ui.add(Label::new(RichText::new(title).font(super::font(text::DISPLAY)).color(colour(self.palette.text))).wrap());
+        ui.add_space(8.0);
+        ui.add(Label::new(RichText::new(body).font(super::font(text::BODY)).color(colour(self.palette.muted))).wrap());
+    }
+
+    /// A keyboard-operable disclosure with the kit's section heading style.
+    pub fn disclosure<R>(&self, ui: &mut Ui, id: impl std::hash::Hash, title: &str, body: impl FnOnce(&mut Ui) -> R) -> ::egui::CollapsingResponse<R> {
+        ::egui::CollapsingHeader::new(RichText::new(title).font(super::font(text::HEADING)).color(colour(self.palette.text))).id_salt(id).show(ui, body)
+    }
+
     /// `.dialog-actions`: buttons right-aligned in the order given (primary
     /// last), 8 px apart, 20 px below the content. When they don't fit on one
     /// line they wrap, still in order.
@@ -1194,6 +1217,35 @@ mod tests {
             Event::PointerButton { pos: position, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE },
             Event::PointerButton { pos: position, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE },
         ]
+    }
+
+    #[test]
+    fn welcome_and_disclosures_fit_the_minimum_window_at_large_text() {
+        for theme in [Theme::Light, Theme::Dark] {
+            let ctx = Context::default();
+            super::super::install_inter(&ctx);
+            super::super::apply(&ctx, if theme.is_dark() { "dark" } else { "light" }, "arcade.find");
+            ctx.set_zoom_factor(1.25);
+            for _ in 0..5 {
+                let _ = ctx.run(
+                    ::egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(::egui::Pos2::ZERO, Vec2::new(720.0 / 1.25, 520.0 / 1.25))),
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        let kit = Kit::for_theme(theme, "arcade.find");
+                        kit.page(ctx, |ui| {
+                            kit.welcome_head(ui, None, "search", "Arcade Find", "Press a shortcut, type, and any file or folder shows up.");
+                            let response = kit.disclosure(ui, "help", "How it works", |ui| {
+                                kit.path(ui, "/a/long/folder/name");
+                            });
+                            assert!(response.header_response.rect.right() <= ui.max_rect().right() + 1.0);
+                            assert!(ui.min_rect().right() <= ui.max_rect().right() + 1.0);
+                        });
+                    },
+                );
+            }
+        }
     }
 
     #[test]

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.9 — 2026-10-30
+
+- Add the egui welcome hero and disclosure controls for Find's standard Settings flow.
+- Supply shared Find peer descriptions for Connected apps.
+
 ## 0.4.8 — 2026-10-30
 
 - Give repeated egui row titles independent measurement caches. Shortcut sheets with repeated labels now settle without continuous layout discards.
