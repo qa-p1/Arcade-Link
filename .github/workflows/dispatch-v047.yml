@@ -1,0 +1,24 @@
+# One-use dispatch bridge for the verified library release.
+# The existing tag.yml performs all version/main checks and creates the tag.
+name: Dispatch verified Link 0.4.7
+on:
+  push:
+    branches: [ops/dispatch-link-v0.4.7]
+permissions:
+  actions: write
+  contents: read
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify the target CI run and dispatch tag.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: qa-p1/Arcade-Link
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/qa-p1/Arcade-Link/actions/runs/40922306744 --jq .head_sha)" = a30bcc80bffc2c202ee4230f8623fcc45be95223
+          test "$(gh api repos/qa-p1/Arcade-Link/actions/runs/40922306744 --jq .conclusion)" = success
+          gh api --method POST repos/qa-p1/Arcade-Link/actions/workflows/tag.yml/dispatches --input - <<'JSON'
+          {"ref":"main","inputs":{"tag":"v0.4.7","sha":"a30bcc80bffc2c202ee4230f8623fcc45be95223"}}
+          JSON
