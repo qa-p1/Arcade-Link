@@ -1,5 +1,15 @@
 # Arcade Link status
 
+## 2026-10-30: unchecked checkbox contrast (0.4.10)
+
+Find's real installer screenshots exposed faint unchecked boxes. The new
+paint-output regression fails on 0.4.9 at 1.35:1 in the light theme. Enabled
+unchecked boxes now use the existing muted ink, meeting 3:1 on background,
+panel, sunken and hover surfaces in both themes. Disabled boxes keep their
+existing appearance. The targeted regression, component tests, all-features
+Clippy and generated design checks pass locally; full CI and Find's updated
+native captures remain required.
+
 ## 2026-10-30: Find standard controls (0.4.9)
 
 Added the shared egui welcome hero, disclosure and Find peer descriptions.
