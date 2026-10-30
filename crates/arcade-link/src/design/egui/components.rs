@@ -491,7 +491,8 @@ impl Kit {
     /// the rest; a control wider than about half the row moves below the text.
     pub fn row<R>(&self, ui: &mut Ui, title: &str, description: &str, control: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
         self.row_divider(ui);
-        let id = ui.id().with(("arcade-row", title));
+        // A label is not an identity: shortcut sheets and data lists repeat names.
+        let id = ui.next_auto_id().with(("arcade-row", title));
         ui.vertical(|ui| {
             // Exactly 10 px above and below: no item spacing inside the row.
             ui.spacing_mut().item_spacing.y = 0.0;
@@ -833,7 +834,8 @@ impl Kit {
         control: impl FnOnce(&mut Ui) -> R,
     ) -> InnerResponse<R> {
         self.row_divider(ui);
-        let id = ui.id().with(("arcade-row", title));
+        // A label is not an identity: shortcut sheets and data lists repeat names.
+        let id = ui.next_auto_id().with(("arcade-row", title));
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(10.0);
@@ -1192,6 +1194,89 @@ mod tests {
             Event::PointerButton { pos: position, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE },
             Event::PointerButton { pos: position, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE },
         ]
+    }
+
+    #[test]
+    fn repeated_row_titles_keep_independent_measurements() {
+        for theme in [Theme::Light, Theme::Dark] {
+            let ctx = Context::default();
+            super::super::install_inter(&ctx);
+            super::super::apply(&ctx, if theme.is_dark() { "dark" } else { "light" }, "arcade.find");
+            ctx.set_zoom_factor(1.25);
+            let kit = Kit::for_theme(theme, "arcade.find");
+            for frame in 0..8 {
+                let output = ctx.run(input(720.0 / 1.25, 520.0 / 1.25, vec![]), |ctx| {
+                    kit.page_with_head(ctx, "Shortcuts", "Keys in the search.", |ui| {
+                        kit.list(ui, |ui| {
+                            for keys in [&["Esc"][..], &["Ctrl", "Enter"][..], &["Ctrl", "Shift", "Enter"][..]] {
+                                kit.row(ui, "Return to search results", "", |ui| {
+                                    for key in keys {
+                                        kit.key_chip(ui, key);
+                                    }
+                                });
+                            }
+                        });
+                        kit.list(ui, |ui| {
+                            for label in ["Open", "Show in folder"] {
+                                kit.row_with_glyph(ui, None, "folder", "Same folder name", "Its own independent row.", |ui| {
+                                    kit.button(ui, label, ButtonKind::Default);
+                                });
+                            }
+                        });
+                    });
+                });
+                if frame >= 4 {
+                    assert!(!output.platform_output.requested_discard(), "{theme:?}, frame {frame}: duplicate titles must not fight over cached sizes");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn disabled_row_text_keeps_readable_rendered_contrast() {
+        fn luminance(rgb: [f32; 3]) -> f32 {
+            let c = rgb.map(|v| if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) });
+            c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722
+        }
+        for theme in [Theme::Light, Theme::Dark] {
+            let ctx = Context::default();
+            super::super::install_inter(&ctx);
+            super::super::apply(&ctx, if theme.is_dark() { "dark" } else { "light" }, "arcade.find");
+            let kit = Kit::for_theme(theme, "arcade.find");
+            let mut value = false;
+            for _ in 0..4 {
+                let output = ctx.run(input(520.0, 300.0, vec![]), |ctx| {
+                    ::egui::CentralPanel::default().show(ctx, |ui| {
+                        kit.list(ui, |ui| {
+                            ui.add_enabled_ui(false, |ui| {
+                                kit.switch_row(ui, &mut value, "Start at login", "Install Find to start it at login.");
+                            });
+                        });
+                    });
+                });
+                let bg = crate::design::rgb(kit.palette.panel).map(|v| v as f32 / 255.0);
+                let background = luminance(bg);
+                let mut glyph_vertices = 0;
+                for primitive in ctx.tessellate(output.shapes, output.pixels_per_point) {
+                    if let ::egui::epaint::Primitive::Mesh(mesh) = primitive.primitive {
+                        for vertex in mesh.vertices.iter().filter(|v| v.uv != ::egui::epaint::WHITE_UV) {
+                            let [r, g, b, alpha] = vertex.color.to_srgba_unmultiplied();
+                            if alpha == 0 {
+                                continue;
+                            }
+                            glyph_vertices += 1;
+                            let a = alpha as f32 / 255.0;
+                            let fg = [r, g, b].map(|v| v as f32 / 255.0);
+                            let blended = std::array::from_fn(|i| fg[i] * a + bg[i] * (1.0 - a));
+                            let foreground = luminance(blended);
+                            let ratio = (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05);
+                            assert!(ratio >= 4.5, "{theme:?}: disabled text paints at {ratio:.2}:1");
+                        }
+                    }
+                }
+                assert!(glyph_vertices > 0, "inspect real rendered glyph vertices");
+            }
+        }
     }
 
     #[test]

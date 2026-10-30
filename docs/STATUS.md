@@ -1,5 +1,21 @@
 # Arcade Link status
 
+## 2026-10-30: repeated egui row labels and disabled text (0.4.8)
+
+Find's real Settings matrix exposed repeated layout discards on Shortcuts.
+Different key combinations share the same title, so title-only measurement
+ids collided. Rows now include their UI occurrence in the cached identity.
+The duplicate-name regression fails on 0.4.7 and passes with this change.
+
+A test of actual rendered disabled glyph vertices also fails on 0.4.7 at
+3.37:1 in the light theme. Components already choose disabled inks; egui's
+extra opacity reduction is now removed. Both themes pass the rendered check.
+
+Local: 19 targeted egui tests, all-features workspace Clippy with zero warnings,
+and design generation/contrast checks pass. Full native three-OS, Flutter,
+Qt and installer CI remain required before merge/tag. Find must rerun and
+review its real native matrix after adopting the tag.
+
 ## 2026-10-29: egui layout fixes (0.4.7 candidate)
 
 Find's 48 real eframe screenshots exposed descriptions crossing row dividers,
