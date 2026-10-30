@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.10 — 2026-10-30
+
+- Keep enabled unchecked egui checkboxes visible without hover. Their painted boundary now meets 3:1 against every neutral surface in both themes.
+
 ## 0.4.9 — 2026-10-30
 
 - Add the egui welcome hero and disclosure controls for Find's standard Settings flow.

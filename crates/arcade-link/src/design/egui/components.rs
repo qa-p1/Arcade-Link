@@ -880,7 +880,9 @@ impl Kit {
         let (fill, edge) = match (enabled, *value) {
             (false, _) => (p.sunken, p.line_strong),
             (true, true) => (p.accent, p.accent),
-            (true, false) => (p.panel, if r.hovered() { p.muted } else { p.line_strong }),
+            // This edge communicates the unchecked state, unlike decorative
+            // card borders. It must keep 3:1 without requiring hover.
+            (true, false) => (p.panel, p.muted),
         };
         ui.painter().rect(boxed, 4.0, colour(fill), Stroke::new(1.0, colour(edge)), StrokeKind::Inside);
         if *value {
@@ -1716,6 +1718,48 @@ mod tests {
         assert!(controls[0].right() <= controls[1].left(), "controls keep their order");
         assert!(controls[1].right() <= list.right() + 0.5 && controls[0].left() > list.center().x, "controls sit at the trailing edge");
         assert!((controls[1].center().y - row.center().y).abs() < 1.0, "controls are centred on the row");
+    }
+
+    #[test]
+    fn unchecked_checkbox_boundary_is_visible_on_every_neutral_surface() {
+        fn luminance(colour: Color32) -> f32 {
+            let [r, g, b, _] = colour.to_array();
+            let [r, g, b] = [r, g, b].map(|v| {
+                let v = v as f32 / 255.0;
+                if v <= 0.04045 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            });
+            r * 0.2126 + g * 0.7152 + b * 0.0722
+        }
+        for theme in [Theme::Light, Theme::Dark] {
+            let ctx = Context::default();
+            super::super::install_inter(&ctx);
+            let kit = Kit::for_theme(theme, "arcade.find");
+            let mut value = false;
+            let output = ctx.run(input(460.0, 300.0, vec![]), |ctx| {
+                ::egui::CentralPanel::default().show(ctx, |ui| {
+                    kit.checkbox(ui, &mut value, "Remove settings and data");
+                });
+            });
+            let boundary = output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    ::egui::Shape::Rect(shape) if (shape.rect.width() - 15.0).abs() < 0.1 && (shape.rect.height() - 15.0).abs() < 0.1 => Some(shape),
+                    _ => None,
+                })
+                .expect("inspect the painted checkbox boundary");
+            assert!(boundary.stroke.width >= 1.0);
+            let foreground = luminance(boundary.stroke.color);
+            for surface in [kit.palette.bg, kit.palette.panel, kit.palette.sunken, kit.palette.hover] {
+                let background = luminance(colour(surface));
+                let ratio = (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05);
+                assert!(ratio >= 3.0, "{theme:?}: unchecked checkbox boundary has {ratio:.2}:1 contrast");
+            }
+        }
     }
 
     #[test]

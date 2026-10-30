@@ -132,7 +132,8 @@ whose heading must stay visible: the body owns the scroll area. `page` remains
 available for existing callers. Row names ellipsize with their complete tooltip;
 descriptions and paths wrap, and changes in their height never cross a divider.
 Repeated row labels have independent cached measurements. Disabled controls use
-readable muted inks without an additional opacity reduction.
+readable muted inks without an additional opacity reduction. Enabled unchecked
+checkbox boundaries retain at least 3:1 contrast before hover.
 `Tone` selects readable status/accent inks; `ButtonKind` selects a button's
 role. `path` wraps selectable paths and `ellipsis` retains the full tooltip.
 `ShortcutRecorder::row` (with a `ShortcutSpec`) is the settings row; it validates keys and holds conflicting changes until the
