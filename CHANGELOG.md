@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.13 — 2026-10-31
+
+- egui `page_with_head_actions`: the body scrolls across the whole page, so its scroll bar sits at the window edge instead of on the cards' right border (Settings in Find and Lens).
+- Supply shared Lens peer descriptions for Connected apps.
+- Install prompt: the second button reads "Just run it", as STANDARD.md specifies (was "Just run it once"); SPEC and the Qt strings follow.
+
 ## 0.4.12 — 2026-10-31
 
 - Replace a launcher and login entry recorded under an app's old desktop id when an update changes the id (Find's `arcade-find` → `dev.arcade.Find`). Updates no longer leave a second menu entry, or a second login item that started the app twice. Start at login, and the desktop's own switched-off choice, carry over to the new entry; an old entry another app now owns is left alone.
