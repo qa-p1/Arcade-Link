@@ -1,5 +1,15 @@
 # Arcade Link status
 
+## 2026-10-31: owner-requested checkpoint
+
+Latest published kit is v0.4.11 at `047b686d9b02de6dcf7bdfa77c85bf7eefbf7264`.
+PRs #22–#26 were merged and tagged after their required checks. The proposed
+v0.4.12 exact-timestamp helper was local-only and lost in the workspace reset;
+no helper PR, tag or release was created. Its code/design and incomplete test
+status are preserved in the [checkpoint](dev/checkpoints/2026-10-31/README.md).
+Work is stopped; this checkpoint makes no build or release changes.
+
+
 ## 2026-10-30: neutral welcome mark (0.4.11)
 
 Reviewing Find's real 125% welcome captures found an accent-coloured hero
