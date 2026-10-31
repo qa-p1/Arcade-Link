@@ -907,7 +907,24 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     }
     let autostart = environment.config.join("autostart").join(format!("{}.desktop", opts.app.autostart_id));
     within_root(&autostart, &environment.config.join("autostart"))?;
-    if fs::symlink_metadata(&autostart).is_ok() || opts.start_at_login {
+    // A launcher or login entry the old receipt recorded under another desktop
+    // id (the id changed, e.g. `arcade-find` → `dev.arcade.Find`) is replaced by
+    // the new one rather than left behind as a second menu entry or login item.
+    let renamed: Vec<PathBuf> = old
+        .iter()
+        .flat_map(|r| {
+            [r.integration.desktop_entry.as_ref(), r.integration.autostart.as_ref()]
+                .into_iter()
+                .flatten()
+                .filter(|p| **p != desktop_entry && **p != autostart && recorded_desktop_owned(p, &r.id, &r.path))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    // Start at login carries over to the new id, with the entry's own choices
+    // (such as the desktop's switched-off flag) intact.
+    let carried_login = old.as_ref().and_then(|r| r.integration.autostart.clone()).filter(|p| renamed.contains(p));
+    if fs::symlink_metadata(&autostart).is_ok() || opts.start_at_login || carried_login.is_some() {
         let recorded = old.as_ref().is_some_and(|r| r.integration.autostart.as_ref() == Some(&autostart));
         let owned = if recorded {
             old.as_ref().is_some_and(|r| recorded_desktop_owned(&autostart, &r.id, &r.path))
@@ -935,6 +952,9 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     }
     if integration.autostart.is_some() {
         rollback.save(&autostart)?;
+    }
+    for path in &renamed {
+        rollback.save(path)?;
     }
     // Duplicate cleanup is reversible too, including legacy launchers.
     if let Ok(entries) = fs::read_dir(environment.data.join("applications")) {
@@ -1000,10 +1020,24 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
         symlink(path, &dest)?;
     }
     if let Some(path) = &integration.autostart {
-        repair_autostart(path, opts.app, &dest, opts.start_at_login, opts.start_at_login)?;
+        if let Some(previous) = carried_login.as_ref().filter(|_| fs::symlink_metadata(path).is_err()) {
+            write(path, &fs::read(previous)?)?;
+        }
+        repair_autostart(path, opts.app, &dest, opts.start_at_login || carried_login.is_some(), opts.start_at_login)?;
     }
     if integration.desktop_entry.is_some() {
         cleanup_duplicates(environment, opts.app, &desktop_entry, &dest)?;
+    }
+    let replaced_by = |path: &PathBuf| {
+        let autostart_entry = old.as_ref().is_some_and(|r| r.integration.autostart.as_ref() == Some(path));
+        if autostart_entry {
+            integration.autostart.is_some()
+        } else {
+            integration.desktop_entry.is_some()
+        }
+    };
+    for path in renamed.iter().filter(|p| replaced_by(p)) {
+        remove_file(path)?;
     }
     let now = manifest::now_rfc3339();
     let receipt = Receipt {

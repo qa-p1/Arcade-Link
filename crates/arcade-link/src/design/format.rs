@@ -96,6 +96,17 @@ pub fn format_relative(time_ms: i64, now_ms: i64, offset_minutes: i32) -> String
     }
 }
 
+/// `2026-10-09 14:32`: the exact local time for detail views, where a
+/// relative date would lose precision. `time_seconds` is Unix seconds and
+/// `offset_seconds` the local UTC offset (offsets need not be whole minutes).
+pub fn format_datetime(time_seconds: i64, offset_seconds: i64) -> String {
+    let local = i128::from(time_seconds) + i128::from(offset_seconds);
+    let day = local.div_euclid(86_400) as i64;
+    let (year, month, date) = civil_from_days(day);
+    let minutes = local.rem_euclid(86_400) / 60;
+    format!("{year:04}-{month:02}-{date:02} {:02}:{:02}", minutes / 60, minutes % 60)
+}
+
 /// Days since 1970-01-01 → (year, month 1-12, day 1-31); Howard Hinnant's algorithm.
 fn civil_from_days(days: i64) -> (i64, i64, i64) {
     let z = days + 719_468;
@@ -116,6 +127,20 @@ mod tests {
 
     fn cases() -> Value {
         serde_json::from_str(include_str!("../../../../design/format-cases.json")).unwrap()
+    }
+
+    #[test]
+    fn exact_timestamps_keep_the_date_time_and_offset() {
+        assert_eq!(format_datetime(0, 0), "1970-01-01 00:00");
+        assert_eq!(format_datetime(-1, 0), "1969-12-31 23:59");
+        assert_eq!(format_datetime(0, 19_800), "1970-01-01 05:30");
+        assert_eq!(format_datetime(0, -19_800), "1969-12-31 18:30");
+        assert_eq!(format_datetime(1_770_249_600, 0), "2026-02-05 00:00");
+        assert_eq!(format_datetime(1_709_251_199, 0), "2024-02-29 23:59");
+        assert_eq!(format_datetime(1_709_251_259, 0), "2024-03-01 00:00");
+        // Extreme inputs don't overflow.
+        assert!(!format_datetime(i64::MAX, i64::MAX).is_empty());
+        assert!(!format_datetime(i64::MIN, i64::MIN).is_empty());
     }
 
     #[test]

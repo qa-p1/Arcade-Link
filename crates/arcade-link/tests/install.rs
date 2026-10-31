@@ -765,3 +765,70 @@ fn explicit_start_at_login_re_enables_a_switched_off_entry() {
     install(&e, options).unwrap();
     assert!(autostart_enabled(&login), "{}", fs::read_to_string(&login).unwrap());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_changed_desktop_id_replaces_the_recorded_launcher_and_login_entry() {
+    for switched_off in [false, true] {
+        let root = Root::new();
+        let e = Environment::under(&root.0);
+        let old_app = find_info();
+        let source = root.0.join("download.AppImage");
+        fs::write(&source, b"v1").unwrap();
+        let r = runtime(source.clone());
+        let mut opts = find_options(&old_app, &r, "1");
+        opts.start_at_login = true;
+        let first = install(&e, opts).unwrap();
+        let old_launcher = first.integration.desktop_entry.clone().unwrap();
+        let old_login = first.integration.autostart.clone().unwrap();
+        if switched_off {
+            let text = fs::read_to_string(&old_login).unwrap().replace("X-GNOME-Autostart-enabled=true", "X-GNOME-Autostart-enabled=false");
+            fs::write(&old_login, text).unwrap();
+        }
+        let other = e.data.join("applications/someone-else.desktop");
+        let foreign = "[Desktop Entry]\nType=Application\nExec=/foreign/program\n";
+        fs::write(&other, foreign).unwrap();
+
+        let new_app = AppInfo {
+            desktop_id: "dev.arcade.Find".into(),
+            autostart_id: "dev.arcade.Find".into(),
+            legacy_desktop_ids: vec!["arcade-find".into()],
+            ..find_info()
+        };
+        fs::write(&source, b"v2").unwrap();
+        // The update doesn't ask for Start at login: the old entry carries it.
+        let second = install(&e, find_options(&new_app, &r, "2")).unwrap();
+        let launcher = second.integration.desktop_entry.clone().unwrap();
+        let login = second.integration.autostart.clone().expect("Start at login carries over to the new id");
+        assert_eq!(launcher.file_name().unwrap(), "dev.arcade.Find.desktop");
+        assert_eq!(login.file_name().unwrap(), "dev.arcade.Find.desktop");
+        assert!(launcher.is_file() && login.is_file());
+        assert!(!old_launcher.exists(), "the old launcher is not left as a second menu entry");
+        assert!(!old_login.exists(), "the old login entry would start the app twice");
+        let text = fs::read_to_string(&login).unwrap();
+        assert!(text.contains(&format!("Exec={}", second.path.display())) || text.contains("Exec=\""), "{text}");
+        assert_eq!(text.contains("X-GNOME-Autostart-enabled=false"), switched_off, "the desktop's own choice is kept: {text}");
+        assert_eq!(fs::read_to_string(&other).unwrap(), foreign);
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_changed_desktop_id_keeps_an_old_entry_someone_else_now_owns() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let old_app = find_info();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"v1").unwrap();
+    let r = runtime(source.clone());
+    let first = install(&e, find_options(&old_app, &r, "1")).unwrap();
+    let old_launcher = first.integration.desktop_entry.clone().unwrap();
+    let foreign = "[Desktop Entry]\nType=Application\nX-Arcade-Id=arcade.look\nExec=/foreign/program\n";
+    fs::write(&old_launcher, foreign).unwrap();
+    let new_app = AppInfo { desktop_id: "dev.arcade.Find".into(), autostart_id: "dev.arcade.Find".into(), ..find_info() };
+    fs::write(&source, b"v2").unwrap();
+    let second = install(&e, find_options(&new_app, &r, "2")).unwrap();
+    assert!(second.integration.desktop_entry.unwrap().is_file());
+    assert!(second.integration.autostart.is_none());
+    assert_eq!(fs::read_to_string(&old_launcher).unwrap(), foreign);
+}
