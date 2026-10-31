@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.12 — 2026-10-31
+
+- Replace a launcher and login entry recorded under an app's old desktop id when an update changes the id (Find's `arcade-find` → `dev.arcade.Find`). Updates no longer leave a second menu entry, or a second login item that started the app twice. Start at login, and the desktop's own switched-off choice, carry over to the new entry; an old entry another app now owns is left alone.
+- Add `design::format::format_datetime` for exact local timestamps in detail views (`2026-10-09 14:32`).
+
 ## 0.4.11 — 2026-10-30
 
 - Keep the egui welcome mark neutral, using the same sunken tile and text ink as the shared glyph tiles.
