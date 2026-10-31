@@ -691,7 +691,7 @@ at a different executable; preserve unrelated entries.
 
 - NotInstalled: “Install {app}?”; adds it to the app launcher and apps
   folder. Options Start at login and Remove the downloaded file; buttons
-  Install, Just run it once, Don't ask again for this file.
+  Install, Just run it, Don't ask again for this file.
 - InstalledElsewhere, older: “Update {app} {from} → {to}?”; Update or Run
   this copy once.
 - InstalledElsewhere, same/newer: “{app} {version} is already installed.”;

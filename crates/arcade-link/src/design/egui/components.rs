@@ -397,25 +397,34 @@ impl Kit {
             .show(ctx, |ui| {
                 let full = ui.available_width();
                 let width = (full.min(size::CONTENT_MAX) - 72.0).max(0.0);
+                let lead = ((full - width) / 2.0 - ui.spacing().item_spacing.x).max(0.0);
                 ui.add_space(32.0);
                 ui.horizontal_top(|ui| {
-                    ui.add_space(((full - width) / 2.0 - ui.spacing().item_spacing.x).max(0.0));
+                    ui.add_space(lead);
                     ui.vertical(|ui| {
                         ui.set_width(width);
                         self.page_head_with(ui, title, description, actions);
-                        ::egui::ScrollArea::vertical()
-                            .id_salt(("arcade-page-body", title))
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
+                    });
+                });
+                // The body scrolls across the whole page, as in `page`, so its
+                // scroll bar sits at the window edge instead of on the cards.
+                ::egui::ScrollArea::vertical()
+                    .id_salt(("arcade-page-body", title))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.horizontal_top(|ui| {
+                            ui.add_space(lead);
+                            ui.vertical(|ui| {
+                                ui.set_width(width);
                                 let result = contents(ui);
                                 ui.add_space(72.0);
                                 result
                             })
                             .inner
+                        })
+                        .inner
                     })
                     .inner
-                })
-                .inner
             })
             .inner
     }

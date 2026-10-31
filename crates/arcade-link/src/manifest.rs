@@ -169,6 +169,13 @@ pub fn peer_description(app: &str, peer: &str) -> &'static str {
         (ids::FIND, ids::CLIPBOARD) => "Send search results to your copy history.",
         (ids::FIND, ids::SHELF) => "Keep search results on a shelf.",
         (ids::FIND, ids::TOOLS) => "Manage Find's updates and shortcuts.",
+        (ids::LENS, ids::BOX) => "Run Box tools and pipelines on a selection.",
+        (ids::LENS, ids::LOOK) => "Preview a selection in Look.",
+        (ids::LENS, ids::CLIPBOARD) => "Send a selection to your copy history.",
+        (ids::LENS, ids::SHELF) => "Keep a selection on a shelf.",
+        (ids::LENS, ids::FIND) => "Search your files for selected text.",
+        (ids::LENS, ids::WHEEL) => "Add a selected link or file to the wheel.",
+        (ids::LENS, ids::TOOLS) => "Manage Lens's updates and shortcuts.",
         _ => app_pitch(peer),
     }
 }
@@ -536,6 +543,15 @@ mod tests {
 #[cfg(test)]
 mod onboarding_tests {
     use super::*;
+    #[test]
+    fn lens_peer_copy_describes_the_pair_instead_of_repeating_taglines() {
+        for peer in ids::APPS.iter().copied().chain([ids::TOOLS]).filter(|id| *id != ids::LENS) {
+            let description = peer_description(ids::LENS, peer);
+            assert!(!description.is_empty() && description.ends_with('.'), "{peer}");
+            assert_ne!(description, app_pitch(peer), "{peer}");
+        }
+    }
+
     #[test]
     fn find_peer_copy_describes_the_pair_instead_of_repeating_taglines() {
         for peer in ids::APPS.iter().copied().chain([ids::TOOLS]).filter(|id| *id != ids::FIND) {
