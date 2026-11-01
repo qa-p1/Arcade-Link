@@ -6,6 +6,7 @@ import io
 import json
 import re
 import os
+import shutil
 import signal
 import socket
 import sqlite3
@@ -287,7 +288,7 @@ def ui_lines(s):
     for scale, prep in ((2, ["-colorspace", "Gray", "-threshold", "80%", "-resize", "200%"]),
                         (3, ["-resize", "300%", "-colorspace", "Gray", "-threshold", "70%"])):
         processed = s.root / "box-ui-ocr.png"
-        subprocess.run(["magick", str(shot), *prep, str(processed)], env=s.env, check=True)
+        subprocess.run([shutil.which("convert") or "magick", str(shot), *prep, str(processed)], env=s.env, check=True)
         result = subprocess.run(["tesseract", str(processed), "stdout", "--psm", "11", "tsv"], env=s.env,
                                 capture_output=True, text=True, timeout=15)
         assert result.returncode == 0, result.stderr
@@ -423,7 +424,7 @@ def result_row_missing_and_real_peer_actions(s):
     # The Island hides when another app takes focus; bring it back.
     s.cli("activate", "box", check=True)
     ui_click(s, "Pin")
-    pin = s.wait_window("Arcade Lens Pin")
+    pin = s.wait_window("(Pin [^A-Za-z]+ Arcade Lens|Arcade Lens Pin)")
     s.xdotool("windowfocus", pin, "key", "Escape")
     s.cli("activate", "box", check=True)
     ui_click(s, "Add to Wheel")
@@ -468,7 +469,7 @@ def real_lens_ocr_provider_records_provenance(s):
     if "arcade.lens" not in s.procs:
         s.start("arcade.lens")
     source = s.root / "box-lens-ocr.png"
-    subprocess.run(["magick", "-size", "800x180", "xc:white", "-font", "DejaVu-Sans",
+    subprocess.run([shutil.which("convert") or "magick", "-size", "800x180", "xc:white", "-font", "DejaVu-Sans",
                     "-fill", "black", "-pointsize", "50", "-gravity", "center", "-annotate", "0",
                     "ARCADE BOX LOCAL OCR", str(source)], env=s.env, check=True)
     before = hashlib.sha256(source.read_bytes()).hexdigest()

@@ -2,7 +2,7 @@
 Each call must also return the right output: Box's upper-cased text, and
 Lens's OCR text with the words in the image. Exit codes alone are not enough.
 python3 tools/e2e.py run -- python3 tools/leak.py"""
-import concurrent.futures as cf, importlib.util, json, os, subprocess, sys, time
+import concurrent.futures as cf, importlib.util, json, os, shutil, subprocess, sys, time
 from pathlib import Path
 LINK = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("e2e", LINK / "tools/e2e.py"); e2e = importlib.util.module_from_spec(spec); spec.loader.exec_module(e2e)
@@ -21,7 +21,7 @@ def lens_ocr(_):
     words = text(result)
     return "exit" if code != 0 else None if "Leak" in words and "4821" in words else "wrong"
 png = s.root / "t.png"
-subprocess.run(["magick", "-size", "900x200", "xc:white", "-fill", "black", "-pointsize", "56", "-gravity", "center", "-annotate", "0", "Leak 4821", str(png)], check=True)
+subprocess.run([shutil.which("convert") or "magick", "-size", "900x200", "xc:white", "-fill", "black", "-pointsize", "56", "-gravity", "center", "-annotate", "0", "Leak 4821", str(png)], check=True)
 s.start("arcade.box"); s.start("arcade.lens"); time.sleep(8)
 out = {"box": [rss("arcade.box")], "lens": [rss("arcade.lens")], "fail": 0, "wrong": 0}
 for r in range(10):
