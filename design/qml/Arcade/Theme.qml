@@ -37,6 +37,15 @@ QtObject {
     readonly property color accentText: accentFor(appId, "text")
     readonly property color accentSoft: accentFor(appId, "soft")
 
+    // shadow-rest: y offset, blur and colour (transparent where the kit has none).
+    readonly property real shadowRestY: dark ? 0 : 1
+    readonly property real shadowRestBlur: dark ? 0 : 2
+    readonly property color shadowRest: dark ? "#00000000" : "#0d10141a"
+    // shadow-pop: y offset, blur and colour (transparent where the kit has none).
+    readonly property real shadowPopY: dark ? 16 : 12
+    readonly property real shadowPopBlur: dark ? 48 : 40
+    readonly property color shadowPop: dark ? "#88000000" : "#2410141a"
+
     readonly property var accents: ({
         "arcade.tools": { "light": "#16884b", "dark": "#5fd08f", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#e3f1e9", "softDark": "#1d312a", "inkLight": "#167b46", "inkDark": "#5fd08f" },
         "arcade.box": { "light": "#724fff", "dark": "#a58fff", "textLight": "#ffffff", "textDark": "#0b0d10", "softLight": "#eeeaff", "softDark": "#29273c", "inkLight": "#6c4cf2", "inkDark": "#a58fff" },

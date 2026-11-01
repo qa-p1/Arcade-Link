@@ -470,6 +470,14 @@ def emit_qml_theme(tokens: dict) -> str:
     lines.append("    readonly property color accentText: accentFor(appId, \"text\")")
     lines.append("    readonly property color accentSoft: accentFor(appId, \"soft\")")
     lines.append("")
+    for name in ("rest", "pop"):
+        light, dark = (parse_shadow(tokens["shadow"][theme][name]) for theme in ("light", "dark"))
+        cap = name.capitalize()
+        lines.append(f"    // shadow-{name}: y offset, blur and colour (transparent where the kit has none).")
+        lines.append(f"    readonly property real shadow{cap}Y: dark ? {fmt(dark[0])} : {fmt(light[0])}")
+        lines.append(f"    readonly property real shadow{cap}Blur: dark ? {fmt(dark[1])} : {fmt(light[1])}")
+        lines.append(f"    readonly property color shadow{cap}: dark ? {qml_colour(dark[2])} : {qml_colour(light[2])}")
+    lines.append("")
     lines.append("    readonly property var accents: ({")
     for app, accent in tokens["accent"].items():
         lines.append(f'        "{app}": {{ "light": "{accent["light"]}", "dark": "{accent["dark"]}", "textLight": "{accent["text"]["light"]}", "textDark": "{accent["text"]["dark"]}", "softLight": "{accent["soft"]["light"]}", "softDark": "{accent["soft"]["dark"]}", "inkLight": "{accent_ink(tokens, app, "light")}", "inkDark": "{accent_ink(tokens, app, "dark")}" }},')
@@ -517,6 +525,58 @@ def emit_qml_theme(tokens: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def parse_shadow(value: str) -> tuple:
+    """'0 12px 40px #10141a24' -> (12, 40, '#10141a24'); 'none' -> (0, 0, '#00000000')."""
+    if value == "none":
+        return (0, 0, "#00000000")
+    m = re.fullmatch(r"0 (\d+)(?:px)? (\d+)(?:px)? (#[0-9a-fA-F]{3,8})", value)
+    if not m:
+        raise TokenError(f"shadow {value!r} is not '0 <y>px <blur>px #colour'")
+    colour = m[3]
+    if len(colour) in (4, 5):  # #rgb / #rgba -> #rrggbb[aa]
+        colour = "#" + "".join(ch * 2 for ch in colour[1:])
+    return (int(m[1]), int(m[2]), colour)
+
+
+def glyph_path(svg: str) -> str:
+    """One SVG path for an app glyph (16-unit grid): its paths, rects and circles."""
+    parts = []
+    for tag, attrs in re.findall(r"<(path|rect|circle)\b([^>]*)/?>", svg):
+        a = dict(re.findall(r'([\w-]+)="([^"]*)"', attrs))
+        n = lambda k, d=0.0: float(a.get(k, d))
+        if tag == "path":
+            parts.append(a["d"])
+        elif tag == "circle":
+            cx, cy, r = n("cx"), n("cy"), n("r")
+            parts.append(f"M{fmt(cx - r)} {fmt(cy)}a{fmt(r)} {fmt(r)} 0 1 0 {fmt(2 * r)} 0a{fmt(r)} {fmt(r)} 0 1 0 {fmt(-2 * r)} 0z")
+        else:
+            x, y, w, h = n("x"), n("y"), n("width"), n("height")
+            r = min(n("rx"), w / 2, h / 2)
+            parts.append(f"M{fmt(x + r)} {fmt(y)}h{fmt(w - 2 * r)}a{fmt(r)} {fmt(r)} 0 0 1 {fmt(r)} {fmt(r)}v{fmt(h - 2 * r)}"
+                         f"a{fmt(r)} {fmt(r)} 0 0 1 {fmt(-r)} {fmt(r)}h{fmt(2 * r - w)}a{fmt(r)} {fmt(r)} 0 0 1 {fmt(-r)} {fmt(-r)}"
+                         f"v{fmt(2 * r - h)}a{fmt(r)} {fmt(r)} 0 0 1 {fmt(r)} {fmt(-r)}z")
+    return "".join(parts)
+
+
+def emit_qml_glyph_data(glyphs: dict) -> str:
+    lines = [f"// {HEADER} (from design/glyphs)", ".pragma library", "", "// App marks on a 16-unit grid, stroke 1.5.", "var paths = {"]
+    for app, d in sorted(glyphs.items()):
+        lines.append(f'    "{app}": "{d}",')
+    lines.append("};")
+    return "\n".join(lines) + "\n"
+
+
+def emit_qml_glyph() -> str:
+    return "\n".join([f"// {HEADER}", "import QtQuick", "import QtQuick.Shapes", "import \"GlyphData.js\" as GlyphData", "",
+                      "// An Arcade app mark (design/glyphs, 16-unit grid, stroke 1.5) in any colour and size.", "Item {", "    id: root",
+                      "    property string appId: Theme.appId", "    property real size: Theme.iconSize", "    property color color: Theme.text",
+                      "    implicitWidth: size", "    implicitHeight: size", "", "    Shape {", "        anchors.fill: parent",
+                      "        preferredRendererType: Shape.CurveRenderer", "        transform: Scale { xScale: root.size / 16; yScale: root.size / 16 }",
+                      "        ShapePath {", "            strokeColor: root.color", "            strokeWidth: 1.5", "            fillColor: \"transparent\"",
+                      "            capStyle: ShapePath.RoundCap", "            joinStyle: ShapePath.RoundJoin",
+                      "            PathSvg { path: GlyphData.paths[root.appId] || \"\" }", "        }", "    }", "}"]) + "\n"
+
+
 def emit_qml_icon(icons: dict) -> str:
     lines = [f"// {HEADER}", "import QtQuick", "import QtQuick.Shapes", "", "// An Arcade outline icon (24×24 grid, stroke 1.5) in any colour and size.",
              "import \"IconData.js\" as IconData", "", "Item {", "    id: root", "    property string name", "    property real size: Theme.iconSize", "    property color color: Theme.text",
@@ -560,8 +620,17 @@ def emit_qml_format(ts: str) -> str:
     return f"// {HEADER} (from design/css/format.ts)\n.pragma library\n" + body
 
 
+def qml_components() -> list:
+    """The hand-written kit components: every other .qml file in design/qml/Arcade."""
+    generated = {"Theme.qml", "Fonts.qml", "Icon.qml", "Glyph.qml"}
+    return sorted(p.stem for p in (DESIGN / "qml/Arcade").glob("*.qml") if p.name not in generated)
+
+
 def emit_qmldir() -> str:
-    return "\n".join(["module Arcade", "singleton Theme 1.0 Theme.qml", "singleton Fonts 1.0 Fonts.qml", "Icon 1.0 Icon.qml", "IconData 1.0 IconData.js", "Format 1.0 Format.js"]) + "\n"
+    lines = ["module Arcade", "singleton Theme 1.0 Theme.qml", "singleton Fonts 1.0 Fonts.qml", "Icon 1.0 Icon.qml", "Glyph 1.0 Glyph.qml",
+             "IconData 1.0 IconData.js", "GlyphData 1.0 GlyphData.js", "Format 1.0 Format.js"]
+    lines += [f"{name} 1.0 {name}.qml" for name in qml_components()]
+    return "\n".join(lines) + "\n"
 
 
 def dart_colour(value: str) -> str:
@@ -1087,6 +1156,8 @@ def outputs() -> dict[Path, str]:
         DESIGN / "qml/Arcade/IconData.js": emit_qml_icon_data(icons),
         DESIGN / "qml/Arcade/Fonts.qml": emit_qml_fonts(),
         DESIGN / "qml/Arcade/qmldir": emit_qmldir(),
+        DESIGN / "qml/Arcade/Glyph.qml": emit_qml_glyph(),
+        DESIGN / "qml/Arcade/GlyphData.js": emit_qml_glyph_data({g.stem: glyph_path(g.read_text(encoding="utf-8")) for g in (DESIGN / "glyphs").glob("arcade.*.svg")}),
         DESIGN / "qml/Arcade/Format.js": emit_qml_format((DESIGN / "css/format.ts").read_text(encoding="utf-8")),
         DESIGN / "dart/arcade_theme.dart": emit_dart_theme(tokens),
         DESIGN / "dart/arcade_icons.dart": emit_dart_icons(icons),
