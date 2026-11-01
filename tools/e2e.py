@@ -778,7 +778,8 @@ def mounts_under(root: Path, mountinfo: str | None = None) -> list[str]:
             mountinfo = Path("/proc/self/mountinfo").read_text()
         except OSError:
             return []
-    prefix = str(root) + os.sep
+    # Mount points are POSIX paths (mountinfo only exists on Linux).
+    prefix = root.as_posix().rstrip("/") + "/"
     points = []
     for line in mountinfo.splitlines():
         fields = line.split()
