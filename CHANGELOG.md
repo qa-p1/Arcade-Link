@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.15 — 2026-11-01
+
+- QML design kit: the component set for Shelf and Wheel in `design/qml/Arcade` (window shell, settings rows, controls, status, key chips and marks, dialogs and menus, overlay rows), built on `QtQuick.Templates`. `Theme` gains the rest and pop shadow tokens; `Glyph` draws the app marks. `design/qml/gallery/Gallery.qml` shows every component in light and dark.
+- CI lints the QML kit with `qmllint --max-warnings 0` and runs `qt/tests/qml/tst_components.qml`.
+- Icons: add `undo`.
+
 ## 0.4.14 — 2026-11-01
 
 - `tools/e2e.py`: removing the isolated root after a run detaches FUSE mounts the private session left inside it (the document portal) and never fails a finished run. Python 3.12's `shutil.rmtree` raised ECONNABORTED from a dying portal mount despite `ignore_errors`, which failed Find's stable release run after every check had passed.

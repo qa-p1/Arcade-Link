@@ -112,6 +112,9 @@ jobs:
           cli="$PWD/target/debug/arcade-link"
           [ -f "$cli.exe" ] && cli="$cli.exe"
           ARCADE_LINK_CLI="$cli" ctest --test-dir qt/build -C Release --output-on-failure
+      - name: Lint the QML design kit
+        if: runner.os == 'Linux'
+        run: qmllint -I design/qml --max-warnings 0 design/qml/Arcade/*.qml design/qml/gallery/Gallery.qml
       - name: Print Qt test logs on failure
         if: failure()
         shell: pwsh
