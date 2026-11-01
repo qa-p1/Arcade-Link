@@ -4,7 +4,9 @@ import csv
 import difflib
 import io
 import json
+import re
 import select
+import shutil
 import signal
 import sqlite3
 import struct
@@ -32,6 +34,13 @@ def _start(s):
         s.start("arcade.lens")
 
 
+# Window titles: Lens 0.4 follows STANDARD ("Pin — Arcade Lens"); 0.3 used
+# "Arcade Lens Pin". xdotool's regex never matches the em dash literally, so
+# the separator is a class.
+PIN = "^(Pin [^A-Za-z]+ Arcade Lens|Arcade Lens Pin)$"
+SETTINGS = "^(Settings [^A-Za-z]+ Arcade Lens|Arcade Lens Settings)$"
+
+
 def _focus(s, name="^Arcade Lens$"):
     deadline = time.monotonic() + 10
     log = s.root / "arcade.lens.log"
@@ -52,10 +61,14 @@ def _focus(s, name="^Arcade Lens$"):
             # evidence that Lens's native remapping always takes focus itself.
             # Without a window manager, a peer window opened by an earlier
             # step (Look's preview) can also stack above Lens's overlay.
+            already = s.xdotool("getwindowfocus") == win
             s.xdotool("windowraise", win)
             s.xdotool("windowfocus", "--sync", win)
             if s.xdotool("getwindowfocus") == win:
-                if name == "^Arcade Lens$":
+                # Only a focus change produces a FocusIn to acknowledge; a window
+                # that already had focus has processed it (a lone Shift press
+                # makes no egui event, so there would be nothing to wait for).
+                if name == "^Arcade Lens$" and not already:
                     # XSync confirms the X server, not that winit/egui has
                     # processed FocusIn. A harmless modifier event wakes a
                     # frame; wait for the application's focus acknowledgement
@@ -165,9 +178,9 @@ def pin_opens_a_floating_window(s):
     _start(s)
     code, r = s.invoke("lens", "lens.pin", "--file", str(_png(s)))
     assert code == 0 and r["message"] == "Pinned", r
-    _focus(s, "^Arcade Lens Pin$")
+    _focus(s, PIN)
     s.xdotool("key", "Escape")
-    _closed(s, "^Arcade Lens Pin$")
+    _closed(s, PIN)
     return r["message"]
 
 
@@ -191,7 +204,7 @@ def capture_and_act_opens_the_palette(s):
 @check("lens")
 def pin_and_analyze_own_pixels_before_success(s):
     _start(s)
-    for action, name in [("lens.pin", "^Arcade Lens Pin$"), ("lens.analyze", "^Arcade Lens$")]:
+    for action, name in [("lens.pin", PIN), ("lens.analyze", "^Arcade Lens$")]:
         path = _png(s, f"{action}-ephemeral.png", 256, 144)
         code, result = s.invoke("lens", action, "--file", str(path))
         assert code == 0, result
@@ -217,11 +230,11 @@ def capture_mode_pin_and_color(s):
     _focus(s)
     s.screenshot("lens-capture-pin-mode")
     s.xdotool("mousemove", "100", "100", "sleep", "0.2", "mousedown", "1", "sleep", "0.2", "mousemove", "340", "260", "sleep", "0.2", "mouseup", "1")
-    win = _focus(s, "^Arcade Lens Pin$")
+    win = _focus(s, PIN)
     _closed(s)
     s.screenshot("lens-capture-pin-result", win)
     s.xdotool("key", "Escape")
-    _closed(s, "^Arcade Lens Pin$")
+    _closed(s, PIN)
     s.lens_palette_offset = len(_lens_log(s))
     code, result = s.invoke("lens", "lens.capture_and_act", "--option", "mode=color")
     assert code == 0, result
@@ -279,6 +292,21 @@ def _close_palette(s):
     _closed(s)
 
 
+def _settle(s, quiet=0.5, timeout=5.0):
+    """Waits until X focus has stopped moving. A peer started just before a
+    capture can map a window and take focus (no window manager in Xvfb), and
+    Lens closes a capture that loses focus, as overlays must."""
+    end = time.monotonic() + timeout
+    last, since = None, time.monotonic()
+    while time.monotonic() < end:
+        now = s.xdotool("getwindowfocus")
+        if now != last:
+            last, since = now, time.monotonic()
+        elif time.monotonic() - since >= quiet:
+            return
+        time.sleep(0.05)
+
+
 def _filter(s, text, rendered=True):
     # Space opens More with the filter focused. Refocus first: first-run peer
     # windows can briefly take focus after mapping in Xvfb. (OCR can't read
@@ -330,7 +358,8 @@ def _ui_lines(s, win="root"):
     for prep in (["-resize", f"{OCR_SCALE * 100}%"],
                  ["-colorspace", "Gray", "-negate", "-resize", f"{OCR_SCALE * 100}%", "-threshold", "60%"]):
         img = s.root / "lens-ui-ocr.png"
-        subprocess.run(["magick", str(shot), *prep, str(img)], env=s.env, check=True)
+        # ImageMagick 6 names it convert; 7 accepts both.
+        subprocess.run([shutil.which("convert") or "magick", str(shot), *prep, str(img)], env=s.env, check=True)
         r = subprocess.run(["tesseract", str(img), "stdout", "--psm", "11", "tsv"],
                            env=dict(s.env, OMP_THREAD_LIMIT="1"), capture_output=True, text=True, timeout=15)
         assert r.returncode == 0, r.stderr
@@ -343,9 +372,16 @@ def _ui_lines(s, win="root"):
     return out
 
 
-def _ui_click(s, text, win="root", occurrence=0):
+def _ui_click(s, text, win="root", occurrence=0, exact=False):
+    """Clicks rendered `text`. `exact` matches a whole word, so "Install" is
+    not found inside a "Not installed" badge."""
+    def hit(line):
+        if exact:
+            return any(w["text"].strip("·↗…. ").lower() == text.lower() for w in line["words"])
+        return _has(line["text"], text)
+
     def find():
-        matches = [line for line in _ui_lines(s, win) if _has(line["text"], text)]
+        matches = [line for line in _ui_lines(s, win) if hit(line)]
         # Both OCR passes may report the same line: keep one per row, top first.
         rows = {}
         for line in sorted(matches, key=lambda l: int(l["words"][0]["top"])):
@@ -355,7 +391,7 @@ def _ui_click(s, text, win="root", occurrence=0):
         return matches[occurrence] if len(matches) > occurrence else None
     line = _wait(find, f"Lens did not render {text!r}")
     first = text.split()[0].lower()
-    word = next((w for w in line["words"] if w["text"].lower().strip("·↗…. ").startswith(first)), line["words"][0])
+    word = next((w for w in line["words"] if (w["text"].lower().strip("·↗…. ") == first if exact else w["text"].lower().strip("·↗…. ").startswith(first))), line["words"][0])
     x = str((int(word["left"]) + int(word["width"]) // 2) // OCR_SCALE)
     y = str((int(word["top"]) + int(word["height"]) // 2) // OCR_SCALE)
     args = ("--window", win) if win != "root" else ()
@@ -417,7 +453,7 @@ def _settings(s):
     exe = APPS["arcade.lens"]["dir"] / APPS["arcade.lens"]["bin"]
     r = subprocess.run([str(exe)], env=s.env, capture_output=True, text=True, timeout=15)
     assert r.returncode == 0, r.stderr
-    win = _focus(s, "^Arcade Lens Settings$")
+    win = _focus(s, SETTINGS)
     s.xdotool("windowsize", win, "940", "1020")
     s.xdotool("windowraise", win)
     _ui_click(s, "Connected apps", win)
@@ -474,13 +510,15 @@ def connected_apps_without_peers_and_get_fallback(s):
         lines = "\n".join(l["text"] for l in _ui_lines(s, win))
         assert _has(lines, "Not installed") and not _has(lines, "Use with Arcade Lens"), lines  # §10.2: no toggle for a missing app
         s.screenshot("lens-connected-apps-without-peers", win)
-        _ui_click(s, "Get", win)
-        _wait(opened.exists, "Lens Get did not open the isolated release URL")
+        # STANDARD's word is "Install" (Lens 0.4); Lens 0.3 said "Get".
+        label = "Get" if re.search(r"\bGet\b", lines) else "Install"
+        _ui_click(s, label, win, exact=True)
+        _wait(opened.exists, f"Lens {label} did not open the isolated release URL")
         urls = json.loads(opened.read_text())
         assert len(urls) == 1 and urls[0].startswith("https://github.com/qa-p1/Arcade-") and urls[0].endswith("/releases"), urls
     finally:
         _restart_lens(s)
-    return f"missing peers without toggles, Get and diagnostics; Get opened {urls[0]}"
+    return f"missing peers without toggles, {label} and diagnostics; {label} opened {urls[0]}"
 
 
 @check("lens")
@@ -529,6 +567,7 @@ def region_send_real_clipboard_and_secret_guard(s):
 def quick_look_path_finding_real_peer(s):
     s.env["ALOOK_E2E_MAP_EARLY"] = "1"
     s.start("arcade.look")
+    _settle(s)  # Look maps its preview window early in this mode
     target = _png(s, "lens-preview-target.png", width=320, height=200)
     qr = _qr(s, "lens-path-qr.png", str(target))
     entries = _analyze(s, qr, lambda es: any(e["action"] == "arcade.look.preview" and e["key"] == "y" for e in es))
@@ -619,7 +658,12 @@ def _box_start_with_pipelines(s):
 
 @check("lens")
 def real_box_preset_and_cached_pipeline_entries(s):
+    # Windows left by earlier checks (Look's preview, Clipboard) would take
+    # focus from the capture on a display without a window manager.
+    for app in ("arcade.look", "arcade.clipboard"):
+        s.kill(app)
     _box_start_with_pipelines(s)  # Box arrives after Lens: watch + cache refresh.
+    _settle(s)
     image = _png(s, "lens-box-image.png", 240, 160)
     entries = _analyze(s, image, lambda es: any(e["action"] == "arcade.box.pipeline.lens-web-image" for e in es))
     assert not any(e["action"] == "arcade.box.pipeline.lens-uppercase" for e in entries), entries
@@ -649,40 +693,69 @@ def real_box_preset_and_cached_pipeline_entries(s):
     return "real Box preset produced WebP; cached image and QR-text pipeline entries matched and ran"
 
 
+def _row_switch(s, win, label, badge=None):
+    """Clicks the switch in the settings row titled `label`. Lens 0.4's
+    switches carry no visible text (their accessible name does), so they are
+    found from the row: left of its status `badge`, else at the row's right."""
+    def find():
+        lines = _ui_lines(s, win)
+        title = next((l for l in lines if _has(l["text"], label)), None)
+        if title is None:
+            return None
+        top = int(title["words"][0]["top"])
+        if badge is None:
+            return title, None
+        near = [w for l in lines for w in l["words"]
+                if w["text"].strip("·.").lower() == badge.split()[0].lower() and 0 <= int(w["top"]) - top <= 40 * OCR_SCALE]
+        return (title, near[0]) if near else None
+    title, word = _wait(find, f"Lens did not render the {label!r} row")
+    geometry = dict(l.split("=", 1) for l in s.xdotool("getwindowgeometry", "--shell", win).splitlines() if "=" in l)
+    if word is not None:
+        x = int(word["left"]) // OCR_SCALE - 26
+        y = (int(word["top"]) + int(word["height"]) // 2) // OCR_SCALE
+    else:
+        x = int(geometry["WIDTH"]) - 79  # the switch sits 44 px inside the card's right edge
+        y = (int(title["words"][0]["top"]) + int(title["words"][0]["height"]) // 2) // OCR_SCALE + 8
+    s.xdotool("mousemove", "--window", win, str(x), str(y), "sleep", "0.15", "click", "1")
+
+
 @check("lens")
 def connected_apps_real_toggles_and_shortcut_clash(s):
     settings = Path(s.env["ARCADE_LENS_HOME"]) / "config/settings.toml"
     manifest = Path(s.env["ARCADE_HOME"]) / "apps/arcade.lens.json"
+    for app in ("arcade.look", "arcade.clipboard"):
+        s.kill(app)
     try:
         win = _settings(s)
         lines = "\n".join(l["text"] for l in _ui_lines(s, win))
-        assert _has(lines, "Running") and _has(lines, "Use with Arcade Lens"), lines
+        # Lens 0.4: a running, connected app shows "Connected" beside its switch;
+        # changes apply at once (no Save).
+        assert _has(lines, "Arcade Box") and _has(lines, "Connected"), lines
         _ui_click(s, "Diagnostics", win)
         s.screenshot("lens-connected-apps", win)
-        _ui_click(s, "Use with Arcade Lens", win)
-        _ui_click(s, "Save", win, occurrence=-1)  # the button, not "Save to apply changes"
+        _row_switch(s, win, "Arcade Box", badge="Connected")
         _wait(lambda: settings.exists() and "arcade.box" in tomllib.loads(settings.read_text())["link"]["disabled_peers"],
-              "Lens did not persist the Box toggle")
+              "Lens did not apply the Box switch")
         _restart_lens(s)
-        entries = _analyze(s, _png(s), lambda es: any(e["action"] == "arcade.clipboard.add" for e in es))
+        entries = _analyze(s, _png(s), lambda es: bool(es))
         assert not any(e["action"].startswith("arcade.box") for e in entries), entries
         _close_palette(s)
         win = _settings(s)
-        _ui_click(s, "Use with Arcade Lens", win)
-        _ui_click(s, "Connect with other Arcade apps", win)
-        _ui_click(s, "Save", win, occurrence=-1)  # the button, not "Save to apply changes"
+        _row_switch(s, win, "Arcade Box", badge="Connected")  # the badge is Box's own Link state
+        _wait(lambda: "arcade.box" not in tomllib.loads(settings.read_text())["link"].get("disabled_peers", []),
+              "Lens did not apply the Box switch back on")
+        _row_switch(s, win, "Connect with other Arcade apps")
         _wait(lambda: not s.endpoint("arcade.lens").exists(), "master off left a Lens listener")
         off = json.loads(manifest.read_text())
         assert not off["settings"]["linkEnabled"] and not off["actions"], off
         s.screenshot("lens-connected-apps-master-off", win)
-        _ui_click(s, "Connect with other Arcade apps", win)
-        _ui_click(s, "Save", win, occurrence=-1)  # the button, not "Save to apply changes"
+        _row_switch(s, win, "Connect with other Arcade apps")
         s.wait_running("arcade.lens")
         assert json.loads(manifest.read_text())["actions"], "master on did not republish Lens actions"
         # A running Box holds ctrl+alt+space as an X11 key grab, so the key would
         # never reach the recorder. Stop it: the clash comes from its cached manifest.
         s.kill("arcade.box", signal.SIGTERM)
-        _ui_click(s, "Shortcut", win)
+        _ui_click(s, "Shortcuts", win)
         _ui_click(s, "Change", win)
         s.xdotool("key", "ctrl+alt+space")
         try:
@@ -692,7 +765,7 @@ def connected_apps_real_toggles_and_shortcut_clash(s):
             s.screenshot("lens-shortcut-clash-failed", win)
             raise
         s.screenshot("lens-shortcut-clash", win)
-        _ui_click(s, "Revert", win)  # the test's draft must not change the saved shortcut
+        _ui_click(s, "Choose another", win)  # the test's draft must not change the saved shortcut
     finally:
         _restart_lens(s)
     return "peer off hid Box entries; master off stopped listener/cleared actions; restored; cached recorder clash rendered"

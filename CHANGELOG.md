@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.14 — 2026-11-01
+
+- `tools/e2e.py`: removing the isolated root after a run detaches FUSE mounts the private session left inside it (the document portal) and never fails a finished run. Python 3.12's `shutil.rmtree` raised ECONNABORTED from a dying portal mount despite `ignore_errors`, which failed Find's stable release run after every check had passed.
+
 ## 0.4.13 — 2026-10-31
 
 - egui `page_with_head_actions`: the body scrolls across the whole page, so its scroll bar sits at the window edge instead of on the cards' right border (Settings in Find and Lens).

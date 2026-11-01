@@ -88,11 +88,11 @@ audio_file = produced("file/audio")
 
 # ---- fixtures
 text_png = root / "stress-text.png"
-subprocess.run(["magick", "-size", "900x200", "xc:white", "-fill", "black", "-font", "DejaVu-Sans",
+subprocess.run([shutil.which("convert") or "magick", "-size", "900x200", "xc:white", "-fill", "black", "-font", "DejaVu-Sans",
                 "-pointsize", "56", "-gravity", "center", "-annotate", "0", "Stress test 4821",
                 str(text_png)], check=True)
 scan_pdf = root / "stress-scan.pdf"
-subprocess.run(["magick", str(text_png), "-density", "150", str(scan_pdf)], check=True)
+subprocess.run([shutil.which("convert") or "magick", str(text_png), "-density", "150", str(scan_pdf)], check=True)
 odt = root / "stress-manual.odt"
 shutil.copy("/usr/share/gutenprint/doc/gutenprint-users-manual.odt", odt)
 

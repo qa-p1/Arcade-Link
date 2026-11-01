@@ -368,7 +368,7 @@ def clipboard_foreground_launch_mode(s):
 def clipboard_photo_flagship_with_real_look_lens_and_box(s):
     _start(s)
     photo = s.root / "clipboard-real-photo.jpg"
-    subprocess.run(["magick", "-size", "900x240", "xc:white", "-fill", "black", "-font", "DejaVu-Sans",
+    subprocess.run([shutil.which("convert") or "magick", "-size", "900x240", "xc:white", "-fill", "black", "-font", "DejaVu-Sans",
                     "-pointsize", "64", "-gravity", "center", "-annotate", "0", "Clipboard photo example",
                     str(photo)], env=s.env, capture_output=True, check=True, timeout=15)
     code, result = s.invoke("clipboard", "clipboard.add", "--file", str(photo))
@@ -412,7 +412,7 @@ def clipboard_photo_flagship_with_real_look_lens_and_box(s):
         print("     real flow: Pin", flush=True)
         pinned = c.invoke("arcade.lens", "lens.pin", item_id=image_id)
         assert "result" in pinned, pinned
-        s.wait_window("Arcade Lens Pin", timeout=5)
+        s.wait_window("(Pin [^A-Za-z]+ Arcade Lens|Arcade Lens Pin)", timeout=5)
         history = c.request("history")
         rows = history if isinstance(history, list) else history["items"]
         assert any(r["kind"] == "text" and "clipboard" in r["text"].lower() and r["id"] not in before for r in rows), rows
@@ -619,7 +619,7 @@ def clipboard_ui_surfaces(s):
     prefs.write_text(json.dumps(values))
     _start(s)
     photo = s.root / "clipboard-ui-photo.jpg"
-    subprocess.run(["magick", "-size", "900x240", "xc:white", "-fill", "black", "-font", "DejaVu-Sans",
+    subprocess.run([shutil.which("convert") or "magick", "-size", "900x240", "xc:white", "-fill", "black", "-font", "DejaVu-Sans",
                     "-pointsize", "64", "-gravity", "center", "-annotate", "0", "Clipboard UI photo", str(photo)],
                    env=s.env, capture_output=True, check=True)
     for args in [("--file", str(photo)), ("--text", '{"clipboard":true}')]:
