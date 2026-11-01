@@ -10,7 +10,8 @@ this folder holds the values and the code.
 | `generate.py` | Writes every file below from the tokens. Python stdlib only, deterministic. `--check` fails when a generated file is stale, an accent misses its contrast pair, two default shortcuts clash or the component CSS has a literal colour or px font size. |
 | `css/arcade.css` | Custom properties for light and dark (`prefers-color-scheme` with an `html[data-theme]` override), `[data-app]` accents, and the shared base, shell and component rules (Tools 0.3.8's look). Generated from `css/components.css`. |
 | `css/icons.ts`, `css/format.ts` | The icon path map and the shared format helpers (`formatSize`, `formatCount`, `formatDuration`, `formatRelative`; Rust also has `format_datetime` for exact detail timestamps). |
-| `qml/Arcade/` | QML module: `Theme` (singleton: colours per theme, `accent(appId)`, type, space, radius, motion), `Fonts` (Inter via `FontLoader`), `Icon`, `Format.js`. Component sets are added by the first QML app spec. |
+| `qml/Arcade/` | QML module: `Theme` (singleton: colours per theme, `accent(appId)`, type, space, radius, motion, shadows), `Fonts` (Inter via `FontLoader`), `Icon`, `Glyph` (app marks), `Format.js`, and the hand-written components (see [QML components](#qml-components)). |
+| `qml/gallery/Gallery.qml` | Every QML component in one window, light or dark; `qml -I design/qml design/qml/gallery/Gallery.qml -- dark out.png` also saves a screenshot. |
 | `dart/` | `arcade_theme.dart` (`ArcadeTokens`, `ArcadeColors`, `arcadeTheme(Brightness, appId)`), `arcade_icons.dart` (`ArcadeIcon`, painter), `arcade_format.dart`, and the hand-written components in `arcade_widgets.dart` (`ArcadeButton`, `ArcadeSwitchRow`, `ArcadeListSection` + `ArcadeRow`, `ArcadeBadge`/`ArcadeDot`, `ArcadeKeyChip`/`ArcadeKeyCombo`, `ArcadeNotice`, `ArcadeEmptyState`, `showArcadeToast`, `ArcadeSidebar` + `ArcadeNavItem`, `ArcadePageHead`, `ArcadeSegmented`, `ArcadeSearchField`, `ArcadeOverlayRow`, `ArcadeHintBar`, `showArcadeDialog`, `confirmArcadeDestroy`, `ArcadeSkeletonRow`). |
 | `../crates/arcade-link/src/design.rs` | Rust, behind the `design` feature: `palette(theme, app_id)`, type/space/radius/size consts, `ICONS`, `inter_font_bytes()`, `format`; `design-egui` adds `apply_egui` and the shared `egui::components` set. |
 | `fonts/` | Inter 4.1 variable (`InterVariable.ttf`, `.woff2`) plus static 500/600 egui instances, under the SIL Open Font License (`OFL.txt`). |
@@ -63,6 +64,25 @@ Set `Theme.appId` once (`"arcade.shelf"`) and bind `Theme.mode` to the app's
 Appearance setting (`"system"`, `"light"`, `"dark"`). `Fonts.qml` loads
 `../../fonts/InterVariable.ttf`; set `Fonts.source` if the app packs the font
 elsewhere (for example in a resource file).
+
+#### QML components
+
+Built on `QtQuick.Templates` (no Controls style is needed or loaded), so a kit
+type with the same name as a Controls type wins without an ambiguity error.
+Every file uses `pragma ComponentBehavior: Bound` and lints clean with
+`qmllint --max-warnings 0`, which CI runs.
+
+| Group | Types |
+|---|---|
+| Window shell | `Sidebar` + `NavItem` (vertical, arrow keys move between items), `PageHead`, `Surface`, `Shadow` (rest and pop elevations, works on the software renderer) |
+| Settings | `ListSection` + `ListRow` (`title`, `subtitle`, `meta`, `leading`, trailing controls), `SwitchRow`, `SliderRow`, `ShortcutRecorder` (validates keys, macOS symbols), `Divider` |
+| Controls | `Button` (`variant`: default, primary, ghost, danger, destructive; `small`), `LinkButton`, `Switch`, `CheckBox`, `ComboBox`, `SegmentedControl`, `Slider`, `TextField`, `SearchField`, `NumberField`, `ScrollBar` |
+| Status | `Badge`, `Dot`, `Notice`, `Toast`, `ProgressBar`, `Spinner`, `Skeleton`, `EmptyState`, `ToolTip` |
+| Keys and marks | `KeyChip`, `KeyCombo`, `HintBar`, `GlyphTile`, `Glyph`, `Icon`, `FocusRing`, `Label` |
+| Popups and overlays | `Dialog` + `DialogBody` (primary action last), `Menu` + `MenuItem` (`shortcut`, `danger`) + `MenuSeparator`, `OverlayRow` |
+
+`qt/tests/qml/tst_components.qml` (with `tst_Design.qml`) checks sizes, keyboard
+behaviour and live theme changes offscreen.
 
 ### Flutter (Clipboard)
 
