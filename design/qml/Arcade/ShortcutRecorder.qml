@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // The shortcut recorder (STANDARD §5.1). Shows `sequence` ("Ctrl+Alt+S") as
@@ -21,6 +22,7 @@ Column {
     signal useAnyway()
     signal chooseAnother()
     spacing: Theme.space8
+    width: parent ? parent.width : 360
 
     // "Ctrl+Alt+S" → display keys, in platform order and names.
     function displayKeys(seq) {

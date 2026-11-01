@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
 
@@ -11,7 +12,8 @@ ListRow {
     property alias stepSize: slider.stepSize
     property alias slider: slider
     property string unit: ""
-    property var formatValue: v => String(Math.round(v))
+    // The value as shown (override for other units or precision).
+    function formatValue(v: real): string { return String(Math.round(v)) }
     signal moved(real value)
     stacked: true
     meta: formatValue(slider.value) + (unit ? " " + unit : "")

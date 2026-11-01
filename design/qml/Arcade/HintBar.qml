@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // Overlay footer hint bar (28 px, caption, faint): key chips for the main
@@ -18,10 +19,11 @@ Rectangle {
         Repeater {
             model: root.hints
             Row {
+                id: hint
                 required property var modelData
                 spacing: Theme.space6
-                KeyCombo { keys: modelData.keys; small: true; anchors.verticalCenter: parent.verticalCenter }
-                Label { text: modelData.label; kind: "caption"; color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
+                KeyCombo { keys: hint.modelData.keys; small: true; anchors.verticalCenter: parent.verticalCenter }
+                Label { text: hint.modelData.label; kind: "caption"; color: Theme.muted; anchors.verticalCenter: parent.verticalCenter }
             }
         }
     }

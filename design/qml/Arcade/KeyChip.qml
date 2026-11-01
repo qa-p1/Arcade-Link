@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // One key: 22 px, sunken, line-strong border with a 2 px bottom edge.

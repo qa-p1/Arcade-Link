@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
 
@@ -15,11 +16,11 @@ T.ComboBox {
     font.family: Theme.fontSans
     font.pixelSize: small ? Theme.smallSize : Theme.controlSize
     delegate: MenuItem {
+        id: option
         required property var model
         required property int index
         width: ListView.view ? ListView.view.width : implicitWidth
-        text: model[control.textRole] !== undefined ? model[control.textRole] : modelData
-        readonly property var modelData: model.modelData
+        text: control.textRole ? option.model[control.textRole] : option.model.modelData
         checkable: true
         checked: control.currentIndex === index
         highlighted: control.highlightedIndex === index

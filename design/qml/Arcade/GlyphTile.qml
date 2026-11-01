@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // A glyph tile (28 / 36 / 52 px): sunken, 1 px line, the app mark or an icon.

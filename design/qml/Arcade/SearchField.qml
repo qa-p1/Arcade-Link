@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // Kit search field: leading search icon, clear button, 36 px (`height` 44

@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // An inline notice: tone "neutral", "ok", "warn" or "danger", optional title,

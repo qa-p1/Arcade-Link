@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // Up to four short options (STANDARD §5.1; the theme picker is one).

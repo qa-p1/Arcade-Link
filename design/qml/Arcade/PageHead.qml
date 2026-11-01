@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // Page head (Template A): title (21/600), one-line subtitle, actions right

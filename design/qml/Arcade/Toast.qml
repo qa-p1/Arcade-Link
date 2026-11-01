@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // A toast: tone "info", "success" or "error", the message, an optional action

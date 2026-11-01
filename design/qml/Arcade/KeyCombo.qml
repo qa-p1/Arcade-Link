@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // A key combination as chips (["Ctrl", "Shift", "K"]), with alternatives

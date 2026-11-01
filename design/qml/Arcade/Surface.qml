@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // Template B overlay surface: panel, 1 px line, radius 12, shadow-pop. Put

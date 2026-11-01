@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // A whole-number input with its unit: Up/Down step, typing commits on Enter

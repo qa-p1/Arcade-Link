@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // A settings or list section: heading (and meta) 10 px above a bordered
@@ -9,6 +10,7 @@ Column {
     property string meta: ""
     property string note: ""
     default property alias rows: list.data
+    width: parent ? parent.width : 360
     spacing: Theme.space10
 
     Item {

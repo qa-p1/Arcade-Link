@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // A 7 px status dot: tone "neutral", "ok", "warn", "danger" or "accent".

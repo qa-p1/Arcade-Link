@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // A small status label: tone "neutral", "ok", "warn", "danger" or "accent".

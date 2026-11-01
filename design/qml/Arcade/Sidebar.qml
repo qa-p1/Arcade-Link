@@ -1,5 +1,5 @@
+pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Templates as T
 
 // Template A sidebar: 212 px on bg with a right line; the brand (28 px mark
 // tile + app name), NavItem tabs (its children, Up/Down move between them),
@@ -10,8 +10,8 @@ Rectangle {
     property string appId: Theme.appId
     property string version: ""
     property bool collapsed: false
-    property alias currentIndex: tabs.currentIndex
-    default property alias items: tabs.contentData
+    property int currentIndex: 0
+    default property alias items: tabColumn.data
     property alias footer: footerSlot.data
     implicitWidth: collapsed ? Theme.sidebarCollapsed : Theme.sidebar
     color: Theme.bg
@@ -35,22 +35,35 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
         }
     }
-    T.TabBar {
-        id: tabs
+    Column {
+        id: tabColumn
         x: Theme.space12
         y: brand.y + brand.height + Theme.space24
         width: root.width - Theme.space12 * 2
-        height: contentItem.implicitHeight
         spacing: Theme.space2
-        contentItem: ListView {
-            model: tabs.contentModel
-            currentIndex: tabs.currentIndex
-            spacing: tabs.spacing
-            interactive: false
-            implicitHeight: contentHeight
+        // Up/Down move between tabs (the focused tab passes the key here).
+        Keys.onUpPressed: root.focusTab(root.currentIndex - 1)
+        Keys.onDownPressed: root.focusTab(root.currentIndex + 1)
+    }
+    function focusTab(i) {
+        const tabs = tabColumn.children;
+        if (i < 0 || i >= tabs.length) return;
+        currentIndex = i;
+        tabs[i].forceActiveFocus();
+    }
+    function syncTabs() {
+        const tabs = tabColumn.children;
+        for (let i = 0; i < tabs.length; ++i) tabs[i].checked = i === currentIndex;
+    }
+    onCurrentIndexChanged: syncTabs()
+    Component.onCompleted: {
+        const tabs = tabColumn.children;
+        for (let i = 0; i < tabs.length; ++i) {
+            const index = i;
+            tabs[i].clicked.connect(() => { root.currentIndex = index; root.syncTabs(); });
+            tabs[i].collapsed = Qt.binding(() => root.collapsed);
         }
-        Keys.onUpPressed: { currentIndex = Math.max(0, currentIndex - 1); itemAt(currentIndex).forceActiveFocus() }
-        Keys.onDownPressed: { currentIndex = Math.min(count - 1, currentIndex + 1); itemAt(currentIndex).forceActiveFocus() }
+        syncTabs();
     }
     Column {
         id: foot

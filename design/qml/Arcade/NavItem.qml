@@ -1,16 +1,15 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
 
 // A sidebar tab: 34 px, icon + label (+ count). Active: panel fill, line
 // ring, accent icon. In a collapsed sidebar only the icon shows.
-T.TabButton {
+T.AbstractButton {
     id: control
     property string iconName: ""
     property int count: 0
     property bool collapsed: false
-    // Explicit, so TabBar's horizontal sizing leaves the vertical list alone.
     width: parent ? parent.width : implicitWidth
-    height: implicitHeight
     implicitHeight: Theme.nav
     implicitWidth: collapsed ? Theme.nav + Theme.space6 : 160
     leftPadding: collapsed ? 0 : Theme.space10

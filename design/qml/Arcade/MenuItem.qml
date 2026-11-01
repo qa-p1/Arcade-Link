@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Templates as T
 
@@ -10,7 +11,7 @@ T.MenuItem {
     property string shortcut: ""
     property bool danger: false
     readonly property color ink: !enabled ? Theme.faint : danger ? Theme.dangerInk : Theme.text
-    implicitWidth: leftPadding + rightPadding + row.implicitWidth + (trailing.implicitWidth ? Theme.space16 + trailing.implicitWidth : 0)
+    implicitWidth: leftPadding + rightPadding + body.implicitWidth
     implicitHeight: visible ? Theme.control : 0
     height: visible ? implicitHeight : 0
     leftPadding: Theme.space10
@@ -20,29 +21,26 @@ T.MenuItem {
     Accessible.name: text
 
     contentItem: Item {
-        implicitWidth: row.implicitWidth
-        Row {
-            id: row
+        id: body
+        readonly property real leadWidth: leadingIcon.visible ? leadingIcon.width + control.spacing : 0
+        implicitWidth: leadWidth + label.implicitWidth + (trailing.implicitWidth ? Theme.space16 + trailing.implicitWidth : 0)
+        Icon {
+            id: leadingIcon
+            visible: control.iconName !== ""
+            name: control.iconName
+            color: control.danger && control.enabled ? Theme.dangerInk : control.enabled ? Theme.muted : Theme.faint
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            spacing: control.spacing
-            Icon {
-                id: leadingIcon
-                visible: control.iconName !== ""
-                name: control.iconName
-                color: control.danger && control.enabled ? Theme.dangerInk : control.enabled ? Theme.muted : Theme.faint
-                anchors.verticalCenter: parent.verticalCenter
-            }
-            Label {
-                id: label
-                text: control.text
-                kind: "control"
-                font.weight: 400
-                color: control.ink
-                elide: Text.ElideRight
-                width: Math.min(implicitWidth, parent.width - (leadingIcon.visible ? Theme.iconSize + control.spacing : 0) - trailing.implicitWidth - (trailing.implicitWidth ? Theme.space16 : 0))
-                anchors.verticalCenter: parent.verticalCenter
-            }
+        }
+        Label {
+            id: label
+            x: body.leadWidth
+            width: parent.width - x - (trailing.implicitWidth ? Theme.space16 + trailing.implicitWidth : 0)
+            anchors.verticalCenter: parent.verticalCenter
+            text: control.text
+            kind: "control"
+            font.weight: 400
+            color: control.ink
+            elide: Text.ElideRight
         }
         Row {
             id: trailing
@@ -52,6 +50,7 @@ T.MenuItem {
             KeyCombo {
                 visible: control.shortcut !== ""
                 keys: control.shortcut ? control.shortcut.split("+") : []
+                small: true
                 anchors.verticalCenter: parent.verticalCenter
             }
             Icon {

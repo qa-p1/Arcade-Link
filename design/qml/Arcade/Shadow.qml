@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // The kit's shadow-pop (or shadow-rest) under a rounded surface: a few
@@ -10,14 +11,14 @@ Item {
     readonly property real blur: pop ? Theme.shadowPopBlur : Theme.shadowRestBlur
     readonly property real offsetY: pop ? Theme.shadowPopY : Theme.shadowRestY
     readonly property color tint: pop ? Theme.shadowPop : Theme.shadowRest
-    readonly property int layers: blur > 0 ? 4 : 0
+    readonly property int layers: blur > 0 ? 6 : 0
     anchors.fill: parent
     z: -1
     Repeater {
         model: root.layers
         Rectangle {
             required property int index
-            readonly property real spread: root.blur * (index + 1) / (root.layers * 2)
+            readonly property real spread: root.blur * 0.4 * (index + 1) / root.layers
             x: -spread
             y: root.offsetY * (index + 1) / root.layers - spread
             width: root.width + spread * 2

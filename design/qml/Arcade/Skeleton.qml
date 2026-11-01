@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // A loading placeholder line (10 px) or block; shimmers unless motion is reduced.

@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // An overlay result row: 40 px (one line) or 52 px (with subtitle); leading

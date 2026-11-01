@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 
 // The kit focus ring: 2 px accent, 2 px outside the control it fills.
