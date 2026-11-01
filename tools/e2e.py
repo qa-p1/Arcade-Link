@@ -771,11 +771,49 @@ def main() -> int:
     return run_checks(root, args.only, scaffold, args.real_apps, args.check, args.allow_skips, args.require_artifacts)
 
 
+def mounts_under(root: Path, mountinfo: str | None = None) -> list[str]:
+    """Mount points inside `root`, deepest first (from /proc/self/mountinfo)."""
+    if mountinfo is None:
+        try:
+            mountinfo = Path("/proc/self/mountinfo").read_text()
+        except OSError:
+            return []
+    prefix = str(root) + os.sep
+    points = []
+    for line in mountinfo.splitlines():
+        fields = line.split()
+        if len(fields) > 4:
+            # The kernel writes space, tab, newline and backslash as octal escapes.
+            point = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), fields[4])
+            if point.startswith(prefix):
+                points.append(point)
+    return sorted(points, key=len, reverse=True)
+
+
+def remove_root(root: Path) -> None:
+    """Removes an isolated root after its session ended.
+
+    Services the private bus activated (the document portal, gvfs) can leave a
+    FUSE file system mounted inside it, or be exiting while it is removed:
+    `shutil.rmtree` then fails inside `os.fstat` with ECONNABORTED, which
+    `ignore_errors` does not cover on Python 3.12, and it would descend into a
+    live mount. Detach those mounts first, and never let cleanup turn a
+    finished run into a failure."""
+    for point in mounts_under(root):
+        tool = shutil.which("fusermount3") or shutil.which("fusermount")
+        if tool:
+            subprocess.run([tool, "-u", "-z", point], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        shutil.rmtree(root, ignore_errors=True)
+    except OSError as e:
+        print(f"e2e: left {root} behind: {e}", file=sys.stderr)
+
+
 def isolated(argv: list[str]) -> int:
     """Runs this script with `argv` inside a new isolated session."""
     # The private bus starts inside the isolated environment too, so
     # services it activates (portals, gvfs) never see the real profile.
-    root = Path(tempfile.mkdtemp(prefix="arcade-e2e-"))
+    root = Path(tempfile.mkdtemp(prefix="arcade-e2e-")).resolve()
     env = isolated_env(root)
     env["ARCADE_E2E_INNER"] = "1"
     env["ARCADE_E2E_ROOT"] = str(root)
@@ -783,7 +821,7 @@ def isolated(argv: list[str]) -> int:
         return subprocess.call(["dbus-run-session", "--", sys.executable, *argv], env=env)
     finally:
         if not os.environ.get("E2E_KEEP"):
-            shutil.rmtree(root, ignore_errors=True)
+            remove_root(root)
 
 
 if __name__ == "__main__":

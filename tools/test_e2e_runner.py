@@ -70,5 +70,31 @@ class RunnerGuards(unittest.TestCase):
             session.assert_not_called()
 
 
+class RootCleanup(unittest.TestCase):
+    """The isolated root is removed without failing a finished run."""
+
+    def test_mounts_inside_the_root_are_found_deepest_first(self):
+        root = Path('/tmp/arcade-e2e-x')
+        info = '\n'.join([
+            '22 1 0:21 / / rw - ext4 /dev/sda rw',
+            '90 22 0:50 / /tmp/arcade-e2e-x/runtime/doc rw - fuse.portal portal rw',
+            '91 90 0:51 / /tmp/arcade-e2e-x/runtime/doc/by\\040app rw - fuse fuse rw',
+            '92 22 0:52 / /tmp/arcade-e2e-xy/runtime/doc rw - fuse.portal portal rw',
+        ])
+        self.assertEqual(e2e.mounts_under(root, info),
+                         ['/tmp/arcade-e2e-x/runtime/doc/by app', '/tmp/arcade-e2e-x/runtime/doc'])
+
+    def test_mounts_are_detached_before_removal_and_errors_never_raise(self):
+        calls = []
+        with tempfile.TemporaryDirectory(prefix='arcade-e2e-cleanup-') as d:
+            root = Path(d)
+            with patch.object(e2e, 'mounts_under', return_value=[str(root / 'runtime/doc')]), \
+                 patch.object(e2e.shutil, 'which', return_value='/usr/bin/fusermount3'), \
+                 patch.object(e2e.subprocess, 'run', side_effect=lambda args, **_: calls.append(('umount', args))), \
+                 patch.object(e2e.shutil, 'rmtree', side_effect=ConnectionAbortedError(103, 'Software caused connection abort')):
+                e2e.remove_root(root)
+        self.assertEqual(calls, [('umount', ['/usr/bin/fusermount3', '-u', '-z', str(root / 'runtime/doc')])])
+
+
 if __name__ == '__main__':
     unittest.main()
