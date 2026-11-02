@@ -129,9 +129,9 @@ class HubHarnessTests(unittest.TestCase):
             disable_link = e2e.CHECKS['tools-hub'][0].__globals__['_disable_native_link']
         from types import SimpleNamespace
         cases = [
-            ('arcade.look', 'arcade/.config/arcade/look/settings.json',
+            ('arcade.look', 'config/arcade/look/settings.json',
              'config/arcade-look/config.json', 'linkEnabled'),
-            ('arcade.wheel', 'arcade/.config/arcade/wheel/settings.json',
+            ('arcade.wheel', 'config/arcade/wheel/settings.json',
              'config/Arcade Wheel/Arcade Wheel/config.json', 'link'),
             ('arcade.clipboard', 'clipdata/settings.json',
              'data/dev.arcade.clipboard/shared_preferences.json', 'link_enabled'),

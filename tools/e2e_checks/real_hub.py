@@ -799,8 +799,8 @@ def _disable_native_link(s, app):
     else:
         paths = {
             'arcade.find': ('find/config/settings.json', {'schema': 1, 'roots': [str(s.root / 'home')], 'link': {'enabled': False}}),
-            'arcade.look': ('arcade/.config/arcade/look/settings.json', {'linkEnabled': False}),
-            'arcade.wheel': ('arcade/.config/arcade/wheel/settings.json', {'link': {'enabled': False}}),
+            'arcade.look': ('config/arcade/look/settings.json', {'linkEnabled': False}),
+            'arcade.wheel': ('config/arcade/wheel/settings.json', {'link': {'enabled': False}}),
             'arcade.clipboard': ('clipdata/settings.json', {'link_enabled': False}),
         }
         relative, changes = paths[app]
