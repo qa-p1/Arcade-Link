@@ -110,6 +110,46 @@ class HubHarnessTests(unittest.TestCase):
         self.assertNotIn('path', result)
         self.assertIn('no successful main', result['reason'])
 
+    def test_shelf_packaging_run_is_selected_after_unrelated_tag_run(self):
+        runs = [{'databaseId': 12}, {'databaseId': 11}]
+        responses = [json.dumps(runs), json.dumps([{'artifacts': []}]),
+                     json.dumps([{'artifacts': [
+                         {'name': 'package-windows-x64', 'expired': False},
+                         {'name': 'package-linux-x64', 'expired': False},
+                     ]}])]
+        with patch.object(e2e_artifacts, 'command', side_effect=responses):
+            _, chosen = e2e_artifacts.select(e2e.FLEET['arcade.shelf'])
+        self.assertIsNotNone(chosen)
+        self.assertEqual(chosen[0]['databaseId'], 11)
+        self.assertEqual(chosen[1]['name'], 'package-linux-x64')
+
+    def test_link_off_edits_current_profiles_without_recreating_legacy_files(self):
+        with patch.object(e2e, 'CHECKS', {}):
+            e2e.load_check_modules(real_apps=True)
+            disable_link = e2e.CHECKS['tools-hub'][0].__globals__['_disable_native_link']
+        from types import SimpleNamespace
+        cases = [
+            ('arcade.look', 'arcade/.config/arcade/look/settings.json',
+             'config/arcade-look/config.json', 'linkEnabled'),
+            ('arcade.wheel', 'arcade/.config/arcade/wheel/settings.json',
+             'config/Arcade Wheel/Arcade Wheel/config.json', 'link'),
+            ('arcade.clipboard', 'clipdata/settings.json',
+             'data/dev.arcade.clipboard/shared_preferences.json', 'link_enabled'),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            session = SimpleNamespace(root=Path(directory))
+            for app, current, legacy, key in cases:
+                with self.subTest(app=app):
+                    path = session.root / current
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(json.dumps({'theme': 'light', 'futureSetting': 17}))
+                    disable_link(session, app)
+                    saved = json.loads(path.read_text())
+                    self.assertEqual(saved[key], {'enabled': False} if key == 'link' else False)
+                    self.assertEqual(saved['theme'], 'light')
+                    self.assertEqual(saved['futureSetting'], 17)
+                    self.assertFalse((session.root / legacy).exists())
+
 
     def test_bounded_download_skips_the_app_and_reuses_a_verified_package(self):
         import hashlib, subprocess

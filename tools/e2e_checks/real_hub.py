@@ -779,11 +779,8 @@ def _hosted_cycle(s, app):
         watcher.close()
 
 
-def _link_off(s, app):
-    from sni_watcher import Watcher, until
-    binary('arcade.tools')
-    fleet(s, [app])  # Initializes only this disposable app's native settings.
-    s.kill(app)
+def _disable_native_link(s, app):
+    """Edit the initialized current profile, never recreate migrated settings."""
     if app == 'arcade.box':
         with sqlite3.connect(s.box_data() / 'arcade.sqlite3') as db:
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('link_enabled','false')")
@@ -802,9 +799,9 @@ def _link_off(s, app):
     else:
         paths = {
             'arcade.find': ('find/config/settings.json', {'schema': 1, 'roots': [str(s.root / 'home')], 'link': {'enabled': False}}),
-            'arcade.look': ('config/arcade-look/config.json', {'linkEnabled': False}),
-            'arcade.wheel': ('config/Arcade Wheel/Arcade Wheel/config.json', {'link': {'enabled': False}}),
-            'arcade.clipboard': ('data/dev.arcade.clipboard/shared_preferences.json', {'flutter.link_enabled': False}),
+            'arcade.look': ('arcade/.config/arcade/look/settings.json', {'linkEnabled': False}),
+            'arcade.wheel': ('arcade/.config/arcade/wheel/settings.json', {'link': {'enabled': False}}),
+            'arcade.clipboard': ('clipdata/settings.json', {'link_enabled': False}),
         }
         relative, changes = paths[app]
         path = s.root / relative
@@ -812,6 +809,14 @@ def _link_off(s, app):
         existing = json.loads(path.read_text()) if path.is_file() else {}
         existing.update(changes)
         path.write_text(json.dumps(existing), encoding='utf-8')
+
+
+def _link_off(s, app):
+    from sni_watcher import Watcher, until
+    binary('arcade.tools')
+    fleet(s, [app])  # Initializes only this disposable app's native settings.
+    s.kill(app)
+    _disable_native_link(s, app)
     tools_preferences(s)
     watcher = Watcher()
     try:
