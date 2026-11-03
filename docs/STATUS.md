@@ -13,8 +13,13 @@
   Clipboard's isolated `clipdata/settings.json` with unprefixed preference keys.
   Recreating old config files after migration caused Look/Wheel conflicts;
   Clipboard ignored the old preference file after its current file existed.
+- The macOS disconnect test could successfully quit after the caller's job had
+  already cancelled, then time out trying to quit that stopped server again.
+  It now keeps a job active until Busy is asserted, disconnects its caller,
+  requires cancellation and the idle state, and then requires a successful quit.
 - Regression tests cover selecting Shelf after an unrelated tag run and editing
-  current profiles without recreating legacy files. Local harness tests: 25 pass.
+  current profiles without recreating legacy files. The local Python suite
+  passes all 47 tests with its optional schema dependency installed.
   Real-fleet CI remains required; the separate Find Link-off failure in the
   scheduled run is still under investigation. No check was skipped or relaxed.
 
