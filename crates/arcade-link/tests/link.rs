@@ -37,11 +37,15 @@ impl Handler for Echo {
         match req.action.as_str() {
             "echo" => Ok(Reply::Done(InvokeResult::outputs(req.inputs, format!("hi {}", ctx.peer().id)))),
             "fail" => Err(LinkError::unavailable("FFmpeg isn't installed")),
-            "slow" | "fast-job" => {
+            "slow" | "fast-job" | "until-disconnected" => {
                 self.started.fetch_add(1, Ordering::SeqCst);
                 let job = ctx.start_job();
                 let ticket = job.ticket();
-                let steps = if req.action == "slow" { 50 } else { 0 };
+                let steps = match req.action.as_str() {
+                    "until-disconnected" => usize::MAX,
+                    "slow" => 50,
+                    _ => 0,
+                };
                 let cancelled = self.cancelled.clone();
                 std::thread::spawn(move || {
                     for i in 0..steps {
@@ -134,25 +138,25 @@ fn disconnect_cancels_the_callers_jobs_and_quit_refuses_while_busy() {
     let (dir, loc) = root("disconnect");
     let h = Arc::new(Echo::default());
     let _s = start(&loc, "arcade.echo", h.clone());
-    let loc2 = loc.clone();
-    let t = std::thread::spawn(move || {
-        let mut c = Client::connect(&loc2, "arcade.echo", &me()).unwrap();
-        // Send the invoke and drop the connection without waiting.
-        let _ = c.call("invoke", json!({"action": "slow", "inputs": []}));
-    });
-    t.join().unwrap();
+    let mut caller = Client::connect(&loc, "arcade.echo", &me()).unwrap();
+    // Keep the caller connected until the busy refusal is observed. Dropping
+    // it first could cancel the job before app.quit, legitimately stopping the
+    // server and making the second quit time out.
+    caller.call("invoke", json!({"action": "until-disconnected", "inputs": []})).unwrap();
     let mut c = Client::connect(&loc, "arcade.echo", &me()).unwrap();
-    // While the slow job may still be running, app.quit is refused.
-    let busy = c.call("app.quit", json!({}));
-    if let Err(e) = &busy {
-        assert_eq!(e.code, ErrorCode::Busy);
-    }
+    assert_eq!(c.call("app.quit", json!({})).unwrap_err().code, ErrorCode::Busy);
+    drop(caller);
     let deadline = Instant::now() + Duration::from_secs(3);
     while !h.cancelled.load(Ordering::SeqCst) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert!(h.cancelled.load(Ordering::SeqCst), "the orphaned job was not cancelled");
-    std::thread::sleep(Duration::from_millis(50));
+    // The worker records cancellation just before finishing its job. Wait for
+    // the actual idle state instead of guessing how long that cleanup takes.
+    while c.status().unwrap()["busy"] == true && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(c.status().unwrap()["busy"], false);
     assert_eq!(c.call("app.quit", json!({})).unwrap()["quitting"], true);
     std::thread::sleep(Duration::from_millis(50));
     assert!(h.quit.load(Ordering::SeqCst));

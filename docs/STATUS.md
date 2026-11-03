@@ -1,5 +1,28 @@
 # Arcade Link status
 
+## 2026-11-02: ecosystem harness follows the overhauled apps
+
+- Latest library tag: `v0.4.15` (`56798545d263c104ded54877239750f9645c32a3`).
+  It includes the QML component kit used by Shelf and Wheel. Link is tag-only;
+  it has no installer release.
+- Scheduled ecosystem run [41421114064](https://github.com/qa-p1/Arcade-Link/actions/runs/41421114064)
+  failed: Shelf's packaging artifact was renamed to `package-linux-x64`, while
+  the fleet selector still searched for `Arcade-Shelf-ubuntu-*`. The selector now
+  uses the current artifact name, preserving the green-run and expiry checks.
+- Link-off tray tests now edit Look and Wheel's current `settings.json` and
+  Clipboard's isolated `clipdata/settings.json` with unprefixed preference keys.
+  Recreating old config files after migration caused Look/Wheel conflicts;
+  Clipboard ignored the old preference file after its current file existed.
+- The macOS disconnect test could successfully quit after the caller's job had
+  already cancelled, then time out trying to quit that stopped server again.
+  It now keeps a job active until Busy is asserted, disconnects its caller,
+  requires cancellation and the idle state, and then requires a successful quit.
+- Regression tests cover selecting Shelf after an unrelated tag run and editing
+  current profiles without recreating legacy files. The local Python suite
+  passes all 47 tests with its optional schema dependency installed.
+  Real-fleet CI remains required; the separate Find Link-off failure in the
+  scheduled run is still under investigation. No check was skipped or relaxed.
+
 ## 2026-10-30: neutral welcome mark (0.4.11)
 
 Reviewing Find's real 125% welcome captures found an accent-coloured hero

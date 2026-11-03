@@ -124,7 +124,7 @@ ARTIFACT_NAMES = {
     "arcade.lens": ("Arcade-lens", "linux-appimage"),
     "arcade.look": ("Arcade-look", "arcade-look-linux-x86_64"),
     "arcade.wheel": ("Arcade-wheel", "ArcadeWheel-Linux-x86_64"),
-    "arcade.shelf": ("Arcade-Shelf", "Arcade-Shelf-ubuntu-*"),
+    "arcade.shelf": ("Arcade-Shelf", "package-linux-x64"),
     "arcade.find": ("Arcade-Find", "package-linux-x64"),
     "arcade.clipboard": ("Arcade-clipboard", "Arcade-Clipboard-linux-x64"),
     "arcade.tools": ("Arcade-tools", "tools-installer-ubuntu-*"),
