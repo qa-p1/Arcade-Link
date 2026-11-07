@@ -6,23 +6,23 @@ Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
 Open PR: https://github.com/qa-p1/Arcade-Link/pull/32 (branch `claude/tender-feynman-3vt7dg`).
 
-Done on the branch (each with tests; local runs green):
-- §3 release primitives: `arcade_link::release` + CLI `release-manifest`, `promote-manifest`, `verify-manifest`,
-  `keygen`; minisign interop; fuzz target `fuzz/`; `docs/SIGNING.md`.
-- §2 protocol: legacy hello = protocol 1; N-1 CI job (`tools/n1_compat.py`); SO_PEERCRED/getpeereid UID check in
-  the Rust and Qt servers (root-only test, run with sudo in CI).
-- §2 shared runtime: `arcade_link::runtime` (RT-1…RT-5), `qt/arcade_trim.h`, `packaging/linux/arcade-trim-preload.c`.
-- §2 QML dialog: Escape cancels destructive dialogs (WH-5); regression test fails on the old policy.
-- §5.1/5.2 `ARCADE_APP.md` (+ `docs/ARCADE_APP_GUIDE.md`, former NEW_APP_SPEC) and `arcade-link conformance`;
-  baseline of the 8 released apps in catalog `dev/v1/AUDIT/conformance-baseline.md`.
-- §4 reusable workflows: `app-publish.yml`, `app-promote.yml`, `app-nightly.yml`, `app-checks.yml`,
-  `.github/actions/setup-arcade-link`, logic in `tools/release_flow.py`; `release-flow-e2e.yml` (drafts, dispatch-only
-  once on main).
-- §1 harness: `desktop-e2e.yml` (reusable), `tools/desktop/` (session, driver, vpointer, portal stand-in),
-  `desktop-harness.yml` proof jobs. Not yet confirmed green in CI.
+Done on the branch (each with tests; local runs green): see the PR description for the full list. Highlights:
+release primitives (§3), runtime incl. U1 (§2/2b), peer UID check + legacy hello + N-1 job, QML Escape fix, emoji
+fallback, ARCADE_APP.md + conformance (+ baseline), template/ + skill, reusable publish/promote/nightly/checks
+workflows, desktop harness (Hyprland + Tier 2), fleet memory job, contract suite, SECURITY/deny/notices, dead code,
+version 1.0.0 + CHANGELOG.
 
-Next: confirm harness in CI (fallback: sway headless) · Tier 2 runners · fleet memory job · template/ + skill ·
-untangle/dead code/SECURITY/deny · design kit items (emoji fallback, contrast) · CLI unknown-arg exit 2 · v1.0.0.
+State at 13:20 UTC:
+- Link CI green except as noted in the latest run; Tier 2 smoke green on sway, KWin, Mutter, X11 (Find 0.5.4).
+- Hyprland harness: first cached build of 0.56.1 in progress (D10). Proof jobs: selftest, popup-fixed (exit 0),
+  popup-broken (exit 10), clipboard-c0 (exit 10 = C0 reproduced on Clipboard 0.3.2).
+
+Remaining before tagging v1.0.0:
+1. Harness proof green (else the sway fallback per PLAN.md "When blocked").
+2. Merge PR #32; run "Tag a release" with `v1.0.0` and the merge SHA.
+3. Dispatch `release-flow-e2e.yml` on main (draft publish → promote with a throwaway key).
+4. Commit `template/Cargo.lock` (resolved against the v1.0.0 tag).
+5. Catalog PROGRESS: Link done; start Tools (`specs/TOOLS.md`).
 
 ### Earlier
 
