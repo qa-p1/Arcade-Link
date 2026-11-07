@@ -17,6 +17,13 @@ State at 13:20 UTC:
 - Hyprland harness: first cached build of 0.56.1 in progress (D10). Proof jobs: selftest, popup-fixed (exit 0),
   popup-broken (exit 10), clipboard-c0 (exit 10 = C0 reproduced on Clipboard 0.3.2).
 
+State at 14:10 UTC (harness bring-up, each found on CI and fixed):
+- seatd was never installed (the azure kernel has no `linux-modules-extra`; vkms is built in) → installed alone.
+- The Nix cache never restored (root-owned multi-user store; tar EACCES) → `nix-quick-install-action`, key `-2`.
+- GBM had no driver (`/run/opengl-driver` exists only on NixOS) → Mesa from Hyprland's own nixpkgs revision.
+- Also fixed on the way: macOS lock-test fork race; anonymous API 403 in contract/fleet fetch; `| tee` without
+  pipefail hid a failing conformance gate in `app-checks.yml` (now `shell: bash`).
+
 Remaining before tagging v1.0.0:
 1. Harness proof green (else the sway fallback per PLAN.md "When blocked").
 2. Merge PR #32; run "Tag a release" with `v1.0.0` and the merge SHA.
