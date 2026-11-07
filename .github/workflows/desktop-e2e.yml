@@ -50,16 +50,18 @@ jobs:
           echo "AQ_DRM_DEVICES=$card" >> "$GITHUB_ENV"
           echo "LIBSEAT_BACKEND=seatd" >> "$GITHUB_ENV"
           echo "ARCADE_SEATD=1" >> "$GITHUB_ENV"
-      - uses: cachix/install-nix-action@v31
+      # Single-user Nix: the store belongs to the runner, so cache-nix-action can
+      # unpack into it (a multi-user, root-owned store fails with EACCES).
+      - uses: nixbuild/nix-quick-install-action@v35
         with:
-          extra_nix_config: |
+          nix_conf: |
             extra-substituters = https://hyprland.cachix.org
             extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
       - id: nix-cache
         uses: nix-community/cache-nix-action/restore@v6
         with:
-          primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-1
-          restore-prefixes-first-match: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-
+          primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
+          restore-prefixes-first-match: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
       - name: Hyprland ${{ inputs.hyprland }} and Wayland tools (cached; the first run builds it, ~25 min)
         timeout-minutes: 55
         run: |
@@ -88,7 +90,7 @@ jobs:
       - if: steps.nix-cache.outputs.hit-primary-key != 'true'
         uses: nix-community/cache-nix-action/save@v6
         with:
-          primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-1
+          primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
           gc-max-store-size-linux: 6G
       - name: Virtual pointer
         run: bash .arcade-link/tools/desktop/build-vpointer.sh
