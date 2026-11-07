@@ -68,10 +68,16 @@ jobs:
           # Hyprland's flake at a tag can fail to build (v0.56.2: CMake ignores the
           # flake's glaze and tries to download another). Take the first 0.56.x that
           # installs: the requested tag, the other 0.56 tags, then nixpkgs.
-          installed=""
+          installed=""; pkgs=nixpkgs
           for ref in "${{ inputs.hyprland }}" v0.56.1 v0.56.0; do
             [ "$ref" = v0.56.2 ] && [ "${{ inputs.hyprland }}" != v0.56.2 ] && continue
-            if nix profile install --accept-flake-config "git+https://github.com/hyprwm/Hyprland?ref=refs/tags/$ref&submodules=1#hyprland"; then installed="$ref (flake)"; break; fi
+            flake="git+https://github.com/hyprwm/Hyprland?ref=refs/tags/$ref&submodules=1"
+            if nix profile install --accept-flake-config "$flake#hyprland"; then
+              installed="$ref (flake)"
+              rev=$(nix flake metadata --json "$flake" | jq -r '.locks.nodes as $n | $n[$n.root.inputs.nixpkgs].locked.rev')
+              pkgs="github:NixOS/nixpkgs/$rev"
+              break
+            fi
           done
           if [ -z "$installed" ]; then
             v=$(nix eval --raw nixpkgs#hyprland.version)
@@ -79,6 +85,14 @@ jobs:
           fi
           [ -n "$installed" ] || { echo "::error::no Hyprland 0.56.x could be installed"; exit 1; }
           echo "Hyprland $installed" | tee -a "$GITHUB_STEP_SUMMARY"
+          # Nix's libgbm and libEGL look for drivers in /run/opengl-driver, which only
+          # NixOS provides. Mesa from the same nixpkgs as Hyprland (libgbm and
+          # dri_gbm.so must be one version); its llvmpipe/kms_swrast drive vkms.
+          nix profile install "$pkgs#mesa"
+          mesa=$(nix build --no-link --print-out-paths "$pkgs#mesa.out")
+          ls "$mesa/lib/gbm/dri_gbm.so" "$mesa/share/glvnd/egl_vendor.d"
+          sudo ln -sfn "$mesa" /run/opengl-driver
+          echo "Mesa $mesa" | tee -a "$GITHUB_STEP_SUMMARY"
           for i in 1 2 3; do
             nix profile install nixpkgs#grim nixpkgs#wl-clipboard nixpkgs#foot nixpkgs#wlr-protocols && break
             sleep $((i * 10))
