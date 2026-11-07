@@ -29,6 +29,7 @@ jobs:
               dbus dbus-x11 python3-dbus python3-gi gir1.2-gtk-3.0 libwayland-dev libwayland-bin pkg-config fuse3 libfuse2t64 && break
             sleep $((i * 10))
           done
+          command -v dbus-run-session wayland-scanner pkg-config
           sudo modprobe vgem 2>/dev/null || { sudo apt-get install -y "linux-modules-extra-$(uname -r)" >/dev/null 2>&1 && sudo modprobe vgem; } || true
           ls -l /dev/dri 2>/dev/null || echo "no /dev/dri"
           sudo chmod a+rw /dev/dri/* 2>/dev/null || true

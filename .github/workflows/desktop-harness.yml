@@ -6,7 +6,7 @@ concurrency:
   cancel-in-progress: true
 on:
   pull_request:
-    paths: ["tools/desktop/**", ".github/workflows/desktop-e2e.yml", ".github/workflows/desktop-harness.yml"]
+    paths: ["tools/desktop/**", ".github/workflows/desktop-e2e.yml", ".github/workflows/desktop-tier2.yml", ".github/workflows/desktop-harness.yml"]
   workflow_dispatch:
 jobs:
   selftest:
@@ -38,4 +38,9 @@ jobs:
       args: clipboard "$APP"
       appimage-url: https://github.com/qa-p1/Arcade-clipboard/releases/download/v0.3.2/Arcade-Clipboard-0.3.2-x86_64.AppImage
       expect-exit: 10
+      link-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+  tier2-find:
+    uses: ./.github/workflows/desktop-tier2.yml
+    with:
+      appimage-url: https://github.com/qa-p1/Arcade-Find/releases/download/v0.5.4/Arcade-Find-x86_64.AppImage
       link-ref: ${{ github.event.pull_request.head.sha || github.sha }}
