@@ -88,3 +88,21 @@ both themes, and CI runs it, so nothing new was needed for the "a11y contrast pa
 `type.family.emoji` (Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, Twemoji Mozilla): the CSS sans stack ends
 with them and every Dart text style carries them as `fontFamilyFallback`. Clipboard still has to bundle or depend on
 a colour emoji font on Linux (its spec).
+
+## D9 — Dead code and the untangle pass (Link)
+
+Dead code was judged against every consumer, not just this repo: the public Rust items were grepped across Link and
+the six Rust apps (Tools, Box, Look, Find, Lens, Clipboard's core). Removed as unused anywhere: `Registry::offers_for`,
+`childenv::sanitized_vars`, `logs::stderr_is_terminal`, `Action::takes_no_input`, `Action::offer_for_type`.
+`cargo machete` finds no unused dependencies. Kept although unused in Rust: the generated design tokens
+(`design/tokens.rs`), which mirror the CSS, Dart and QML kits one to one; and the v1 APIs added for the app specs.
+
+Untangle findings (module graph in this file's history; skill steps 2–5):
+- `paths` uses `manifest::ids` for the known-app list and `accelerator::Platform`; `runtime` uses
+  `manifest::current_executable`. Kept for 1.0: moving `current_executable` would rename a call every Rust app makes
+  while apps ship one at a time on mixed Link versions. Logged for 1.1.
+- `ManifestAdditions` is a v0.3 source-compatibility split of `Manifest`. Kept for the same reason; merging it is a
+  breaking change for every app's struct literals.
+- `server` calls `client::probe` to refuse a second server for a live app id: a real dependency (one instance per id).
+- New v1 code (release, runtime, conformance, desktop driver) was written without restating comments; the release
+  tests exercise behaviour (tamper, replay, delta) rather than internals.

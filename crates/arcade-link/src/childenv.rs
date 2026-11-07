@@ -13,7 +13,6 @@
 //! handles on the mount that every child would inherit, and a working
 //! directory inside the mount.
 
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -238,21 +237,6 @@ pub fn sanitize_for<'a>(cmd: &'a mut Command, program: &Path) -> &'a mut Command
         sanitize(cmd);
     }
     cmd
-}
-
-/// The sanitized environment as a whole, for spawn APIs that take a full
-/// environment instead of a [`Command`].
-pub fn sanitized_vars() -> Vec<(OsString, OsString)> {
-    release_mount_handles();
-    let mut vars: Vec<(OsString, OsString)> = std::env::vars_os().collect();
-    let utf8 = vars.iter().filter_map(|(k, v)| Some((k.to_str()?.to_owned(), v.to_str()?.to_owned()))).collect::<Vec<_>>();
-    for (key, value) in changes(utf8) {
-        vars.retain(|(k, _)| k.to_str() != Some(key.as_str()));
-        if let Some(value) = value {
-            vars.push((key.into(), value.into()));
-        }
-    }
-    vars
 }
 
 #[cfg(test)]
