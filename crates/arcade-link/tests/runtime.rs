@@ -50,6 +50,14 @@ fn child() {
             runtime::spawn_successor(&["--exact", "child", "--nocapture", "--test-threads=1"]).unwrap();
             std::fs::write(dir.join("predecessor"), std::process::id().to_string()).unwrap();
         }
+        "unpack" => {
+            if let Some(code) = runtime::relaunch_unpacked("arcade.test", "1.2.3", true) {
+                std::process::exit(code);
+            }
+            let exe = std::env::current_exe().unwrap();
+            std::fs::write(dir.join("ran-from"), format!("{}\n{}", exe.display(), std::env::var("APPDIR").unwrap_or_default())).unwrap();
+            std::process::exit(7);
+        }
         other => panic!("unknown role {other}"),
     }
 }
@@ -190,4 +198,52 @@ fn trimming_returns_freed_heap_to_the_system() {
     let after = rss_kb();
     assert!(before > after + 30_000, "RSS {before} kB → {after} kB");
     assert_eq!(pin[0], 1);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn an_appimage_app_relaunches_from_its_unpacked_copy_once() {
+    use std::os::unix::fs::symlink;
+    let dir = tmp("unpack");
+    let appdir = dir.join("mount");
+    std::fs::create_dir_all(appdir.join("usr/bin")).unwrap();
+    std::fs::copy(std::env::current_exe().unwrap(), appdir.join("usr/bin/app")).unwrap();
+    symlink("usr/bin/app", appdir.join("AppRun")).unwrap();
+    std::fs::write(appdir.join("usr/data.txt"), "payload").unwrap();
+    let appimage = dir.join("App.AppImage");
+    std::fs::write(&appimage, "image").unwrap();
+    let data = dir.join("data");
+
+    let run = || {
+        Command::new(appdir.join("usr/bin/app"))
+            .args(["--exact", "child", "--nocapture", "--test-threads=1"])
+            .env(ROLE, "unpack")
+            .env(DIR, &dir)
+            .env("APPIMAGE", &appimage)
+            .env("APPDIR", &appdir)
+            .env("XDG_DATA_HOME", &data)
+            .env_remove(runtime::UNPACKED_ENV)
+            .output()
+            .unwrap()
+    };
+    let out = run();
+    assert_eq!(out.status.code(), Some(7), "the unpacked copy's exit code comes back: {}", String::from_utf8_lossy(&out.stderr));
+    let ran = std::fs::read_to_string(dir.join("ran-from")).unwrap();
+    let unpacked = data.join("arcade/runtime");
+    let (exe, appdir_seen) = ran.split_once('\n').unwrap();
+    assert!(Path::new(exe).starts_with(&unpacked), "ran from {exe}");
+    assert!(Path::new(appdir_seen).starts_with(&unpacked), "APPDIR {appdir_seen}");
+    let copy = Path::new(appdir_seen);
+    assert_eq!(std::fs::read_to_string(copy.join("usr/data.txt")).unwrap(), "payload");
+    assert!(std::fs::symlink_metadata(copy.join("AppRun")).unwrap().file_type().is_symlink());
+    assert!(copy.join(".complete").exists());
+
+    // A second start reuses the copy; a changed AppImage gets a new one.
+    std::fs::write(copy.join("usr/marker"), "kept").unwrap();
+    assert_eq!(run().status.code(), Some(7));
+    assert!(copy.join("usr/marker").exists());
+    std::thread::sleep(Duration::from_millis(1100));
+    std::fs::write(&appimage, "image v2").unwrap();
+    assert_eq!(run().status.code(), Some(7));
+    assert_eq!(std::fs::read_dir(&unpacked).unwrap().count(), 2);
 }

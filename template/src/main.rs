@@ -116,7 +116,10 @@ impl eframe::App for Window {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-        [] => run(),
+        [] => match runtime::relaunch_unpacked(ID, VERSION, false) {
+            Some(code) => ExitCode::from(code as u8),
+            None => run(),
+        },
         ["--status"] => status(),
         ["--version"] => {
             println!("{NAME} {VERSION}");

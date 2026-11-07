@@ -37,6 +37,7 @@ Create a new app from the template (`template/`, published as `qa-p1/Arcade-temp
 | RT-3 (H) | MUST: every child process is reaped; none is left as a zombie. Rust: `runtime::spawn_reaped`. |
 | RT-4 (H) | MUST: a panic or fatal signal writes a local report under `arcade/<app>/crashes/` (newest 20 kept); nothing is sent anywhere. Rust: `runtime::install_crash_reports`. |
 | RT-5 (H) | MUST: trim memory after startup and after each hide (`runtime::trim`, C: `qt/arcade_trim.h`); WebKit apps call `runtime::release_webkit` after the last window closes. |
+| RT-7 (H) | MUST (Linux AppImage): a resident start runs from the unpacked copy (`runtime::relaunch_unpacked`), so no FUSE helper stays resident; one-shot CLI calls may run from the mount. Tools removes stale copies (`runtime::remove_unpacked_except`). |
 | RT-6 (H) | MUST: nothing polls in the background without a reason; a timer runs only while its view is visible. Idle CPU ≈ 0 % with bounded wakeups. |
 
 ## Files

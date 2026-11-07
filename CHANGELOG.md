@@ -8,7 +8,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Added
 - Signed release manifests: `release-manifest`, `promote-manifest`, `verify-manifest`, `keygen`; FastCDC chunk lists,
   minisign-compatible ed25519 signatures, `plan_delta` and `assemble` (`release` feature).
-- `runtime`: single instance, restart via `$APPIMAGE`, reaped children, local crash reports, memory trim (W0/W1/W3b);
+- `runtime`: unpacked AppImage runtime (`relaunch_unpacked`, U1), single instance, restart via `$APPIMAGE`, reaped children, local crash reports, memory trim (W0/W1/W3b);
   C twin `qt/arcade_trim.h` and the WebKit-helper preload trimmer.
 - `ARCADE_APP.md` (the app standard, replacing `NEW_APP_SPEC.md`, now `docs/ARCADE_APP_GUIDE.md`) and
   `arcade-link conformance`.
