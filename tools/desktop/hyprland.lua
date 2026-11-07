@@ -3,6 +3,10 @@
 
 hl.monitor({ output = "HEADLESS-1", mode = "1920x1080@60", position = "0x0", scale = "1" })
 hl.monitor({ output = "HEADLESS-2", mode = "1920x1080@60", position = "1920x0", scale = "1" })
+-- The vkms card that gives aquamarine its allocator also shows up as an output;
+-- session.sh creates the two headless outputs and the tests use only those.
+hl.monitor({ output = "Virtual-1", disabled = true })
+hl.monitor({ output = "Virtual-2", disabled = true })
 
 hl.config({
     input = { follow_mouse = 1, kb_layout = "us" },

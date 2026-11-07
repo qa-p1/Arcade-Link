@@ -42,6 +42,12 @@ exec dbus-run-session -- bash -c '
   [ -e "$ready" ] || { echo "Hyprland did not start in 30 s"; dump; exit 1; }
   export HYPRLAND_INSTANCE_SIGNATURE=$(ls -t "$XDG_RUNTIME_DIR/hypr" | head -1)
   export WAYLAND_DISPLAY=$(cd "$XDG_RUNTIME_DIR" && ls wayland-* | grep -v lock | head -1)
+  # Two 1920x1080 outputs (positions from hyprland.lua), whatever the DRM side offers.
+  hyprctl output create headless >/dev/null
+  hyprctl output create headless >/dev/null
+  outputs() { hyprctl -j monitors | python3 -c "import json,sys; print(\" \".join(m[\"name\"] for m in json.load(sys.stdin)))"; }
+  for _ in $(seq 1 50); do [ "$(outputs)" = "HEADLESS-1 HEADLESS-2" ] && break; sleep 0.1; done
+  [ "$(outputs)" = "HEADLESS-1 HEADLESS-2" ] || { echo "outputs are [$(outputs)], expected HEADLESS-1 HEADLESS-2"; hyprctl monitors all; dump; exit 1; }
   echo "Hyprland $HYPRLAND_INSTANCE_SIGNATURE on $WAYLAND_DISPLAY"
   status=0
   "$@" || status=$?
