@@ -11,12 +11,12 @@ on:
       artifact: { type: string, default: "", description: "Artifact holding the AppImage (instead of a URL)" }
       expect-exit: { type: number, default: 0, description: "Exit code the test must end with (10: a rule is broken, to prove a known bug)" }
       link-ref: { type: string, default: v1.0.0 }
-      hyprland: { type: string, default: v0.56.2 }
+      hyprland: { type: string, default: v0.56.1, description: "0.56.x tag (v0.56.2's flake does not build: docs/v1/DECISIONS.md D10)" }
       name: { type: string, default: e2e, description: "Names the uploaded screenshots and logs" }
 jobs:
   hyprland:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -38,14 +38,20 @@ jobs:
           extra_nix_config: |
             extra-substituters = https://hyprland.cachix.org
             extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
-      - name: Hyprland ${{ inputs.hyprland }} and Wayland tools (binary caches)
-        timeout-minutes: 10
+      - uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-1
+          restore-prefixes-first-match: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-
+          gc-max-store-size-linux: 6G
+      - name: Hyprland ${{ inputs.hyprland }} and Wayland tools (cached; the first run builds it, ~25 min)
+        timeout-minutes: 55
         run: |
           # Hyprland's flake at a tag can fail to build (v0.56.2: CMake ignores the
           # flake's glaze and tries to download another). Take the first 0.56.x that
           # installs: the requested tag, the other 0.56 tags, then nixpkgs.
           installed=""
           for ref in "${{ inputs.hyprland }}" v0.56.1 v0.56.0; do
+            [ "$ref" = v0.56.2 ] && [ "${{ inputs.hyprland }}" != v0.56.2 ] && continue
             if nix profile install --accept-flake-config "git+https://github.com/hyprwm/Hyprland?ref=refs/tags/$ref&submodules=1#hyprland"; then installed="$ref (flake)"; break; fi
           done
           if [ -z "$installed" ]; then

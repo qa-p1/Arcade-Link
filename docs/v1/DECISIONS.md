@@ -106,3 +106,12 @@ Untangle findings (module graph in this file's history; skill steps 2–5):
 - `server` calls `client::probe` to refuse a second server for a live app id: a real dependency (one instance per id).
 - New v1 code (release, runtime, conformance, desktop driver) was written without restating comments; the release
   tests exercise behaviour (tamper, replay, delta) rather than internals.
+
+## D10 — Headless Hyprland in CI: 0.56.1 from its flake, cached
+
+The owner runs 0.56.x. Hyprland's flake at `v0.56.2` does not build (its CMake ignores the flake's glaze 8.0 and
+tries to download glaze 7.2 without network), and neither 0.56.x tag is in hyprland.cachix.org, so CI builds
+`v0.56.1` from its flake once (about 25 minutes) and keeps the Nix store in the Actions cache
+(`nix-community/cache-nix-action`); later runs restore it in about a minute. The harness boots it with
+`HYPRLAND_HEADLESS_ONLY=1` (as Hyprland's own `hyprtester` does) and two virtual outputs (multi-monitor tests).
+Tier 2 (sway, KWin, Mutter, X11) uses Ubuntu packages and was green on the first run.

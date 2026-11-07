@@ -401,3 +401,128 @@ fn children_named(comm: &str) -> Vec<u32> {
         })
         .collect()
 }
+
+// ---------------------------------------------------------------------------
+// Unpacked runtime (RT-7; AUDIT/memory.md U1)
+
+/// Set in a process started from the unpacked copy.
+pub const UNPACKED_ENV: &str = "ARCADE_UNPACKED";
+
+/// Where this app's unpacked copies live: `<data>/arcade/runtime/`.
+pub fn unpacked_root() -> PathBuf {
+    crate::paths::UserDirs::discover().data.join("arcade").join("runtime")
+}
+
+/// U1: an app running from its AppImage's FUSE mount copies the image's
+/// contents once to `<data>/arcade/runtime/<app>-<version>-<key>/` and runs
+/// the same command line from there, so no FUSE helper stays resident and
+/// file pages come from the real disk. `$APPIMAGE` is kept, so everything
+/// that advertises or restarts the app still uses the installed AppImage.
+///
+/// Call it first thing in `main`. It returns `None` when nothing is to be
+/// done (not in an AppImage, already unpacked, or copying failed: the app
+/// then simply keeps running from the mount). Otherwise it has started the
+/// unpacked copy and returns the code this process must exit with: with
+/// `wait` (one-shot CLI calls) the copy's own exit code, without it
+/// (resident starts) 0 at once, so the mount goes away.
+pub fn relaunch_unpacked(app_id: &str, version: &str, wait: bool) -> Option<i32> {
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os(UNPACKED_ENV).is_some() {
+            return None;
+        }
+        let appimage = PathBuf::from(std::env::var_os("APPIMAGE").filter(|v| !v.is_empty())?);
+        let appdir = PathBuf::from(std::env::var_os("APPDIR").filter(|v| !v.is_empty())?);
+        if !std::env::current_exe().ok()?.starts_with(&appdir) {
+            return None;
+        }
+        let dir = unpacked_root().join(format!("{}-{version}-{}", app_id.trim_start_matches("arcade."), image_key(&appimage)?));
+        if let Err(e) = ensure_unpacked(&appdir, &dir) {
+            eprintln!("arcade-link: running from the AppImage mount ({}: {e})", dir.display());
+            return None;
+        }
+        let mut cmd = Command::new(dir.join("AppRun"));
+        cmd.args(std::env::args_os().skip(1)).env("APPDIR", &dir).env(UNPACKED_ENV, "1");
+        crate::childenv::detach_from_image(&mut cmd);
+        let mut child = cmd.spawn().ok()?;
+        if wait {
+            return Some(child.wait().ok().and_then(|s| s.code()).unwrap_or(1));
+        }
+        Some(0)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app_id, version, wait);
+        None
+    }
+}
+
+/// Identifies one AppImage file: its size and modification time. A new
+/// version or an update in place gets a new folder.
+#[cfg(target_os = "linux")]
+fn image_key(appimage: &Path) -> Option<String> {
+    use std::hash::{Hash, Hasher};
+    let meta = std::fs::metadata(appimage).ok()?;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    meta.len().hash(&mut h);
+    meta.modified().ok()?.hash(&mut h);
+    Some(format!("{:016x}", h.finish()))
+}
+
+/// Copies `from` to `to` once: into a temporary sibling, then renamed, with a
+/// `.complete` marker, so a crash mid-copy never leaves a half copy in use.
+fn ensure_unpacked(from: &Path, to: &Path) -> io::Result<()> {
+    if to.join(".complete").is_file() {
+        return Ok(());
+    }
+    let parent = to.parent().ok_or_else(|| io::Error::other("no parent"))?;
+    std::fs::create_dir_all(parent)?;
+    let tmp = parent.join(format!(".{}.tmp-{}", to.file_name().and_then(|n| n.to_str()).unwrap_or("app"), std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    copy_tree(from, &tmp)?;
+    std::fs::write(tmp.join(".complete"), b"")?;
+    match std::fs::rename(&tmp, to) {
+        Ok(()) => Ok(()),
+        // Another process won the race: use its copy.
+        Err(_) if to.join(".complete").is_file() => {
+            let _ = std::fs::remove_dir_all(&tmp);
+            Ok(())
+        }
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&tmp);
+            Err(e)
+        }
+    }
+}
+
+fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    std::fs::set_permissions(to, std::fs::metadata(from)?.permissions())?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let (src, dst) = (entry.path(), to.join(entry.file_name()));
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(std::fs::read_link(&src)?, &dst)?;
+        } else if kind.is_dir() {
+            copy_tree(&src, &dst)?;
+        } else {
+            std::fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
+}
+
+/// Removes unpacked copies except those named in `keep` (Tools runs this after
+/// an update or uninstall). Returns the folders removed.
+pub fn remove_unpacked_except(keep: &[&str]) -> Vec<PathBuf> {
+    let mut removed = Vec::new();
+    for entry in std::fs::read_dir(unpacked_root()).into_iter().flatten().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !keep.contains(&name.as_str()) && std::fs::remove_dir_all(entry.path()).is_ok() {
+            removed.push(entry.path());
+        }
+    }
+    removed
+}
