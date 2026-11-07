@@ -59,6 +59,8 @@ int main(int argc, char **argv)
         int x, y;
         if (sscanf(line, "move %d %d", &x, &y) == 2) {
             zwlr_virtual_pointer_v1_motion_absolute(p, now_ms(), (uint32_t)x, (uint32_t)y, width, height);
+        } else if (sscanf(line, "rel %d %d", &x, &y) == 2) {
+            zwlr_virtual_pointer_v1_motion(p, now_ms(), wl_fixed_from_int(x), wl_fixed_from_int(y));
         } else if (!strncmp(line, "press", 5) || !strncmp(line, "release", 7) || !strncmp(line, "click", 5)) {
             uint32_t button = strstr(line, "right") ? BTN_RIGHT : BTN_LEFT;
             if (line[0] != 'r')

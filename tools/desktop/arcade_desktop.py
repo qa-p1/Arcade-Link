@@ -122,9 +122,24 @@ class Desktop:
         if self._vpointer.stdout.readline().strip() != "ok":
             raise DesktopError(f"virtual pointer refused {command!r}")
 
-    def pointer_move(self, x: int, y: int) -> None:
-        self._pointer(f"move {int(x)} {int(y)}")
+    def pointer_move(self, x: int, y: int, step: int = 24) -> None:
+        """Glide to (x, y) like a real mouse: relative motion in small steps
+        (enter/leave on every edge crossed), then an exact absolute fix-up.
+        A cursor that does not arrive is a harness error, never a test result."""
+        x, y = int(x), int(y)
+        cx, cy = self.cursor()
+        n = max(1, max(abs(x - cx), abs(y - cy)) // step)
+        done_x = done_y = 0
+        for i in range(1, n + 1):
+            tx, ty = (x - cx) * i // n, (y - cy) * i // n
+            self._pointer(f"rel {tx - done_x} {ty - done_y}")
+            done_x, done_y = tx, ty
+            time.sleep(0.004)
+        self._pointer(f"move {x} {y}")
         time.sleep(0.03)
+        if self.cursor() != (x, y):
+            self.screenshot("pointer-did-not-arrive")
+            raise DesktopError(f"pointer at {self.cursor()} after moving to {(x, y)}")
 
     def cursor(self) -> tuple[int, int]:
         x, y = self.hyprctl("cursorpos").strip().split(",")

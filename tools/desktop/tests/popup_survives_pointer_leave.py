@@ -9,6 +9,7 @@ motion, follow_mouse = 1) into another window and waits. Passes only if the
 popup is still mapped. Exit 10 means the popup closed on pointer leave (the
 rule is broken); any other failure is the harness's.
 """
+import json
 import os
 import subprocess
 import sys
@@ -53,6 +54,8 @@ time.sleep(0.6)
 ox, oy = d.center_of(other_w)
 d.pointer_move(ox, oy)
 time.sleep(1.5)
+active = json.loads(d.hyprctl("-j", "activewindow") or "{}")
+print(f"after leave: cursor={d.cursor()} focused={active.get('class')!r}")
 still = any(c["address"] == popup["address"] for c in d.clients())
 d.screenshot(f"{mode}-after-pointer-leave")
 other.terminate()
