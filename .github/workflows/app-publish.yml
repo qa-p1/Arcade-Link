@@ -1,0 +1,37 @@
+# Reusable: publish an app's built files as a hidden test (rc) or nightly
+# prerelease, with arcade-release.json (Tools 0.4.x) and manifest.json.
+# The caller's build jobs upload their files as artifacts named release-*.
+name: Publish (reusable)
+on:
+  workflow_call:
+    inputs:
+      app: { type: string, required: true, description: "Link id, e.g. arcade.look" }
+      version: { type: string, required: true, description: "Version the files report, e.g. 1.0.0" }
+      tag: { type: string, required: true, description: "Release tag, e.g. v1.0.0-rc.1" }
+      channel: { type: string, default: test }
+      artifacts: { type: string, default: "release-*" }
+      draft: { type: boolean, default: false }
+      link-ref: { type: string, default: v1.0.0 }
+    secrets:
+      ARCADE_UPDATE_SIGNING_KEY: { required: false }
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
+      - uses: ./.arcade-link/.github/actions/setup-arcade-link
+      - uses: actions/download-artifact@v4
+        with: { pattern: "${{ inputs.artifacts }}", merge-multiple: true, path: dist }
+      - name: Publish
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCADE_UPDATE_SIGNING_KEY: ${{ secrets.ARCADE_UPDATE_SIGNING_KEY }}
+        run: >
+          python3 "$ARCADE_LINK_TOOLS/release_flow.py" publish --repo "$GITHUB_REPOSITORY"
+          --app "${{ inputs.app }}" --version "${{ inputs.version }}" --tag "${{ inputs.tag }}"
+          --sha "$GITHUB_SHA" --channel "${{ inputs.channel }}" ${{ inputs.draft && '--draft' || '' }} dist

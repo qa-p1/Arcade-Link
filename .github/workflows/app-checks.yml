@@ -1,0 +1,25 @@
+# Reusable: the standard checks on an app's CI package. Runs
+# `arcade-link conformance` on the repo and its AppImage.
+name: App checks (reusable)
+on:
+  workflow_call:
+    inputs:
+      artifact: { type: string, required: true, description: "Artifact holding the Linux AppImage" }
+      link-ref: { type: string, default: v1.0.0 }
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
+      - uses: ./.arcade-link/.github/actions/setup-arcade-link
+      - uses: actions/download-artifact@v4
+        with: { name: "${{ inputs.artifact }}", path: package }
+      - name: Conformance (repository and package)
+        run: |
+          appimage=$(find package -name '*.AppImage' | head -1)
+          chmod +x "$appimage"
+          rm -rf .arcade-link
+          arcade-link conformance . --binary "$appimage" | tee -a "$GITHUB_STEP_SUMMARY"
