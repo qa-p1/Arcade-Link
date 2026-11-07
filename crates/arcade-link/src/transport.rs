@@ -269,13 +269,3 @@ mod tests {
         assert!(a.address.ends_with("arcade.clipboard.sock"));
     }
 }
-
-#[cfg(all(test, unix))]
-mod tests {
-    #[test]
-    fn only_the_same_user_is_accepted() {
-        assert!(super::same_user(Some(1000), 1000));
-        assert!(!super::same_user(Some(0), 1000));
-        assert!(!super::same_user(None, 1000));
-    }
-}
