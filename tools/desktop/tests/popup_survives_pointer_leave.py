@@ -64,7 +64,9 @@ else:
     is_popup = lambda c: c["address"] not in before
 
 def still_mapped() -> bool:
-    return any(c["address"] == popup["address"] for c in d.clients())
+    # Same window and still the popup: Clipboard turns its one window back into
+    # the History window when the picker closes, keeping the address.
+    return any(c["address"] == popup["address"] and is_popup(c) for c in d.clients())
 
 
 popup = d.wait(lambda: next((c for c in d.clients() if is_popup(c)), None), timeout, "the popup window")
@@ -80,8 +82,8 @@ ox, oy = d.center_of(other_w)
 d.pointer_move(ox, oy)
 time.sleep(1.5)
 active = json.loads(d.hyprctl("-j", "activewindow") or "{}")
-print(f"after leave: cursor={d.cursor()} other={other_w['at']}+{other_w['size']} focused={active.get('class')!r}")
-if active.get("class") == popup["class"] and still_mapped():
+print(f"after leave: cursor={d.cursor()} other={other_w['at']}+{other_w['size']} focused={active.get('class')!r} {active.get('title')!r}")
+if active.get("address") == popup["address"] and still_mapped():
     sys.exit("harness error: focus never left the popup, so the rule was not exercised")
 still = still_mapped()
 d.screenshot(f"{mode}-after-pointer-leave")
