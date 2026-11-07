@@ -22,19 +22,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir dist
-          head -c 3000000 /dev/urandom > dist/Arcade-E2e-x86_64.AppImage
-          head -c 5000 /dev/urandom > dist/arcade-e2e-windows-x64-setup.exe
+          head -c 3000000 /dev/urandom > dist/Arcade-Flowtest-x86_64.AppImage
+          head -c 5000 /dev/urandom > dist/arcade-flowtest-windows-x64-setup.exe
           keys=$(arcade-link keygen --print-secret)
           pub=$(sed -n 2p <<<"$keys")
           export ARCADE_UPDATE_SIGNING_KEY=$(sed -n 3,4p <<<"$keys")
           v="0.0.$GITHUB_RUN_NUMBER"
-          python3 tools/release_flow.py publish --repo "$GITHUB_REPOSITORY" --app arcade.e2e --version "$v" \
+          python3 tools/release_flow.py publish --repo "$GITHUB_REPOSITORY" --app arcade.flowtest --version "$v" \
             --tag "v$v-rc.1" --sha "$GITHUB_SHA" --draft dist
           python3 tools/release_flow.py promote --repo "$GITHUB_REPOSITORY" --rc-tag "v$v-rc.1" --draft
           mkdir got && gh release download "v$v" --repo "$GITHUB_REPOSITORY" --dir got
           arcade-link verify-manifest got/manifest.json --key "$pub" --files got
           minisign -Vm got/manifest.json -x got/manifest.json.sig -P "$pub"
-          for f in dist/*; do cmp "$f" "got/$(basename "$f")"; done
+          # The installable files are byte-identical; arcade-release.json differs by design (channel test → stable).
+          for f in dist/*.AppImage dist/*.exe; do cmp "$f" "got/$(basename "$f")"; done
           jq -e '.channel == "stable"' got/arcade-release.json
           echo "draft rc v$v-rc.1 promoted to draft v$v: byte-identical, signed" >> "$GITHUB_STEP_SUMMARY"
       - name: Promotion without the key publishes nothing
