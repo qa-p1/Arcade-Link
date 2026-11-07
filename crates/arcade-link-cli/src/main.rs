@@ -3,7 +3,9 @@
 //! Essential for development and for bug reports. Every command honors
 //! `ARCADE_HOME`.
 
+mod conformance;
 mod mock;
+mod release;
 mod tray;
 
 use std::process::ExitCode;
@@ -28,6 +30,17 @@ USAGE
   arcade-link mock --as <id> --actions <file.json>
                                               Run a scriptable fake app (see fixtures/)
   arcade-link check-manifest <file.json>      Validate a manifest
+  arcade-link release-manifest --app ID --version V --tag T --channel test|nightly|stable
+                               [--out DIR] [--sign] FILE…
+                                              Write manifest.json (chunk lists; signed with
+                                              $ARCADE_UPDATE_SIGNING_KEY when --sign)
+  arcade-link promote-manifest RC.json --tag T --files DIR [--channel stable] [--out DIR]
+                                              Same files, new tag/channel, signed
+  arcade-link verify-manifest FILE --key PUB… [--sig F] [--files DIR] [--unsigned]
+  arcade-link conformance <repo-dir|AppImage> [--binary PATH] [--json]
+                                              Check an app against ARCADE_APP.md
+  arcade-link keygen --secret-to-gh OWNER/REPO…
+                                              New signing key, stored only as an Actions secret
   arcade-link tray <app> [--link-off]          Watch tray hosting as an app
   arcade-link tray host                       Fake Tools host; commands on stdin
   arcade-link shortcuts                      Effective globals and conflicts (JSON)
@@ -121,13 +134,22 @@ fn main() -> ExitCode {
         }
         Some("mock") => mock::run(&loc, &args),
         Some("check-manifest") => check_manifest(&args),
+        Some("release-manifest") => release::manifest(&args),
+        Some("promote-manifest") => release::promote(&args),
+        Some("verify-manifest") => release::verify(&args),
+        Some("keygen") => release::keygen(&args),
+        Some("conformance") => conformance::run(&args),
         Some("-V" | "--version") => {
             println!("arcade-link {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        _ => {
+        None | Some("-h" | "--help" | "help") => {
             println!("{HELP}");
             Ok(())
+        }
+        Some(other) => {
+            eprintln!("arcade-link: unknown command {other:?}\n\n{HELP}");
+            return ExitCode::from(2);
         }
     };
     match r {

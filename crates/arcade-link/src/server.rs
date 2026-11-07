@@ -550,6 +550,9 @@ fn topic_matches(subscribed: &str, topic: &str) -> bool {
 }
 
 fn serve(inner: Arc<Inner>, stream: Stream) {
+    if !transport::peer_is_same_user(&stream) {
+        return;
+    }
     let stream = Arc::new(stream);
     let Ok(io) = transport::IoControl::new() else { return };
     let _ = io.send_timeout(&stream, Some(Duration::from_millis(150)));
@@ -709,8 +712,11 @@ fn handshake(inner: &Inner, conn: &Conn, reader: &mut LineReader<ArcRead>) -> Op
         conn.send(&Message::response(id, Err(LinkError::denied(reason::TOKEN))));
         return None;
     }
-    let theirs: Vec<u32> =
-        p.get("protocol").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_u64().map(|x| x as u32)).collect()).unwrap_or_default();
+    // A hello without `protocol` comes from a legacy peer, which speaks 1.
+    let theirs: Vec<u32> = match p.get("protocol") {
+        None => vec![1],
+        Some(v) => v.as_array().map(|a| a.iter().filter_map(|v| v.as_u64().map(|x| x as u32)).collect()).unwrap_or_default(),
+    };
     let Some(version) = wire::negotiate(&theirs, wire::SUPPORTED_PROTOCOLS) else {
         conn.send(&Message::response(id, Err(wire::version_mismatch(&theirs))));
         return None;

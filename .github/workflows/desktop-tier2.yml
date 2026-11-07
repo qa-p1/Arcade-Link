@@ -1,0 +1,49 @@
+# Reusable: Tier 2 smoke tests on sway, KWin, Mutter and X11 (Xvfb + openbox).
+# A failure here blocks a release only when it is a crash or data loss
+# (README Round 5); the job still goes red so it is seen.
+name: Desktop Tier 2 (reusable)
+on:
+  workflow_call:
+    inputs:
+      appimage-url: { type: string, default: "" }
+      artifact: { type: string, default: "" }
+      show: { type: string, default: "--background", description: "Argument that starts the app (e.g. --show)" }
+      link-ref: { type: string, default: v1.0.0 }
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        desktop: [sway, kwin, mutter, x11]
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
+      - name: Compositors
+        timeout-minutes: 8
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -o Acquire::Retries=3 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              dbus dbus-x11 python3-dbus python3-gi sway kwin-wayland kwin-wayland-backend-virtual mutter xvfb x11-utils openbox \
+              libfuse2t64 && break
+            sleep $((i * 10))
+          done
+          command -v sway kwin_wayland mutter Xvfb openbox
+      - name: The app
+        if: inputs.appimage-url != ''
+        timeout-minutes: 5
+        env: { URL: "${{ inputs.appimage-url }}" }
+        run: mkdir -p app && curl -fsSL --retry 3 --max-time 600 -o "app/$(basename "$URL")" "$URL"
+      - if: inputs.artifact != ''
+        uses: actions/download-artifact@v4
+        with: { name: "${{ inputs.artifact }}", path: app }
+      - name: Smoke on ${{ matrix.desktop }}
+        env:
+          ARCADE_DESKTOP_ARTIFACTS: ${{ github.workspace }}/desktop-artifacts
+        run: |
+          app=$(realpath "$(find app -name '*.AppImage' | head -1)"); chmod +x "$app"
+          .arcade-link/tools/desktop/tier2.sh ${{ matrix.desktop }} python3 .arcade-link/tools/desktop/tests/smoke.py "$app" --show "${{ inputs.show }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "tier2-${{ matrix.desktop }}", path: desktop-artifacts, if-no-files-found: ignore }

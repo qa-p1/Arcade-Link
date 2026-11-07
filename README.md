@@ -5,7 +5,7 @@ Find and Shelf) and the optional host, Tools, recognize each other and work toge
 registry, one local socket per running app, one shared vocabulary. A protocol
 and a small library, not a process.
 
-- [`NEW_APP_SPEC.md`](NEW_APP_SPEC.md): how to build a new Arcade app; give it to an agent with your idea.
+- [`ARCADE_APP.md`](ARCADE_APP.md): the Arcade app standard (normative, with conformance check IDs); [`docs/ARCADE_APP_GUIDE.md`](docs/ARCADE_APP_GUIDE.md) explains how to meet it.
 - [`SPEC.md`](SPEC.md): the protocol (version 1, frozen), manifests, content
   types, errors and standard messages, lifecycle, the shared CLI flags and
   the Connected apps page.

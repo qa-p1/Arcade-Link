@@ -1,0 +1,43 @@
+# The fleet memory gate (specs/LINK.md §1.5, README "whole fleet under 500 MB"):
+# all eight apps together in one private session, per-app and fleet PSS/RSS
+# against tools/fleet/budgets.json. Expected to fail until the apps ship the
+# memory items (U1, W0, W1, WH1, CB1a, W3b); specs/FLEET.md makes it blocking.
+name: Fleet memory
+on:
+  workflow_dispatch:
+    inputs:
+      kind: { description: "stable (latest releases) or test (newest rc of each app)", default: stable }
+  workflow_call:
+    inputs:
+      kind: { type: string, default: stable }
+  schedule: [{ cron: "41 4 * * 1" }]
+# Explicit bash adds pipefail, so a failing command piped into tee fails the step.
+defaults:
+  run:
+    shell: bash
+jobs:
+  fleet:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: "${{ github.sha }}" }
+      - name: Session tools
+        timeout-minutes: 8
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -o Acquire::Retries=3 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              xvfb xdotool dbus dbus-x11 libfuse2t64 libx11-dev && break
+            sleep $((i * 10))
+          done
+          command -v Xvfb xdotool dbus-daemon
+      - name: The eight apps
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: tools/fleet/fetch_fleet.sh apps "${{ inputs.kind || 'stable' }}"
+      - name: Measure against the budgets
+        run: python3 tools/fleet/fleet_budget.py --apps apps --budgets tools/fleet/budgets.json --open tools --json fleet.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: fleet-memory, path: fleet.json, if-no-files-found: ignore }

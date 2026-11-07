@@ -1,0 +1,56 @@
+# Reusable: promote main CI's already-tested files to a signed nightly
+# prerelease, vX.Y.Z-nightly.YYYYMMDD.N, without rebuilding. Skips when main
+# hasn't changed since the newest nightly or main CI isn't green at HEAD.
+name: Nightly (reusable)
+on:
+  workflow_call:
+    inputs:
+      app: { type: string, required: true }
+      version: { type: string, required: true }
+      ci-workflow: { type: string, default: ci.yml }
+      artifacts: { type: string, default: "release-*" }
+      link-ref: { type: string, default: v1.0.0 }
+    secrets:
+      ARCADE_UPDATE_SIGNING_KEY: { required: false }
+permissions:
+  contents: write
+  actions: read
+jobs:
+  nightly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
+      - name: Anything new on main, tested green?
+        id: pick
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if ! python3 .arcade-link/tools/release_flow.py changed --repo "$GITHUB_REPOSITORY" --sha "$sha"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "${{ inputs.ci-workflow }}" --branch main --commit "$sha" --status success --json databaseId --jq '.[0].databaseId')
+          if [ -z "$run" ]; then
+            echo "::notice::main CI is not green at $sha; no nightly"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          day=$(date -u +%Y%m%d)
+          n=$(( $(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name' | grep -c -- "-nightly\.$day\." || true) + 1 ))
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "tag=v${{ inputs.version }}-nightly.$day.$n" >> "$GITHUB_OUTPUT"
+      - if: steps.pick.outputs.skip != 'true'
+        uses: ./.arcade-link/.github/actions/setup-arcade-link
+      - if: steps.pick.outputs.skip != 'true'
+        name: Publish main CI's files as the nightly
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCADE_UPDATE_SIGNING_KEY: ${{ secrets.ARCADE_UPDATE_SIGNING_KEY }}
+        run: |
+          [ -n "$ARCADE_UPDATE_SIGNING_KEY" ] || { echo "::error::ARCADE_UPDATE_SIGNING_KEY is missing"; exit 1; }
+          gh run download "${{ steps.pick.outputs.run }}" --repo "$GITHUB_REPOSITORY" --pattern "${{ inputs.artifacts }}" --dir raw
+          mkdir dist && find raw -type f -exec mv -t dist {} +
+          python3 "$ARCADE_LINK_TOOLS/release_flow.py" publish --repo "$GITHUB_REPOSITORY" --app "${{ inputs.app }}" \
+            --version "${{ inputs.version }}" --tag "${{ steps.pick.outputs.tag }}" --sha "${{ steps.pick.outputs.sha }}" --channel nightly dist

@@ -1,0 +1,32 @@
+# cargo deny check (CI): advisories, licences, bans and sources.
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+  # ttf-parser is unmaintained (no vulnerability); it comes only through egui's
+  # font rasterizer (`design-egui`), and egui has no replacement yet.
+  { id = "RUSTSEC-2026-0192", reason = "unmaintained, transitive via egui/epaint; no safe upgrade exists" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+  "0BSD", "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC",
+  "Unicode-3.0", "Zlib", "CC0-1.0", "MPL-2.0", "OFL-1.1", "Unlicense", "BSL-1.0", "CDLA-Permissive-2.0",
+  # egui's bundled default fonts (epaint_default_fonts).
+  "Ubuntu-font-1.0",
+]
+unused-allowed-license = "allow"
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

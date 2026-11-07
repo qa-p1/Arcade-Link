@@ -1,0 +1,47 @@
+# End-to-end test of publish → promote with this commit's tools, using DRAFT
+# releases (invisible to users and Tools) and a throwaway signing key made in
+# this job. Dispatch-only: every run leaves two drafts behind.
+name: Release flow e2e (drafts)
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-arcade-link
+      - name: minisign
+        timeout-minutes: 5
+        run: for i in 1 2 3; do sudo apt-get install -y --no-install-recommends minisign && break; sudo apt-get update; done
+      - name: Publish a draft rc, promote it as a draft, verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir dist
+          head -c 3000000 /dev/urandom > dist/Arcade-E2e-x86_64.AppImage
+          head -c 5000 /dev/urandom > dist/arcade-e2e-windows-x64-setup.exe
+          keys=$(arcade-link keygen --print-secret)
+          pub=$(sed -n 2p <<<"$keys")
+          export ARCADE_UPDATE_SIGNING_KEY=$(sed -n 3,4p <<<"$keys")
+          v="0.0.$GITHUB_RUN_NUMBER"
+          python3 tools/release_flow.py publish --repo "$GITHUB_REPOSITORY" --app arcade.e2e --version "$v" \
+            --tag "v$v-rc.1" --sha "$GITHUB_SHA" --draft dist
+          python3 tools/release_flow.py promote --repo "$GITHUB_REPOSITORY" --rc-tag "v$v-rc.1" --draft
+          mkdir got && gh release download "v$v" --repo "$GITHUB_REPOSITORY" --dir got
+          arcade-link verify-manifest got/manifest.json --key "$pub" --files got
+          minisign -Vm got/manifest.json -x got/manifest.json.sig -P "$pub"
+          for f in dist/*; do cmp "$f" "got/$(basename "$f")"; done
+          jq -e '.channel == "stable"' got/arcade-release.json
+          echo "draft rc v$v-rc.1 promoted to draft v$v: byte-identical, signed" >> "$GITHUB_STEP_SUMMARY"
+      - name: Promotion without the key publishes nothing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="0.0.$GITHUB_RUN_NUMBER"
+          if python3 tools/release_flow.py promote --repo "$GITHUB_REPOSITORY" --rc-tag "v$v-rc.1" --tag "v$v-nokey" --draft; then
+            echo "promotion without a key succeeded"; exit 1
+          fi

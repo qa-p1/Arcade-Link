@@ -11,7 +11,7 @@ Agreed with the owner on 2026-10-27:
 - Two templates: the **window shell** for main/settings/dashboard windows, the **overlay** for quick panels.
 - Themes follow the system, with a Light / Dark / System choice in each app.
 - Inter is bundled in every app.
-- The design kit lives in Arcade Link (`design/`), next to `tokens.json` and `NEW_APP_SPEC.md`.
+- The design kit lives in Arcade Link (`design/`), next to `tokens.json` and `ARCADE_APP.md`.
 
 **Keep what's useful.** The standard changes how *shared* things look and behave (colours, type, controls,
 settings layout, wording, project setup). It never removes or flattens a useful app-specific feature,
