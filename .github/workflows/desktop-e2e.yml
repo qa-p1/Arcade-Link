@@ -41,16 +41,25 @@ jobs:
       - name: Hyprland ${{ inputs.hyprland }} and Wayland tools (binary caches)
         timeout-minutes: 10
         run: |
-          for i in 1 2 3; do
-            nix profile install --accept-flake-config "git+https://github.com/hyprwm/Hyprland?ref=refs/tags/${{ inputs.hyprland }}&submodules=1#hyprland" && break
-            sleep $((i * 10))
+          # Hyprland's flake at a tag can fail to build (v0.56.2: CMake ignores the
+          # flake's glaze and tries to download another). Take the first 0.56.x that
+          # installs: the requested tag, the other 0.56 tags, then nixpkgs.
+          installed=""
+          for ref in "${{ inputs.hyprland }}" v0.56.1 v0.56.0; do
+            if nix profile install --accept-flake-config "git+https://github.com/hyprwm/Hyprland?ref=refs/tags/$ref&submodules=1#hyprland"; then installed="$ref (flake)"; break; fi
           done
+          if [ -z "$installed" ]; then
+            v=$(nix eval --raw nixpkgs#hyprland.version)
+            case "$v" in 0.56.*) nix profile install nixpkgs#hyprland && installed="$v (nixpkgs)" ;; *) echo "nixpkgs has Hyprland $v, not 0.56.x" ;; esac
+          fi
+          [ -n "$installed" ] || { echo "::error::no Hyprland 0.56.x could be installed"; exit 1; }
+          echo "Hyprland $installed" | tee -a "$GITHUB_STEP_SUMMARY"
           for i in 1 2 3; do
             nix profile install nixpkgs#grim nixpkgs#wl-clipboard nixpkgs#foot nixpkgs#wlr-protocols && break
             sleep $((i * 10))
           done
           command -v Hyprland hyprctl grim wl-copy foot
-          Hyprland --version | head -1 | grep -F "${{ inputs.hyprland }}"
+          Hyprland --version | head -1 | grep -E "0\.56\."
           echo "WLR_PROTOCOLS=$(nix eval --raw nixpkgs#wlr-protocols)/share/wlr-protocols" >> "$GITHUB_ENV"
       - name: Virtual pointer
         run: bash .arcade-link/tools/desktop/build-vpointer.sh
