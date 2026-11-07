@@ -469,6 +469,7 @@ fn image_key(appimage: &Path) -> Option<String> {
     Some(format!("{:016x}", h.finish()))
 }
 
+#[cfg(target_os = "linux")]
 /// Copies `from` to `to` once: into a temporary sibling, then renamed, with a
 /// `.complete` marker, so a crash mid-copy never leaves a half copy in use.
 fn ensure_unpacked(from: &Path, to: &Path) -> io::Result<()> {
@@ -495,6 +496,7 @@ fn ensure_unpacked(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
     std::fs::create_dir_all(to)?;
     std::fs::set_permissions(to, std::fs::metadata(from)?.permissions())?;
