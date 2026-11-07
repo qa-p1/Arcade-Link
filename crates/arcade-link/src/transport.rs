@@ -165,6 +165,26 @@ fn short_socket_bases() -> Vec<PathBuf> {
     bases
 }
 
+/// Unix sockets live in a 0700 folder and are 0600; this is the second
+/// check: a connection from another user is dropped before it is read.
+/// On Windows the pipe's security descriptor admits only the owner and SYSTEM.
+pub(crate) fn peer_is_same_user(stream: &Stream) -> bool {
+    #[cfg(unix)]
+    {
+        same_user(stream.peer_creds().ok().and_then(|c| c.euid()), unsafe { libc::geteuid() })
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = stream;
+        true
+    }
+}
+
+#[cfg(unix)]
+fn same_user(peer: Option<u32>, me: u32) -> bool {
+    peer == Some(me)
+}
+
 pub(crate) fn listen(address: &str) -> io::Result<Listener> {
     let name = address.to_fs_name::<GenericFilePath>()?;
     let opts = ListenerOptions::new().name(name).try_overwrite(true).max_spin_time(Duration::from_millis(200));
@@ -247,5 +267,15 @@ mod tests {
         let a = address_for(&loc, "arcade.clipboard").unwrap();
         assert!(a.address.len() <= MAX_SOCKET_PATH && a.address.len() < 104);
         assert!(a.address.ends_with("arcade.clipboard.sock"));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    #[test]
+    fn only_the_same_user_is_accepted() {
+        assert!(super::same_user(Some(1000), 1000));
+        assert!(!super::same_user(Some(0), 1000));
+        assert!(!super::same_user(None, 1000));
     }
 }
