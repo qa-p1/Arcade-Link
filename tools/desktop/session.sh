@@ -21,6 +21,9 @@ exec dbus-run-session -- bash -c '
     for _ in $(seq 1 50); do [ -S /run/seatd.sock ] && break; sleep 0.1; done
     [ -S /run/seatd.sock ] || { echo "seatd did not start:"; cat "$ARCADE_DESKTOP_ARTIFACTS/seatd.log"; exit 1; }
   fi
+  if [ -n "${AQ_DRM_DEVICES:-}" ] && ! [ -r "$AQ_DRM_DEVICES" -a -w "$AQ_DRM_DEVICES" ]; then
+    echo "cannot open $AQ_DRM_DEVICES for reading and writing:"; ls -l "$AQ_DRM_DEVICES"; exit 1
+  fi
   ready="$XDG_RUNTIME_DIR/hypr-ready"
   keep_logs() {
     cp "$XDG_RUNTIME_DIR"/hypr/*/hyprland.log "$ARCADE_DESKTOP_ARTIFACTS/hyprland-full.log" 2>/dev/null || true

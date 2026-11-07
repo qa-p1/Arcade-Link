@@ -48,8 +48,13 @@ jobs:
           done
           [ -n "$card" ] || { echo "::error::vkms did not create a card"; ls -l /sys/class/drm; exit 1; }
           # vkms has no render node, so Hyprland's renderer opens the card itself
-          # (not through seatd); the runner user is not in the video group.
-          sudo chmod 0666 "$card"
+          # (not through seatd); the runner user is not in the video group. A udev
+          # rule, not chmod: any later udev change event would reset a chmod.
+          echo 'SUBSYSTEM=="drm", KERNEL=="card[0-9]*", MODE="0666"' | sudo tee /etc/udev/rules.d/99-arcade-ci-drm.rules >/dev/null
+          sudo udevadm control --reload
+          sudo udevadm trigger --subsystem-match=drm --action=change
+          sudo udevadm settle
+          ls -l "$card"
           echo "vkms card: $card"
           echo "AQ_DRM_DEVICES=$card" >> "$GITHUB_ENV"
           echo "LIBSEAT_BACKEND=seatd" >> "$GITHUB_ENV"
