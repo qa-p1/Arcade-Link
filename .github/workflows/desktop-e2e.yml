@@ -38,11 +38,11 @@ jobs:
           extra_nix_config: |
             extra-substituters = https://hyprland.cachix.org
             extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
-      - uses: nix-community/cache-nix-action@v6
+      - id: nix-cache
+        uses: nix-community/cache-nix-action/restore@v6
         with:
           primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-1
           restore-prefixes-first-match: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-
-          gc-max-store-size-linux: 6G
       - name: Hyprland ${{ inputs.hyprland }} and Wayland tools (cached; the first run builds it, ~25 min)
         timeout-minutes: 55
         run: |
@@ -67,6 +67,12 @@ jobs:
           command -v Hyprland hyprctl grim wl-copy foot
           Hyprland --version | head -1 | grep -E "0\.56\."
           echo "WLR_PROTOCOLS=$(nix eval --raw nixpkgs#wlr-protocols)/share/wlr-protocols" >> "$GITHUB_ENV"
+      # Saved right after the install, so a failing test still keeps the build.
+      - if: steps.nix-cache.outputs.hit-primary-key != 'true'
+        uses: nix-community/cache-nix-action/save@v6
+        with:
+          primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-1
+          gc-max-store-size-linux: 6G
       - name: Virtual pointer
         run: bash .arcade-link/tools/desktop/build-vpointer.sh
       - name: The app
