@@ -49,7 +49,7 @@ if mode == "clipboard":
     d.click(cx - 146, cy + 26)  # the card, left of centre (welcome.dart layout)
     time.sleep(3)
     d.screenshot("clipboard-setup-form")
-    d.click(cx + 209, cy + 147)  # the form's primary "Start on this device" button
+    d.click(cx + 209, cy + 178)  # the form's primary "Start on this device" button (cy + 147 hit the switch row)
     time.sleep(8)
     d.screenshot("clipboard-setup-done")
     # Ask the running app for the picker (the Ctrl+Shift+Space command).
