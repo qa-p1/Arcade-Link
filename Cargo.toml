@@ -5,7 +5,7 @@ members = ["crates/arcade-link", "crates/arcade-link-cli"]
 exclude = ["target", "fuzz"]
 
 [workspace.package]
-version = "0.4.15"
+version = "1.0.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/qa-p1/Arcade-link"

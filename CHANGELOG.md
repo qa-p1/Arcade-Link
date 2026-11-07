@@ -5,6 +5,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-11-07
+
+Arcade Link 1.0: the shared runtime, the release and update primitives, the desktop harness and the Arcade app
+standard. Apps pin `v1.0.0` (or a later 1.0.x) by tag.
+
 ### Added
 - Signed release manifests: `release-manifest`, `promote-manifest`, `verify-manifest`, `keygen`; FastCDC chunk lists,
   minisign-compatible ed25519 signatures, `plan_delta` and `assemble` (`release` feature).

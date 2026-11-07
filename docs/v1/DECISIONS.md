@@ -115,3 +115,13 @@ tries to download glaze 7.2 without network), and neither 0.56.x tag is in hyprl
 (`nix-community/cache-nix-action`); later runs restore it in about a minute. The harness boots it with
 `HYPRLAND_HEADLESS_ONLY=1` (as Hyprland's own `hyprtester` does) and two virtual outputs (multi-monitor tests).
 Tier 2 (sway, KWin, Mutter, X11) uses Ubuntu packages and was green on the first run.
+
+## D11 — Untangle extras on Link's existing code
+
+- **Comments:** a scan of every Rust, C++ and Python source for comments that restate the next line found one
+  candidate (`qt/ArcadeTrayHost.cpp:197`), which explains an ordering requirement and stays. The remaining comments
+  describe external facts (Windows pipe semantics, inotify feedback loops, AppImage mounts), which the skill keeps.
+- **Tests:** the 70+ unit tests and the integration suites are named for and assert behaviour (contrast on rendered
+  pixels, migration idempotence, handle inheritance across a real exec, socket path limits); none repeats the
+  implementation or cannot fail, so none was removed. The new suites were checked to fail without their fix
+  (peer UID, QML Escape) or are adversarial by construction (release manifests).
