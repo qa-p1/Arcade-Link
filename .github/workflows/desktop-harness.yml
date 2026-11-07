@@ -1,11 +1,10 @@
 # The harness proving itself (specs/LINK.md §1.4): the driver self-test, the
 # popup rule on a fixed and a broken stand-in, and C0 on the released Clipboard.
 name: Desktop harness
-concurrency:
-  group: desktop-harness-${{ github.ref }}
-  cancel-in-progress: true
 on:
-  pull_request:
+  # push, not pull_request: a pull_request path filter matches the whole PR diff,
+  # so every push to the PR would rerun (and cancel) this 5-minute suite.
+  push:
     paths: ["tools/desktop/**", ".github/workflows/desktop-e2e.yml", ".github/workflows/desktop-tier2.yml", ".github/workflows/desktop-harness.yml"]
   workflow_dispatch:
 jobs:
@@ -14,14 +13,14 @@ jobs:
     with:
       name: selftest
       test: link:tools/desktop/tests/selftest.py
-      link-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      link-ref: ${{ github.sha }}
   popup-fixed:
     uses: ./.github/workflows/desktop-e2e.yml
     with:
       name: popup-fixed
       test: link:tools/desktop/tests/popup_survives_pointer_leave.py
       args: stub
-      link-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      link-ref: ${{ github.sha }}
   popup-broken:
     uses: ./.github/workflows/desktop-e2e.yml
     with:
@@ -29,7 +28,7 @@ jobs:
       test: link:tools/desktop/tests/popup_survives_pointer_leave.py
       args: stub --close-on-blur
       expect-exit: 10
-      link-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      link-ref: ${{ github.sha }}
   clipboard-c0:
     uses: ./.github/workflows/desktop-e2e.yml
     with:
@@ -38,9 +37,9 @@ jobs:
       args: clipboard "$APP"
       appimage-url: https://github.com/qa-p1/Arcade-clipboard/releases/download/v0.3.2/Arcade-Clipboard-0.3.2-x86_64.AppImage
       expect-exit: 10
-      link-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      link-ref: ${{ github.sha }}
   tier2-find:
     uses: ./.github/workflows/desktop-tier2.yml
     with:
       appimage-url: https://github.com/qa-p1/Arcade-Find/releases/download/v0.5.4/Arcade-Find-x86_64.AppImage
-      link-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      link-ref: ${{ github.sha }}
