@@ -79,7 +79,10 @@ fn only_one_instance_holds_the_slot_and_a_crash_frees_it() {
     let first = runtime::acquire_instance(&dir, "app").unwrap().unwrap();
     assert!(runtime::acquire_instance(&dir, "app").unwrap().is_none());
     drop(first);
-    let again = runtime::acquire_instance(&dir, "app").unwrap();
+    // flock belongs to the open file description: a child that another test in
+    // this binary is forking right now holds a copy of the descriptor until its
+    // exec closes it (O_CLOEXEC), so the release can lag by that window.
+    let again = runtime::acquire_instance_waiting(&dir, "app", Duration::from_secs(5)).unwrap();
     assert!(again.is_some());
     drop(again);
 
