@@ -58,6 +58,16 @@ jobs:
       - name: Release manifest tool
         run: python3 -m unittest discover -s tools -p "test_*.py"
 
+  deny:
+    name: cargo deny (advisories, licences, sources)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
   n-1:
     name: N-1 (previous Link release ↔ this one)
     runs-on: ubuntu-24.04
