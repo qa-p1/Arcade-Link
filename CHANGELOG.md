@@ -5,6 +5,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Legacy folder migration finishes once: a legacy file whose name is taken by different contents in the new folder
+  is moved to `archived-legacy/<old folder>/` there (`Migration::archived`) instead of keeping the whole legacy folder
+  and logging it on every start (FS-1; Tools T3).
+
 ## [1.0.0] — 2026-11-07
 
 Arcade Link 1.0: the shared runtime, the release and update primitives, the desktop harness and the Arcade app
