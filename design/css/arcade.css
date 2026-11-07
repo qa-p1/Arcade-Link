@@ -30,7 +30,7 @@
   --shadow-pop: 0 12px 40px #10141a24;
   color-scheme: light;
   --accent: #16884b; --accent-text: #ffffff; --accent-soft: #e3f1e9; --accent-ink: #167b46;
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif, "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Twemoji Mozilla";
   --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   --fs-display: 26px; --lh-display: 32px; --fw-display: 600;
   --fs-title: 21px; --lh-title: 26px; --fw-title: 600;

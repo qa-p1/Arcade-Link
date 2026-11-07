@@ -80,3 +80,11 @@ The template pins Arcade Link by `tag = "v1.0.0"` (LINK-2), which cannot resolve
 `[patch]` still fetches the pinned source. Link CI therefore swaps the line for a path (`template/use-local-link.sh`)
 before building; the committed `Cargo.toml` keeps the tag. `template/Cargo.lock` is committed right after `v1.0.0`
 is tagged, so a repo made from the template builds with `--locked`.
+
+## D8 — Design kit: emoji fallback; contrast pairs were already checked
+
+`design/generate.py --check` already enforces WCAG AA (4.5:1) on every text/surface pair and the accent pairs in
+both themes, and CI runs it, so nothing new was needed for the "a11y contrast pairs" item. For CB-10 the tokens gain
+`type.family.emoji` (Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, Twemoji Mozilla): the CSS sans stack ends
+with them and every Dart text style carries them as `fontFamilyFallback`. Clipboard still has to bundle or depend on
+a colour emoji font on Linux (its spec).

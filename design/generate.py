@@ -376,7 +376,8 @@ def emit_css(tokens: dict, components: str) -> str:
     out += css_vars(tokens, "light")
     out.append("  " + accent_vars(tokens, "arcade.tools", "light"))
     t = tokens["type"]
-    out.append(f"  --font-sans: {t['family']['sans']}, ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif;")
+    emoji = ", ".join(f'"{f}"' for f in t['family']['emoji'])
+    out.append(f"  --font-sans: {t['family']['sans']}, ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif, {emoji};")
     out.append(f"  --font-mono: {t['family']['mono']};")
     for name, style in t.items():
         if name == "family":
@@ -659,12 +660,15 @@ def emit_dart_theme(tokens: dict) -> str:
     L.append(f"  static const Duration copied = Duration(milliseconds: {m['copied']});")
     L.append(f"  static const String fontFamily = '{tokens['type']['family']['sans']}';")
     L.append("  static const List<String> monoFallback = <String>['JetBrains Mono', 'Cascadia Mono', 'Menlo', 'Consolas', 'monospace'];")
+    emoji = ", ".join(f"'{f}'" for f in tokens['type']['family']['emoji'])
+    L.append("  /// Colour emoji after Inter, so emoji never render as tiny monochrome glyphs (Clipboard CB-10).")
+    L.append(f"  static const List<String> fontFamilyFallback = <String>[{emoji}];")
     for name, style in tokens["type"].items():
         if name == "family":
             continue
         weight = {400: "w400", 500: "w500", 600: "w600"}[style["weight"]]
         spacing = f", letterSpacing: {fmt(style['size'] * style['tracking'])}" if "tracking" in style else ""
-        L.append(f"  static const TextStyle text{camel(name)[0].upper() + camel(name)[1:]} = TextStyle(fontFamily: fontFamily, fontSize: {fmt(style['size'])}, height: {fmt(style['line'] / style['size'])}, fontWeight: FontWeight.{weight}{spacing});")
+        L.append(f"  static const TextStyle text{camel(name)[0].upper() + camel(name)[1:]} = TextStyle(fontFamily: fontFamily, fontFamilyFallback: fontFamilyFallback, fontSize: {fmt(style['size'])}, height: {fmt(style['line'] / style['size'])}, fontWeight: FontWeight.{weight}{spacing});")
     L.append("}")
     L.append("")
     names = [n for n in list(tokens["neutral"]["light"]) + list(tokens["status"]["light"]) if n != "glyph-filter"]
