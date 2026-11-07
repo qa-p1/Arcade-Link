@@ -42,6 +42,7 @@ pub mod receipt;
 pub mod registry;
 #[cfg(feature = "release")]
 pub mod release;
+pub mod runtime;
 pub mod server;
 pub mod shortcuts;
 pub mod transport;

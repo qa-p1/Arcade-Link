@@ -51,3 +51,25 @@ own client all send `"protocol": [1]` in `hello`, and servers already negotiate 
 unknown versions. So the existing negotiation is kept. Added, as the spec asks: a `hello` with no `protocol` field is
 treated as protocol 1 (legacy) instead of being refused, and an N-1 job runs the previous Link release's CLI and mock
 against the new ones in both directions.
+
+## D6 — Shared runtime: inventory and what moved into Link
+
+Inventory of the per-app copies (2026-11-07, main of each repo):
+
+| Piece | Already in Link | Per-app copies found | Link v1 |
+|---|---|---|---|
+| Environment sanitizing, mount handles | `childenv` | none left (all call `childenv`) | kept |
+| Restart via `$APPIMAGE` | `manifest::current_executable` | Box `lib.rs:1929` restart + `wait_for_predecessor`; Look, Find, Lens, Tools each restart in their own way | `runtime::spawn_successor` / `wait_for_predecessor` (RT-2) |
+| Single instance | — | Find `instance.rs:113` (fs2 flock), Tools overlay `instance.rs:126` | `runtime::acquire_instance[_waiting]` (RT-1) |
+| Reaped children | — | none; Lens leaks zombies (LN-3) | `runtime::spawn_reaped` / `reap` (RT-3) |
+| Crash reports | — | none (panics go to stderr logs only) | `runtime::install_crash_reports` (RT-4): panic hook + async-signal-safe handler for SIGSEGV/BUS/ILL/FPE/ABRT, newest 20 kept under `<data>/crashes/` |
+| Memory trim (W0/W1/W3b) | — | Tools `resident/memory.rs` (malloc_trim + PAGEOUT of `.so`, measured ineffective), Box `lib.rs:1511` (malloc_trim only) | `runtime::trim`, `release_webkit`, `page_out_hidden` (RT-5); C twin `qt/arcade_trim.h`; OPEN1 preload `packaging/linux/arcade-trim-preload.c` |
+| Logs | `logs` (stderr capture) | each app filters its own toolkit noise | stays; level/rotation/noise filter tracked in Link `logs` (see D7) |
+| Tray host/client | `trayhost` | — | kept |
+| XDG paths + legacy retirement | `paths::migrate_app_dirs` | — | kept |
+
+Instance-socket command forwarding (Find's `instance::serve`) stays in the app: it is app protocol, and Link's
+own endpoint already serves activation.
+
+The crash signal handler chains to the previous handler and then forces the default action, because Rust's own
+SIGSEGV handler returns (to re-fault) for anything that isn't a stack overflow.

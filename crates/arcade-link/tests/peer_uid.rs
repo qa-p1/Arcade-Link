@@ -76,13 +76,12 @@ fn another_users_connection_is_dropped_before_hello() {
     assert!(hello_reply_len(&address) > 0);
 
     // ...another user gets nothing.
-    let out = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "peer_child", "--nocapture", "--test-threads=1"])
-        .env(CHILD, &address)
-        .uid(65534)
-        .gid(65534)
-        .output()
-        .unwrap();
+    // The build directory may be closed to other users (it is on CI runners).
+    let exe = dir.join("peer-test");
+    std::fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out =
+        Command::new(&exe).args(["--exact", "peer_child", "--nocapture", "--test-threads=1"]).env(CHILD, &address).uid(65534).gid(65534).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("REPLY:0"), "child output: {stdout}\n{}", String::from_utf8_lossy(&out.stderr));
     let _ = std::fs::remove_dir_all(&dir);
