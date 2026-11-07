@@ -18,26 +18,7 @@ pub const MAX_BYTES: u64 = 1024 * 1024;
 
 #[cfg(unix)]
 extern "C" {
-    fn isatty(fd: i32) -> i32;
     fn dup2(old: i32, new: i32) -> i32;
-}
-
-/// Whether stderr is a terminal (where the user reads it directly).
-pub fn stderr_is_terminal() -> bool {
-    #[cfg(unix)]
-    {
-        // SAFETY: isatty only inspects the descriptor.
-        unsafe { isatty(2) == 1 }
-    }
-    #[cfg(windows)]
-    {
-        use std::io::IsTerminal;
-        io::stderr().is_terminal()
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        true
-    }
 }
 
 /// Whether stderr is discarded: `/dev/null` or closed on Unix, `NUL` or no

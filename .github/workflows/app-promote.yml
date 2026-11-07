@@ -1,0 +1,31 @@
+# Reusable: promote a verified rc to stable, byte for byte, with a signed
+# manifest. Fails (publishing nothing) without ARCADE_UPDATE_SIGNING_KEY.
+name: Promote (reusable)
+on:
+  workflow_call:
+    inputs:
+      rc-tag: { type: string, required: true, description: "e.g. v1.0.0-rc.3" }
+      draft: { type: boolean, default: false }
+      link-ref: { type: string, default: v1.0.0 }
+    secrets:
+      ARCADE_UPDATE_SIGNING_KEY: { required: false }
+permissions:
+  contents: write
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: The signing key is present
+        env:
+          KEY: ${{ secrets.ARCADE_UPDATE_SIGNING_KEY }}
+        run: '[ -n "$KEY" ] || { echo "::error::ARCADE_UPDATE_SIGNING_KEY is missing; nothing is published unsigned (see Arcade Link docs/SIGNING.md)"; exit 1; }'
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
+      - uses: ./.arcade-link/.github/actions/setup-arcade-link
+      - name: Promote
+        timeout-minutes: 4
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCADE_UPDATE_SIGNING_KEY: ${{ secrets.ARCADE_UPDATE_SIGNING_KEY }}
+        run: python3 "$ARCADE_LINK_TOOLS/release_flow.py" promote --repo "$GITHUB_REPOSITORY" --rc-tag "${{ inputs.rc-tag }}" ${{ inputs.draft && '--draft' || '' }}

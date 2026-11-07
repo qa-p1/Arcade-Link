@@ -1,0 +1,35 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with: { save-if: "${{ github.ref == 'refs/heads/main' }}" }
+      - name: Lint and test
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+      - name: AppImage
+        timeout-minutes: 8
+        run: cargo build --release --locked && packaging/linux/build-appimage.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: release-linux, path: dist/*.AppImage }
+  deny:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+  checks:
+    needs: build
+    uses: qa-p1/Arcade-Link/.github/workflows/app-checks.yml@v1.0.0
+    with: { artifact: release-linux }

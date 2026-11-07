@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Arcade Template
+Comment=The smallest Arcade app
+Exec=arcade-template
+Icon=dev.arcade.Template
+Terminal=false
+Categories=Utility;
+StartupWMClass=dev.arcade.Template
+X-Arcade-Id=arcade.template

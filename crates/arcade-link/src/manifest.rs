@@ -375,19 +375,10 @@ impl Action {
         self.platforms.is_empty() || self.platforms.iter().any(|p| p == paths::current_platform())
     }
 
-    /// Takes no input at all.
-    pub fn takes_no_input(&self) -> bool {
-        self.accepts.is_empty()
-    }
-
     /// Shown for `content`: available here, and accepts it. This is the
     /// ecosystem's "never show a broken entry" rule in one place.
     pub fn offer_for(&self, content: &Content) -> bool {
         self.available && self.on_this_platform() && content::accepts_content(&self.accepts, content)
-    }
-
-    pub fn offer_for_type(&self, kind: &str) -> bool {
-        self.available && self.on_this_platform() && content::accepts_type(&self.accepts, kind)
     }
 }
 

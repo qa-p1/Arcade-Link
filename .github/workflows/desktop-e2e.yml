@@ -1,0 +1,155 @@
+# Reusable: run a test script inside headless Hyprland 0.56 (Tier 1), with a
+# private D-Bus, a StatusNotifierWatcher, a GlobalShortcuts portal stand-in,
+# grim, wl-clipboard and a virtual pointer. See tools/desktop/arcade_desktop.py.
+name: Desktop e2e (reusable)
+on:
+  workflow_call:
+    inputs:
+      test: { type: string, required: true, description: "Script to run, relative to the caller's checkout (link:<path> for one in Link)" }
+      args: { type: string, default: "", description: "Arguments; $APP is the downloaded AppImage" }
+      appimage-url: { type: string, default: "" }
+      artifact: { type: string, default: "", description: "Artifact holding the AppImage (instead of a URL)" }
+      expect-exit: { type: number, default: 0, description: "Exit code the test must end with (10: a rule is broken, to prove a known bug)" }
+      link-ref: { type: string, default: v1.0.0 }
+      hyprland: { type: string, default: v0.56.1, description: "0.56.x tag (v0.56.2's flake does not build: docs/v1/DECISIONS.md D10)" }
+      name: { type: string, default: e2e, description: "Names the uploaded screenshots and logs" }
+jobs:
+  hyprland:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
+      - name: System packages
+        timeout-minutes: 8
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -o Acquire::Retries=3 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              dbus dbus-x11 python3-dbus python3-gi gir1.2-gtk-3.0 libwayland-dev libwayland-bin pkg-config fuse3 libfuse2t64 \
+              libegl1 libegl-mesa0 libgles2 libgl1-mesa-dri gnome-keyring && break
+            sleep $((i * 10))
+          done
+          command -v dbus-run-session wayland-scanner pkg-config
+          # A virtual KMS device for aquamarine's allocator (vgem lacks PRIME import),
+          # and seatd so libseat can open it without a logind session.
+          for i in 1 2 3; do sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends seatd && break; sleep $((i * 10)); done
+          command -v seatd || { echo "::error::seatd did not install"; exit 1; }
+          # vkms is built into some runner kernels; others need linux-modules-extra
+          # (which not every kernel flavour publishes).
+          if ! sudo modprobe vkms; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "linux-modules-extra-$(uname -r)"
+            sudo modprobe vkms
+          fi
+          card=""
+          for c in /sys/class/drm/card*; do
+            case "$(basename "$c")" in *-*) continue ;; esac
+            case "$(readlink -f "$c/device")" in *vkms*) card="/dev/dri/$(basename "$c")" ;; esac
+          done
+          [ -n "$card" ] || { echo "::error::vkms did not create a card"; ls -l /sys/class/drm; exit 1; }
+          # vkms has no render node, so Hyprland's renderer opens the card itself
+          # (not through seatd); the runner user is not in the video group. A udev
+          # rule, not chmod: any later udev change event would reset a chmod.
+          echo 'SUBSYSTEM=="drm", KERNEL=="card[0-9]*", MODE="0666"' | sudo tee /etc/udev/rules.d/99-arcade-ci-drm.rules >/dev/null
+          sudo udevadm control --reload
+          sudo udevadm trigger --subsystem-match=drm --action=change
+          sudo udevadm settle
+          ls -l "$card"
+          echo "vkms card: $card"
+          echo "AQ_DRM_DEVICES=$card" >> "$GITHUB_ENV"
+          echo "LIBSEAT_BACKEND=seatd" >> "$GITHUB_ENV"
+          echo "ARCADE_SEATD=1" >> "$GITHUB_ENV"
+      # Single-user Nix: the store belongs to the runner, so cache-nix-action can
+      # unpack into it (a multi-user, root-owned store fails with EACCES).
+      - uses: nixbuild/nix-quick-install-action@v35
+        with:
+          nix_conf: |
+            extra-substituters = https://hyprland.cachix.org
+            extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
+      - id: nix-cache
+        uses: nix-community/cache-nix-action/restore@v6
+        with:
+          primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
+          restore-prefixes-first-match: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
+      - name: Hyprland ${{ inputs.hyprland }} and Wayland tools (cached; the first run builds it, ~25 min)
+        timeout-minutes: 55
+        run: |
+          # Hyprland's flake at a tag can fail to build (v0.56.2: CMake ignores the
+          # flake's glaze and tries to download another). Take the first 0.56.x that
+          # installs: the requested tag, the other 0.56 tags, then nixpkgs.
+          installed=""; pkgs=nixpkgs
+          for ref in "${{ inputs.hyprland }}" v0.56.1 v0.56.0; do
+            [ "$ref" = v0.56.2 ] && [ "${{ inputs.hyprland }}" != v0.56.2 ] && continue
+            flake="git+https://github.com/hyprwm/Hyprland?ref=refs/tags/$ref&submodules=1"
+            if nix profile install --accept-flake-config "$flake#hyprland"; then
+              installed="$ref (flake)"
+              rev=$(nix flake metadata --json "$flake" | jq -r '.locks.nodes as $n | $n[$n.root.inputs.nixpkgs].locked.rev')
+              pkgs="github:NixOS/nixpkgs/$rev"
+              break
+            fi
+          done
+          if [ -z "$installed" ]; then
+            v=$(nix eval --raw nixpkgs#hyprland.version)
+            case "$v" in 0.56.*) nix profile install nixpkgs#hyprland && installed="$v (nixpkgs)" ;; *) echo "nixpkgs has Hyprland $v, not 0.56.x" ;; esac
+          fi
+          [ -n "$installed" ] || { echo "::error::no Hyprland 0.56.x could be installed"; exit 1; }
+          echo "Hyprland $installed" | tee -a "$GITHUB_STEP_SUMMARY"
+          # Nix's libgbm and libEGL look for drivers in /run/opengl-driver, which only
+          # NixOS provides. Mesa from the same nixpkgs as Hyprland (libgbm and
+          # dri_gbm.so must be one version); its llvmpipe/kms_swrast drive vkms.
+          nix profile install "$pkgs#mesa"
+          mesa=$(nix build --no-link --print-out-paths "$pkgs#mesa.out")
+          ls "$mesa/lib/gbm/dri_gbm.so" "$mesa/share/glvnd/egl_vendor.d"
+          sudo ln -sfn "$mesa" /run/opengl-driver
+          echo "Mesa $mesa" | tee -a "$GITHUB_STEP_SUMMARY"
+          for i in 1 2 3; do
+            nix profile install nixpkgs#grim nixpkgs#wl-clipboard nixpkgs#foot nixpkgs#wlr-protocols && break
+            sleep $((i * 10))
+          done
+          command -v Hyprland hyprctl grim wl-copy foot
+          Hyprland --version | head -1 | grep -E "0\.56\."
+          echo "WLR_PROTOCOLS=$(nix eval --raw nixpkgs#wlr-protocols)/share/wlr-protocols" >> "$GITHUB_ENV"
+      # Saved right after the install, so a failing test still keeps the build.
+      - if: steps.nix-cache.outputs.hit-primary-key != 'true'
+        uses: nix-community/cache-nix-action/save@v6
+        with:
+          primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
+          gc-max-store-size-linux: 6G
+      - name: Virtual pointer
+        run: bash .arcade-link/tools/desktop/build-vpointer.sh
+      - name: The app
+        if: inputs.appimage-url != '' || inputs.artifact != ''
+        timeout-minutes: 5
+        env:
+          URL: ${{ inputs.appimage-url }}
+        run: |
+          mkdir -p app
+          if [ -n "$URL" ]; then curl -fsSL --retry 3 --max-time 600 -o "app/$(basename "$URL")" "$URL"; fi
+      - if: inputs.artifact != ''
+        uses: actions/download-artifact@v4
+        with: { name: "${{ inputs.artifact }}", path: app }
+      - name: Run ${{ inputs.test }} in headless Hyprland
+        env:
+          TEST: ${{ inputs.test }}
+          ARGS: ${{ inputs.args }}
+          EXPECT_EXIT: ${{ inputs.expect-exit }}
+          ARCADE_DESKTOP_ARTIFACTS: ${{ github.workspace }}/desktop-artifacts
+        run: |
+          APP=$(find app -name '*.AppImage' 2>/dev/null | head -1); [ -n "$APP" ] && chmod +x "$APP" && APP=$(realpath "$APP")
+          export APP
+          case "$TEST" in link:*) script=".arcade-link/${TEST#link:}" ;; *) script="$TEST" ;; esac
+          status=0
+          eval .arcade-link/tools/desktop/session.sh python3 "$script" $ARGS || status=$?
+          if [ "$status" -ne "$EXPECT_EXIT" ]; then
+            echo "::error::$TEST exited $status, expected $EXPECT_EXIT"; exit 1
+          fi
+          [ "$EXPECT_EXIT" -eq 0 ] || echo "exited $status as expected: the known bug is reproduced"
+      - name: Compositor log
+        if: failure()
+        run: tail -100 desktop-artifacts/hyprland.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-${{ inputs.name }}
+          path: desktop-artifacts
+          if-no-files-found: ignore

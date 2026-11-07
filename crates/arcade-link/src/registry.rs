@@ -9,8 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
-use crate::content::Content;
-use crate::manifest::{Action, Manifest, ManifestAdditions, ManifestDocument};
+use crate::manifest::{Manifest, ManifestAdditions, ManifestDocument};
 use crate::paths::Locations;
 
 #[derive(Debug, Clone)]
@@ -104,12 +103,6 @@ impl Registry {
     /// Installed peers other than `me`.
     pub fn peers<'a>(&'a self, me: &'a str) -> impl Iterator<Item = &'a Manifest> + 'a {
         self.apps.iter().filter(move |m| m.id != me)
-    }
-
-    /// Every action from a peer (not `me`) that is usable for `content`,
-    /// skipping peers in `disabled`.
-    pub fn offers_for<'a>(&'a self, me: &'a str, disabled: &'a [String], content: &'a Content) -> Vec<(&'a Manifest, &'a Action)> {
-        self.peers(me).filter(|m| !disabled.contains(&m.id)).flat_map(|m| m.usable_actions().filter(|a| a.offer_for(content)).map(move |a| (m, a))).collect()
     }
 
     /// Effective shortcuts other apps use, for clash warnings: (app name, shortcut id, accelerator).

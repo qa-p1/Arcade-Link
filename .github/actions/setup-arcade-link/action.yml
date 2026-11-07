@@ -1,0 +1,26 @@
+name: Set up arcade-link
+description: Builds (or restores) the arcade-link CLI from this checkout of Arcade Link and puts it on PATH.
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      run: echo "sha=$(git -C '${{ github.action_path }}/../../..' rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      id: cache
+      with:
+        path: ~/.arcade-link
+        key: arcade-link-cli-${{ runner.os }}-${{ steps.key.outputs.sha }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: ${{ github.action_path }}/../../..
+      run: |
+        for i in 1 2 3; do
+          timeout 900 cargo install --locked --path crates/arcade-link-cli --root ~/.arcade-link && break
+          sleep $((i * 5))
+        done
+        test -x ~/.arcade-link/bin/arcade-link
+    - shell: bash
+      run: |
+        echo "$HOME/.arcade-link/bin" >> "$GITHUB_PATH"
+        echo "ARCADE_LINK_TOOLS=$(cd '${{ github.action_path }}/../../../tools' && pwd)" >> "$GITHUB_ENV"

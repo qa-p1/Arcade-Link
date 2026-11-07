@@ -1,5 +1,34 @@
 # Changelog
 
+All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and versions follow [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+## [1.0.0] — 2026-11-07
+
+Arcade Link 1.0: the shared runtime, the release and update primitives, the desktop harness and the Arcade app
+standard. Apps pin `v1.0.0` (or a later 1.0.x) by tag.
+
+### Added
+- Signed release manifests: `release-manifest`, `promote-manifest`, `verify-manifest`, `keygen`; FastCDC chunk lists,
+  minisign-compatible ed25519 signatures, `plan_delta` and `assemble` (`release` feature).
+- `runtime`: unpacked AppImage runtime (`relaunch_unpacked`, U1), single instance, restart via `$APPIMAGE`, reaped children, local crash reports, memory trim (W0/W1/W3b);
+  C twin `qt/arcade_trim.h` and the WebKit-helper preload trimmer.
+- `ARCADE_APP.md` (the app standard, replacing `NEW_APP_SPEC.md`, now `docs/ARCADE_APP_GUIDE.md`) and
+  `arcade-link conformance`.
+- Reusable workflows: publish (test/nightly), promote, nightly, app checks, desktop e2e (headless Hyprland) with the
+  `tools/desktop` driver.
+- N-1 CI job; `SECURITY.md`, `THIRD_PARTY_NOTICES.md`, `cargo deny`, Dependabot.
+
+### Changed
+- A `hello` without `protocol` is accepted as protocol 1 (legacy peers).
+- Unknown CLI commands print usage to stderr and exit 2.
+- QML `Dialog`: Escape cancels destructive dialogs; only `busy` blocks it.
+
+### Security
+- Link servers (Rust and Qt) drop connections from other users (peer UID check).
+
 ## 0.4.15 — 2026-11-01
 
 - QML design kit: the component set for Shelf and Wheel in `design/qml/Arcade` (window shell, settings rows, controls, status, key chips and marks, dialogs and menus, overlay rows), built on `QtQuick.Templates`. `Theme` gains the rest and pop shadow tokens; `Glyph` draws the app marks. `design/qml/gallery/Gallery.qml` shows every component in light and dark.
