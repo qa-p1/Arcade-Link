@@ -9,7 +9,7 @@ on:
       args: { type: string, default: "", description: "Arguments; $APP is the downloaded AppImage" }
       appimage-url: { type: string, default: "" }
       artifact: { type: string, default: "", description: "Artifact holding the AppImage (instead of a URL)" }
-      expect-failure: { type: boolean, default: false, description: "Pass only if the test fails (to prove a known bug)" }
+      expect-exit: { type: number, default: 0, description: "Exit code the test must end with (10: a rule is broken, to prove a known bug)" }
       link-ref: { type: string, default: v1.0.0 }
       hyprland: { type: string, default: v0.56.2 }
       name: { type: string, default: e2e, description: "Names the uploaded screenshots and logs" }
@@ -41,10 +41,15 @@ jobs:
         timeout-minutes: 10
         run: |
           for i in 1 2 3; do
-            nix profile install "github:hyprwm/Hyprland/${{ inputs.hyprland }}#hyprland" nixpkgs#grim nixpkgs#wl-clipboard nixpkgs#foot nixpkgs#wlr-protocols && break
+            nix profile install --accept-flake-config "git+https://github.com/hyprwm/Hyprland?ref=refs/tags/${{ inputs.hyprland }}&submodules=1#hyprland" && break
             sleep $((i * 10))
           done
-          Hyprland --version | head -3
+          for i in 1 2 3; do
+            nix profile install nixpkgs#grim nixpkgs#wl-clipboard nixpkgs#foot nixpkgs#wlr-protocols && break
+            sleep $((i * 10))
+          done
+          command -v Hyprland hyprctl grim wl-copy foot
+          Hyprland --version | head -1 | grep -F "${{ inputs.hyprland }}"
           echo "WLR_PROTOCOLS=$(nix eval --raw nixpkgs#wlr-protocols)/share/wlr-protocols" >> "$GITHUB_ENV"
       - name: Virtual pointer
         run: bash .arcade-link/tools/desktop/build-vpointer.sh
@@ -63,7 +68,7 @@ jobs:
         env:
           TEST: ${{ inputs.test }}
           ARGS: ${{ inputs.args }}
-          EXPECT_FAILURE: ${{ inputs.expect-failure }}
+          EXPECT_EXIT: ${{ inputs.expect-exit }}
           ARCADE_DESKTOP_ARTIFACTS: ${{ github.workspace }}/desktop-artifacts
         run: |
           APP=$(find app -name '*.AppImage' 2>/dev/null | head -1); [ -n "$APP" ] && chmod +x "$APP" && APP=$(realpath "$APP")
@@ -71,12 +76,10 @@ jobs:
           case "$TEST" in link:*) script=".arcade-link/${TEST#link:}" ;; *) script="$TEST" ;; esac
           status=0
           eval .arcade-link/tools/desktop/session.sh python3 "$script" $ARGS || status=$?
-          if [ "$EXPECT_FAILURE" = true ]; then
-            [ $status -ne 0 ] || { echo "::error::expected $TEST to fail (known bug), but it passed"; exit 1; }
-            echo "failed as expected (known bug reproduced)"
-          else
-            exit $status
+          if [ "$status" -ne "$EXPECT_EXIT" ]; then
+            echo "::error::$TEST exited $status, expected $EXPECT_EXIT"; exit 1
           fi
+          [ "$EXPECT_EXIT" -eq 0 ] || echo "exited $status as expected: the known bug is reproduced"
       - name: Compositor log
         if: failure()
         run: tail -100 desktop-artifacts/hyprland.log || true

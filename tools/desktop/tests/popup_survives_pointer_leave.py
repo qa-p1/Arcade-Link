@@ -6,7 +6,8 @@
 
 Opens the popup, puts the pointer inside it, then moves the pointer (real
 motion, follow_mouse = 1) into another window and waits. Passes only if the
-popup is still mapped. Exit 1 means the popup closed on pointer leave.
+popup is still mapped. Exit 10 means the popup closed on pointer leave (the
+rule is broken); any other failure is the harness's.
 """
 import os
 import subprocess
@@ -53,6 +54,6 @@ d.screenshot(f"{mode}-after-pointer-leave")
 other.terminate()
 if not still:
     print("FAIL: the popup closed when the pointer left it (fleet rule UI-1)")
-    sys.exit(1)
+    sys.exit(10)
 print("PASS: the popup stayed open after the pointer left it")
 d.escape(popup["address"])
