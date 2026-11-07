@@ -35,13 +35,19 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       # Permissions, the stale-endpoint case and the macOS socket path length
       # are covered by the crate's own tests on each OS.
+      - name: minisign (verifies our manifest signatures)
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: |
+          for i in 1 2 3; do sudo apt-get install -y --no-install-recommends minisign && break; sudo apt-get update -o Acquire::Retries=3; done
+          echo ARCADE_REQUIRE_MINISIGN=1 >> "$GITHUB_ENV"
       - name: Test
         run: cargo test --workspace --all-features --locked
       - name: Feature hygiene
         shell: bash
         run: |
           cargo test -p arcade-link --no-default-features --locked
-          for feature in install trayhost watch engines design design-egui; do
+          for feature in install trayhost watch engines design design-egui release; do
             cargo test -p arcade-link --no-default-features --features "$feature" --locked
           done
       - name: Release manifest tool

@@ -1,0 +1,21 @@
+[package]
+name = "arcade-link-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arcade-link = { path = "../crates/arcade-link", features = ["release"] }
+
+[[bin]]
+name = "release_manifest"
+path = "fuzz_targets/release_manifest.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

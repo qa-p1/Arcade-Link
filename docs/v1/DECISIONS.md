@@ -30,3 +30,24 @@ action in `dev/v1/PROGRESS.md`.
 
 All work is developed on `claude/tender-feynman-3vt7dg` and lands on `main` through PRs that this session merges once
 CI is green (PLAN.md "Full autonomy"). `main` is never force-pushed.
+
+## D4 — Release manifest format and promotion
+
+- `manifest.json` lists `version` (the product version the files report, `1.0.0`) separately from `tag` (the
+  release carrying them: `v1.0.0-rc.2`, then `v1.0.0`). rc builds are built as the final version, so stable is the
+  rc's exact bytes; promotion writes a new manifest with the same file entries and a new `tag`/`channel`, and signs it.
+  `promote-manifest` refuses unless every file matches the rc manifest byte for byte.
+- Chunks are serialized as `[length, "blake3hex"]`; offsets follow from order. Chunk parameters are fixed
+  (FastCDC 2020, 8/16/32 KB) and validated, so a manifest cannot make the updater use other boundaries.
+- Signatures are minisign's prehashed `ED` format, verified in CI by the real `minisign`. The signing key in the
+  secret is an unencrypted minisign secret key (`minisign -G -W` keys work too). The trusted comment names app,
+  version, tag and channel, and must match the manifest, preventing replay across releases.
+- Test-channel manifests are unsigned (`specs/LINK.md` §4). Nightly and stable are signed.
+
+## D5 — Protocol version already exists; legacy hello accepted as protocol 1
+
+`specs/LINK.md` §2 assumes 0.4.x peers send no protocol version. They do: the Rust client, the Qt kit and Shelf's
+own client all send `"protocol": [1]` in `hello`, and servers already negotiate and answer `version_mismatch` for
+unknown versions. So the existing negotiation is kept. Added, as the spec asks: a `hello` with no `protocol` field is
+treated as protocol 1 (legacy) instead of being refused, and an N-1 job runs the previous Link release's CLI and mock
+against the new ones in both directions.

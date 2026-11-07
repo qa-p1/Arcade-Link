@@ -2,7 +2,7 @@
 resolver = "2"
 members = ["crates/arcade-link", "crates/arcade-link-cli"]
 # Fleet app checkouts for the nightly e2e live under target/fleet.
-exclude = ["target"]
+exclude = ["target", "fuzz"]
 
 [workspace.package]
 version = "0.4.15"
