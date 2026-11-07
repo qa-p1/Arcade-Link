@@ -18,7 +18,9 @@ exec dbus-run-session -- bash -c '
   python3 "$here/portal_shortcuts.py" > "$ARCADE_DESKTOP_ARTIFACTS/portal.log" 2>&1 &
   # A real desktop has a Secret Service; apps keep their keys there.
   if command -v gnome-keyring-daemon >/dev/null; then
-    printf "" | gnome-keyring-daemon --unlock --components=secrets --daemonize > "$ARCADE_DESKTOP_ARTIFACTS/keyring.log" 2>&1 || true
+    # A non-empty password creates and unlocks the "login" collection; an empty
+    # one asks a GUI prompter instead (none here), leaving no collection.
+    printf "arcade-ci\n" | gnome-keyring-daemon --unlock --components=secrets --daemonize > "$ARCADE_DESKTOP_ARTIFACTS/keyring.log" 2>&1 || true
   fi
   if [ "${ARCADE_SEATD:-}" = 1 ]; then
     sudo -n seatd -g "$(id -gn)" -l info > "$ARCADE_DESKTOP_ARTIFACTS/seatd.log" 2>&1 &
