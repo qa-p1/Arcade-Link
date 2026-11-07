@@ -169,6 +169,11 @@ class Desktop:
             print(f"screenshot failed: {e}")
         return path
 
+    def artifact(self, name: str) -> Path:
+        """A path in the uploaded artifacts (app logs and the like)."""
+        ARTIFACTS.mkdir(parents=True, exist_ok=True)
+        return ARTIFACTS / name
+
     # ----------------------------------------------------------- clipboard
     def clipboard_get(self, mime: str = "text/plain") -> str:
         return _run("wl-paste", "--no-newline", "--type", mime)

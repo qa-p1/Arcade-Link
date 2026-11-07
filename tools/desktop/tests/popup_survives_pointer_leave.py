@@ -32,14 +32,18 @@ if mode == "clipboard":
            "XDG_CACHE_HOME": f"{home}/.cache", "ARCADE_HOME": f"{home}/arcade-link"}
     subprocess.run([app, "--install", "--silent", "--no-launch"], env=env, timeout=60)
     installed = next(Path(home).rglob("*Clipboard*.AppImage"), Path(app))
-    subprocess.Popen([str(installed), "--background"], env=env)
-    time.sleep(4)
-    subprocess.Popen([str(installed), "--overlay"], env=env)
+    # One process: "--overlay" with nothing running starts the app and opens the
+    # picker (the same picker and blur handler as the Ctrl+Shift+Space path),
+    # without depending on the D-Bus hand-off's timing.
+    log = open(d.artifact("clipboard.log"), "wb")
+    subprocess.Popen([str(installed), "--overlay"], env=env, stdout=log, stderr=subprocess.STDOUT)
+    timeout = 60  # first frame under software GL
 else:
     args = [sys.executable, str(Path(__file__).with_name("stub_popup.py"))] + sys.argv[2:]
     subprocess.Popen(args)
+    timeout = 20
 
-popup = d.wait(lambda: next((c for c in d.clients() if c["address"] not in before), None), 20, "the popup window")
+popup = d.wait(lambda: next((c for c in d.clients() if c["address"] not in before), None), timeout, "the popup window")
 d.screenshot(f"{mode}-popup-open")
 print(f"popup: class={popup['class']} title={popup['title']!r} at={popup['at']} size={popup['size']} floating={popup['floating']}")
 time.sleep(0.6)
