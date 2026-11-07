@@ -6,6 +6,10 @@ on:
     inputs:
       artifact: { type: string, required: true, description: "Artifact holding the Linux AppImage" }
       link-ref: { type: string, default: v1.0.0 }
+# Explicit bash adds pipefail, so a failing command piped into tee fails the step.
+defaults:
+  run:
+    shell: bash
 jobs:
   conformance:
     runs-on: ubuntu-24.04

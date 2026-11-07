@@ -7,6 +7,10 @@ on:
     paths: ["spec/contract/**", "tools/desktop/tier2.sh", ".github/workflows/contract.yml"]
   schedule: [{ cron: "7 5 * * 1" }]
   workflow_dispatch:
+# Explicit bash adds pipefail, so a failing command piped into tee fails the step.
+defaults:
+  run:
+    shell: bash
 jobs:
   contract:
     runs-on: ubuntu-24.04
@@ -40,7 +44,10 @@ jobs:
       - name: Conformance (no display)
         run: |
           cargo build -q -p arcade-link-cli --locked
-          target/debug/arcade-link conformance app.AppImage | tee -a "$GITHUB_STEP_SUMMARY"
+          target/debug/arcade-link conformance app.AppImage | tee -a "$GITHUB_STEP_SUMMARY" \
+            || echo "::warning::${{ matrix.app }} fails conformance (reported; its own v1 release gate enforces it)"
       - name: Runtime contract (X11 session)
         if: always()
-        run: tools/desktop/tier2.sh x11 python3 spec/contract/runtime_contract.py "$PWD/app.AppImage" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: |
+          tools/desktop/tier2.sh x11 python3 spec/contract/runtime_contract.py "$PWD/app.AppImage" | tee -a "$GITHUB_STEP_SUMMARY" \
+            || echo "::warning::${{ matrix.app }} fails the runtime contract (reported; its own v1 release gate enforces it)"

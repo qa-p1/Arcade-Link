@@ -11,6 +11,10 @@ on:
     inputs:
       kind: { type: string, default: stable }
   schedule: [{ cron: "41 4 * * 1" }]
+# Explicit bash adds pipefail, so a failing command piped into tee fails the step.
+defaults:
+  run:
+    shell: bash
 jobs:
   fleet:
     runs-on: ubuntu-24.04
