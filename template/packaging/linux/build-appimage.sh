@@ -12,6 +12,7 @@ install -Dm644 packaging/linux/arcade-template-symbolic.svg "$app/usr/share/icon
 install -Dm644 LICENSE "$app/usr/share/doc/arcade-template/LICENSE"
 install -Dm644 THIRD_PARTY_NOTICES.md "$app/usr/share/doc/arcade-template/THIRD_PARTY_NOTICES.md"
 ln -s usr/bin/arcade-template "$app/AppRun"
+ln -s dev.arcade.Template.svg "$app/.DirIcon"
 tool=${APPIMAGETOOL:-appimagetool}
 if ! command -v "$tool" >/dev/null; then
   tool=$(mktemp -d)/appimagetool

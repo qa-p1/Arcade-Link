@@ -44,6 +44,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         }
     }
     let target = target.ok_or("conformance needs an app repository or AppImage")?;
+    let target = std::fs::canonicalize(&target).map_err(|e| format!("{}: {e}", target.display()))?;
+    let binary = binary.map(|b| std::fs::canonicalize(&b).unwrap_or(b));
     let mut report = Report(Vec::new());
     let scratch = tempdir("conformance")?;
 
