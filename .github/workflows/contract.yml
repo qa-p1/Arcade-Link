@@ -1,0 +1,43 @@
+# The runtime contract (spec/contract) against the released C++ apps, which
+# keep their own implementations. Reported, not blocking, until the Shelf and
+# Wheel v1 specs land; their own release gates then require it.
+name: Contract (Shelf, Wheel)
+on:
+  pull_request:
+    paths: ["spec/contract/**", "tools/desktop/tier2.sh", ".github/workflows/contract.yml"]
+  schedule: [{ cron: "7 5 * * 1" }]
+  workflow_dispatch:
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { app: shelf, repo: Arcade-Shelf }
+          - { app: wheel, repo: Arcade-wheel }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Session tools
+        timeout-minutes: 8
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -o Acquire::Retries=3 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              dbus dbus-x11 python3-dbus python3-gi xvfb x11-utils openbox libfuse2t64 libegl1 libxkbcommon-x11-0 libxcb-cursor0 && break
+            sleep $((i * 10))
+          done
+          command -v Xvfb openbox dbus-run-session
+      - name: Released ${{ matrix.app }}
+        timeout-minutes: 5
+        run: |
+          url=$(curl -fsSL --retry 3 "https://api.github.com/repos/qa-p1/${{ matrix.repo }}/releases/latest" | jq -r '[.assets[] | select(.name|test("AppImage$"))][0].browser_download_url')
+          curl -fsSL --retry 3 --max-time 600 -o app.AppImage "$url" && chmod +x app.AppImage
+      - name: Conformance (no display)
+        run: |
+          cargo build -q -p arcade-link-cli --locked
+          target/debug/arcade-link conformance app.AppImage | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Runtime contract (X11 session)
+        if: always()
+        run: tools/desktop/tier2.sh x11 python3 spec/contract/runtime_contract.py "$PWD/app.AppImage" | tee -a "$GITHUB_STEP_SUMMARY"
