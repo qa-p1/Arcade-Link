@@ -24,6 +24,11 @@ State at 14:10 UTC (harness bring-up, each found on CI and fixed):
 - Also fixed on the way: macOS lock-test fork race; anonymous API 403 in contract/fleet fetch; `| tee` without
   pipefail hid a failing conformance gate in `app-checks.yml` (now `shell: bash`).
 
+State at 17:25 UTC: Desktop harness all green on `7b42736` (run 42395710146): selftest, popup-fixed (exit 0),
+popup-broken (exit 10), clipboard-c0 (exit 10: C0 reproduced on released Clipboard 0.3.2), Tier 2 sway/KWin/Mutter/X11.
+Last harness fixes: Clipboard first-run setup driven by clicks (the switch row sits just above the button), and a
+popup that turns back into the app's main window (same address) now counts as closed.
+
 Remaining before tagging v1.0.0:
 1. Harness proof green (else the sway fallback per PLAN.md "When blocked").
 2. Merge PR #32; run "Tag a release" with `v1.0.0` and the merge SHA.
