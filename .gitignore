@@ -5,3 +5,4 @@ __pycache__/
 /template/target
 /template/dist
 /template/Cargo.lock
+/tools/fleet/wmclose
