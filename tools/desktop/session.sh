@@ -16,6 +16,10 @@ exec dbus-run-session -- bash -c '
   here="$1"; shift
   python3 "$here/sni_watcher_service.py" > "$ARCADE_DESKTOP_ARTIFACTS/sni-watcher.log" 2>&1 &
   python3 "$here/portal_shortcuts.py" > "$ARCADE_DESKTOP_ARTIFACTS/portal.log" 2>&1 &
+  if [ "${ARCADE_SEATD:-}" = 1 ]; then
+    sudo -n seatd -g "$(id -gn)" -l info > "$ARCADE_DESKTOP_ARTIFACTS/seatd.log" 2>&1 &
+    for _ in $(seq 1 50); do [ -S /run/seatd.sock ] && break; sleep 0.1; done
+  fi
   ready="$XDG_RUNTIME_DIR/hypr-ready"
   keep_logs() {
     cp "$XDG_RUNTIME_DIR"/hypr/*/hyprland.log "$ARCADE_DESKTOP_ARTIFACTS/hyprland-full.log" 2>/dev/null || true

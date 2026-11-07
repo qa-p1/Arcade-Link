@@ -30,14 +30,19 @@ jobs:
             sleep $((i * 10))
           done
           command -v dbus-run-session wayland-scanner pkg-config
-          sudo modprobe vgem 2>/dev/null || { sudo apt-get install -y "linux-modules-extra-$(uname -r)" >/dev/null 2>&1 && sudo modprobe vgem; } || true
-          ls -l /dev/dri 2>/dev/null || echo "no /dev/dri"
-          sudo chmod a+rw /dev/dri/* 2>/dev/null || true
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            extra-substituters = https://hyprland.cachix.org
-            extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
+          # A virtual KMS device for aquamarine's allocator (vgem lacks PRIME import),
+          # and seatd so libseat can open it without a logind session.
+          for i in 1 2 3; do sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "linux-modules-extra-$(uname -r)" seatd && break; sleep $((i * 10)); done
+          sudo modprobe vkms
+          card=""
+          for c in /sys/class/drm/card[0-9]*; do
+            case "$(readlink -f "$c/device")" in *vkms*) card="/dev/dri/$(basename "$c")" ;; esac
+          done
+          [ -n "$card" ] || { echo "::error::vkms did not create a card"; ls -l /sys/class/drm; exit 1; }
+          echo "vkms card: $card"
+          echo "AQ_DRM_DEVICES=$card" >> "$GITHUB_ENV"
+          echo "LIBSEAT_BACKEND=seatd" >> "$GITHUB_ENV"
+          echo "ARCADE_SEATD=1" >> "$GITHUB_ENV"
       - id: nix-cache
         uses: nix-community/cache-nix-action/restore@v6
         with:
