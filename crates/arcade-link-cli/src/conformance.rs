@@ -215,8 +215,8 @@ fn static_checks(root: &Path, package: bool, r: &mut Report) {
     );
 
     // REL-2: signed manifests next to the 0.4-compatible arcade-release.json.
-    let manifest = all_workflows.contains("release-manifest") || all_workflows.contains("Arcade-Link/.github/workflows/release.yml");
-    let legacy = all_workflows.contains("arcade-release") || all_workflows.contains("Arcade-Link/.github/workflows/release.yml");
+    let manifest = all_workflows.contains("release-manifest") || all_workflows.contains("Arcade-Link/.github/workflows/app-publish.yml");
+    let legacy = all_workflows.contains("arcade-release") || all_workflows.contains("Arcade-Link/.github/workflows/app-publish.yml");
     r.check(
         "REL-2",
         manifest && legacy,

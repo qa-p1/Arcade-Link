@@ -73,3 +73,10 @@ own endpoint already serves activation.
 
 The crash signal handler chains to the previous handler and then forces the default action, because Rust's own
 SIGSEGV handler returns (to re-fault) for anything that isn't a stack overflow.
+
+## D7 — Template lockfile and Link pin
+
+The template pins Arcade Link by `tag = "v1.0.0"` (LINK-2), which cannot resolve before that tag exists, and
+`[patch]` still fetches the pinned source. Link CI therefore swaps the line for a path (`template/use-local-link.sh`)
+before building; the committed `Cargo.toml` keeps the tag. `template/Cargo.lock` is committed right after `v1.0.0`
+is tagged, so a repo made from the template builds with `--locked`.

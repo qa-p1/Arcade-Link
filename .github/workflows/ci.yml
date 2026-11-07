@@ -58,6 +58,41 @@ jobs:
       - name: Release manifest tool
         run: python3 -m unittest discover -s tools -p "test_*.py"
 
+  template:
+    name: Template app (build, AppImage, conformance)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            template -> target
+      - name: Build against this checkout of Link
+        working-directory: template
+        run: |
+          ./use-local-link.sh
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo build --release
+      - name: AppImage
+        timeout-minutes: 8
+        working-directory: template
+        run: packaging/linux/build-appimage.sh
+      - name: Conformance (repository and AppImage)
+        run: |
+          git -C template checkout Cargo.toml
+          cargo build -p arcade-link-cli --locked
+          target/debug/arcade-link conformance template --binary template/dist/*.AppImage
+          target/debug/arcade-link conformance template/dist/*.AppImage
+      - uses: actions/upload-artifact@v4
+        with: { name: template-appimage, path: template/dist/*.AppImage }
+
   deny:
     name: cargo deny (advisories, licences, sources)
     runs-on: ubuntu-24.04

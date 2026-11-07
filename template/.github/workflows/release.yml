@@ -1,0 +1,33 @@
+# Build once and publish a hidden rc on the test channel. Promote it with promote.yml.
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      tag: { description: "rc tag, e.g. v0.1.0-rc.1", required: true }
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked && packaging/linux/build-appimage.sh
+        timeout-minutes: 12
+      - uses: actions/upload-artifact@v4
+        with: { name: release-linux, path: dist/*.AppImage }
+  version:
+    runs-on: ubuntu-24.04
+    outputs: { version: "${{ steps.v.outputs.version }}" }
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          [[ "${{ inputs.tag }}" == "v$v-rc."* ]] || { echo "::error::tag must be v$v-rc.N"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+  publish:
+    needs: [build, version]
+    uses: qa-p1/Arcade-Link/.github/workflows/app-publish.yml@v1.0.0
+    with: { app: arcade.template, version: "${{ needs.version.outputs.version }}", tag: "${{ inputs.tag }}" }

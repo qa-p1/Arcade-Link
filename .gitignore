@@ -2,3 +2,6 @@
 /qt/build
 __pycache__/
 /tools/desktop/vpointer
+/template/target
+/template/dist
+/template/Cargo.lock
