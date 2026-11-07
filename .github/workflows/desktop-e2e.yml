@@ -46,6 +46,9 @@ jobs:
             case "$(readlink -f "$c/device")" in *vkms*) card="/dev/dri/$(basename "$c")" ;; esac
           done
           [ -n "$card" ] || { echo "::error::vkms did not create a card"; ls -l /sys/class/drm; exit 1; }
+          # vkms has no render node, so Hyprland's renderer opens the card itself
+          # (not through seatd); the runner user is not in the video group.
+          sudo chmod 0666 "$card"
           echo "vkms card: $card"
           echo "AQ_DRM_DEVICES=$card" >> "$GITHUB_ENV"
           echo "LIBSEAT_BACKEND=seatd" >> "$GITHUB_ENV"
