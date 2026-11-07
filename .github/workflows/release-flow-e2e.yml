@@ -34,7 +34,8 @@ jobs:
           mkdir got && gh release download "v$v" --repo "$GITHUB_REPOSITORY" --dir got
           arcade-link verify-manifest got/manifest.json --key "$pub" --files got
           minisign -Vm got/manifest.json -x got/manifest.json.sig -P "$pub"
-          for f in dist/*; do cmp "$f" "got/$(basename "$f")"; done
+          # The installable files are byte-identical; arcade-release.json differs by design (channel test → stable).
+          for f in dist/*.AppImage dist/*.exe; do cmp "$f" "got/$(basename "$f")"; done
           jq -e '.channel == "stable"' got/arcade-release.json
           echo "draft rc v$v-rc.1 promoted to draft v$v: byte-identical, signed" >> "$GITHUB_STEP_SUMMARY"
       - name: Promotion without the key publishes nothing
