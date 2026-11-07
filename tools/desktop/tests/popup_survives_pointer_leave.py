@@ -44,6 +44,10 @@ else:
     subprocess.Popen(args)
     timeout = 20
 
+def still_mapped() -> bool:
+    return any(c["address"] == popup["address"] for c in d.clients())
+
+
 popup = d.wait(lambda: next((c for c in d.clients() if c["address"] not in before), None), timeout, "the popup window")
 d.screenshot(f"{mode}-popup-open")
 print(f"popup: class={popup['class']} title={popup['title']!r} at={popup['at']} size={popup['size']} floating={popup['floating']}")
@@ -51,12 +55,16 @@ time.sleep(0.6)
 px, py = d.center_of(popup)
 d.pointer_move(px, py)
 time.sleep(0.6)
+# Re-read: tiling the popup beside it has resized and moved the other window.
+other_w = d.find_window(cls="harness.other")
 ox, oy = d.center_of(other_w)
 d.pointer_move(ox, oy)
 time.sleep(1.5)
 active = json.loads(d.hyprctl("-j", "activewindow") or "{}")
-print(f"after leave: cursor={d.cursor()} focused={active.get('class')!r}")
-still = any(c["address"] == popup["address"] for c in d.clients())
+print(f"after leave: cursor={d.cursor()} other={other_w['at']}+{other_w['size']} focused={active.get('class')!r}")
+if active.get("class") == popup["class"] and still_mapped():
+    sys.exit("harness error: focus never left the popup, so the rule was not exercised")
+still = still_mapped()
 d.screenshot(f"{mode}-after-pointer-leave")
 other.terminate()
 if not still:
