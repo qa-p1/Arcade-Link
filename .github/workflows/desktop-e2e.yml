@@ -1,0 +1,88 @@
+# Reusable: run a test script inside headless Hyprland 0.56 (Tier 1), with a
+# private D-Bus, a StatusNotifierWatcher, a GlobalShortcuts portal stand-in,
+# grim, wl-clipboard and a virtual pointer. See tools/desktop/arcade_desktop.py.
+name: Desktop e2e (reusable)
+on:
+  workflow_call:
+    inputs:
+      test: { type: string, required: true, description: "Script to run, relative to the caller's checkout (link:<path> for one in Link)" }
+      args: { type: string, default: "", description: "Arguments; $APP is the downloaded AppImage" }
+      appimage-url: { type: string, default: "" }
+      artifact: { type: string, default: "", description: "Artifact holding the AppImage (instead of a URL)" }
+      expect-failure: { type: boolean, default: false, description: "Pass only if the test fails (to prove a known bug)" }
+      link-ref: { type: string, default: v1.0.0 }
+      hyprland: { type: string, default: v0.56.2 }
+      name: { type: string, default: e2e, description: "Names the uploaded screenshots and logs" }
+jobs:
+  hyprland:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
+      - name: System packages
+        timeout-minutes: 8
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -o Acquire::Retries=3 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              dbus dbus-x11 python3-dbus python3-gi gir1.2-gtk-3.0 libwayland-dev libwayland-bin pkg-config fuse3 libfuse2t64 && break
+            sleep $((i * 10))
+          done
+          sudo modprobe vgem 2>/dev/null || { sudo apt-get install -y "linux-modules-extra-$(uname -r)" >/dev/null 2>&1 && sudo modprobe vgem; } || true
+          ls -l /dev/dri 2>/dev/null || echo "no /dev/dri"
+          sudo chmod a+rw /dev/dri/* 2>/dev/null || true
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://hyprland.cachix.org
+            extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
+      - name: Hyprland ${{ inputs.hyprland }} and Wayland tools (binary caches)
+        timeout-minutes: 10
+        run: |
+          for i in 1 2 3; do
+            nix profile install "github:hyprwm/Hyprland/${{ inputs.hyprland }}#hyprland" nixpkgs#grim nixpkgs#wl-clipboard nixpkgs#foot nixpkgs#wlr-protocols && break
+            sleep $((i * 10))
+          done
+          Hyprland --version | head -3
+          echo "WLR_PROTOCOLS=$(nix eval --raw nixpkgs#wlr-protocols)/share/wlr-protocols" >> "$GITHUB_ENV"
+      - name: Virtual pointer
+        run: bash .arcade-link/tools/desktop/build-vpointer.sh
+      - name: The app
+        if: inputs.appimage-url != '' || inputs.artifact != ''
+        timeout-minutes: 5
+        env:
+          URL: ${{ inputs.appimage-url }}
+        run: |
+          mkdir -p app
+          if [ -n "$URL" ]; then curl -fsSL --retry 3 --max-time 600 -o "app/$(basename "$URL")" "$URL"; fi
+      - if: inputs.artifact != ''
+        uses: actions/download-artifact@v4
+        with: { name: "${{ inputs.artifact }}", path: app }
+      - name: Run ${{ inputs.test }} in headless Hyprland
+        env:
+          TEST: ${{ inputs.test }}
+          ARGS: ${{ inputs.args }}
+          EXPECT_FAILURE: ${{ inputs.expect-failure }}
+          ARCADE_DESKTOP_ARTIFACTS: ${{ github.workspace }}/desktop-artifacts
+        run: |
+          APP=$(find app -name '*.AppImage' 2>/dev/null | head -1); [ -n "$APP" ] && chmod +x "$APP" && APP=$(realpath "$APP")
+          export APP
+          case "$TEST" in link:*) script=".arcade-link/${TEST#link:}" ;; *) script="$TEST" ;; esac
+          status=0
+          eval .arcade-link/tools/desktop/session.sh python3 "$script" $ARGS || status=$?
+          if [ "$EXPECT_FAILURE" = true ]; then
+            [ $status -ne 0 ] || { echo "::error::expected $TEST to fail (known bug), but it passed"; exit 1; }
+            echo "failed as expected (known bug reproduced)"
+          else
+            exit $status
+          fi
+      - name: Compositor log
+        if: failure()
+        run: tail -100 desktop-artifacts/hyprland.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-${{ inputs.name }}
+          path: desktop-artifacts
+          if-no-files-found: ignore
