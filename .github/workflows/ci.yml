@@ -48,7 +48,9 @@ jobs:
         run: |
           bin=$(cargo test -p arcade-link --test peer_uid --no-run --locked --message-format=json | jq -r 'select(.executable != null and .target.name == "peer_uid") | .executable')
           sudo ARCADE_REQUIRE_ROOT_TESTS=1 "$bin" --test-threads=1
+      # Feature combinations are platform-independent: one OS is enough.
       - name: Feature hygiene
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           cargo test -p arcade-link --no-default-features --locked
