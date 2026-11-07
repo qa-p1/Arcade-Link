@@ -31,8 +31,11 @@ jobs:
           command -v Xvfb openbox dbus-run-session
       - name: Released ${{ matrix.app }}
         timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          url=$(curl -fsSL --retry 3 "https://api.github.com/repos/qa-p1/${{ matrix.repo }}/releases/latest" | jq -r '[.assets[] | select(.name|test("AppImage$"))][0].browser_download_url')
+          url=$(curl -fsSL --retry 3 --max-time 60 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/qa-p1/${{ matrix.repo }}/releases/latest" | jq -r '[.assets[] | select(.name|test("AppImage$"))][0].browser_download_url')
+          [ -n "$url" ] && [ "$url" != null ] || { echo "::error::no AppImage in the latest ${{ matrix.repo }} release"; exit 1; }
           curl -fsSL --retry 3 --max-time 600 -o app.AppImage "$url" && chmod +x app.AppImage
       - name: Conformance (no display)
         run: |

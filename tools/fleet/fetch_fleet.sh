@@ -6,10 +6,12 @@ set -euo pipefail
 dir=$1; kind=${2:-stable}; mkdir -p "$dir"
 declare -A repos=([Tools]=Arcade-tools [Box]=Arcade-box [Look]=Arcade-look [Find]=Arcade-Find [Lens]=Arcade-lens
                   [Clipboard]=Arcade-clipboard [Shelf]=Arcade-Shelf [Wheel]=Arcade-wheel)
+# Authenticated when GH_TOKEN is set: shared runner IPs hit the anonymous API limit (403).
+auth=(); [ -n "${GH_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $GH_TOKEN")
 for app in "${!repos[@]}"; do
   api="https://api.github.com/repos/qa-p1/${repos[$app]}/releases"
-  if [ "$kind" = stable ]; then json=$(curl -fsSL --retry 3 --max-time 60 "$api/latest")
-  else json=$(curl -fsSL --retry 3 --max-time 60 "$api?per_page=20" | jq '[.[] | select(.prerelease and (.tag_name|test("-rc\\.")))][0]'); fi
+  if [ "$kind" = stable ]; then json=$(curl -fsSL --retry 3 --max-time 60 "${auth[@]}" "$api/latest")
+  else json=$(curl -fsSL --retry 3 --max-time 60 "${auth[@]}" "$api?per_page=20" | jq '[.[] | select(.prerelease and (.tag_name|test("-rc\\.")))][0]'); fi
   url=$(jq -r '[.assets[] | select(.name|test("(x86_64|amd64).*AppImage$|AppImage$"))][0].browser_download_url' <<<"$json")
   [ -n "$url" ] && [ "$url" != null ] || { echo "no AppImage for $app ($kind)"; exit 1; }
   curl -fsSL --retry 3 --max-time 900 -o "$dir/Arcade-$app.AppImage" "$url"
