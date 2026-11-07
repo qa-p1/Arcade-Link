@@ -3,6 +3,7 @@
 //! Essential for development and for bug reports. Every command honors
 //! `ARCADE_HOME`.
 
+mod conformance;
 mod mock;
 mod release;
 mod tray;
@@ -36,6 +37,8 @@ USAGE
   arcade-link promote-manifest RC.json --tag T --files DIR [--channel stable] [--out DIR]
                                               Same files, new tag/channel, signed
   arcade-link verify-manifest FILE --key PUB… [--sig F] [--files DIR] [--unsigned]
+  arcade-link conformance <repo-dir|AppImage> [--binary PATH] [--json]
+                                              Check an app against ARCADE_APP.md
   arcade-link keygen --secret-to-gh OWNER/REPO…
                                               New signing key, stored only as an Actions secret
   arcade-link tray <app> [--link-off]          Watch tray hosting as an app
@@ -135,6 +138,7 @@ fn main() -> ExitCode {
         Some("promote-manifest") => release::promote(&args),
         Some("verify-manifest") => release::verify(&args),
         Some("keygen") => release::keygen(&args),
+        Some("conformance") => conformance::run(&args),
         Some("-V" | "--version") => {
             println!("arcade-link {}", env!("CARGO_PKG_VERSION"));
             Ok(())
