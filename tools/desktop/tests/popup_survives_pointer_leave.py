@@ -37,10 +37,27 @@ if mode == "clipboard":
     # picker (the same picker and blur handler as the Ctrl+Shift+Space path),
     # without depending on the D-Bus hand-off's timing.
     log = open(d.artifact("clipboard.log"), "wb")
+    # A fresh profile opens on first-run setup; the picker needs an identity.
+    # Set it up as a user would: the "Start on this device" card, then the
+    # form's "Start on this device" button (Tab past the name field and Back).
+    subprocess.Popen([str(installed)], env=env, stdout=log, stderr=subprocess.STDOUT)
+    main = d.wait_window(cls="dev.arcade.Clipboard", timeout=60)
+    time.sleep(12)  # first frames under software GL
+    d.screenshot("clipboard-setup")
+    main = d.find_window(cls="dev.arcade.Clipboard")
+    cx, cy = d.center_of(main)
+    d.click(cx - 146, cy + 26)  # the card, left of centre (welcome.dart layout)
+    time.sleep(3)
+    d.screenshot("clipboard-setup-form")
+    for key in ("Tab", "Tab", "Return"):
+        d.send_shortcut(main["address"], "", key)
+        time.sleep(0.4)
+    time.sleep(8)
+    d.screenshot("clipboard-setup-done")
+    # Ask the running app for the picker (the Ctrl+Shift+Space command).
     subprocess.Popen([str(installed), "--overlay"], env=env, stdout=log, stderr=subprocess.STDOUT)
-    timeout = 90  # start-up and first frames under software GL
-    # The app maps its main window first ("Opening Arcade Clipboard..."); the
-    # picker is the window it re-maps under this title (desktop_adapter.dart).
+    timeout = 60
+    # The picker is the window it re-maps under this title (desktop_adapter.dart).
     is_popup = lambda c: c.get("title") == "Arcade Clipboard Picker"
 else:
     args = [sys.executable, str(Path(__file__).with_name("stub_popup.py"))] + sys.argv[2:]

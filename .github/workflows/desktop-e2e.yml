@@ -27,7 +27,7 @@ jobs:
           for i in 1 2 3; do
             sudo apt-get update -o Acquire::Retries=3 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
               dbus dbus-x11 python3-dbus python3-gi gir1.2-gtk-3.0 libwayland-dev libwayland-bin pkg-config fuse3 libfuse2t64 \
-              libegl1 libegl-mesa0 libgles2 libgl1-mesa-dri && break
+              libegl1 libegl-mesa0 libgles2 libgl1-mesa-dri gnome-keyring && break
             sleep $((i * 10))
           done
           command -v dbus-run-session wayland-scanner pkg-config
