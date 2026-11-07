@@ -39,7 +39,7 @@ if mode == "clipboard":
     log = open(d.artifact("clipboard.log"), "wb")
     # A fresh profile opens on first-run setup; the picker needs an identity.
     # Set it up as a user would: the "Start on this device" card, then the
-    # form's "Start on this device" button (Tab past the name field and Back).
+    # form's primary "Start on this device" button.
     subprocess.Popen([str(installed)], env=env, stdout=log, stderr=subprocess.STDOUT)
     main = d.wait_window(cls="dev.arcade.Clipboard", timeout=60)
     time.sleep(12)  # first frames under software GL
@@ -49,9 +49,7 @@ if mode == "clipboard":
     d.click(cx - 146, cy + 26)  # the card, left of centre (welcome.dart layout)
     time.sleep(3)
     d.screenshot("clipboard-setup-form")
-    for key in ("Tab", "Tab", "Return"):
-        d.send_shortcut(main["address"], "", key)
-        time.sleep(0.4)
+    d.click(cx + 209, cy + 147)  # the form's primary "Start on this device" button
     time.sleep(8)
     d.screenshot("clipboard-setup-done")
     # Ask the running app for the picker (the Ctrl+Shift+Space command).
