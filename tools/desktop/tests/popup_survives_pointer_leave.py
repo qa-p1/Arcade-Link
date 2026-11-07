@@ -38,17 +38,21 @@ if mode == "clipboard":
     # without depending on the D-Bus hand-off's timing.
     log = open(d.artifact("clipboard.log"), "wb")
     subprocess.Popen([str(installed), "--overlay"], env=env, stdout=log, stderr=subprocess.STDOUT)
-    timeout = 60  # first frame under software GL
+    timeout = 90  # start-up and first frames under software GL
+    # The app maps its main window first ("Opening Arcade Clipboard..."); the
+    # picker is the window it re-maps under this title (desktop_adapter.dart).
+    is_popup = lambda c: c.get("title") == "Arcade Clipboard Picker"
 else:
     args = [sys.executable, str(Path(__file__).with_name("stub_popup.py"))] + sys.argv[2:]
     subprocess.Popen(args)
     timeout = 20
+    is_popup = lambda c: c["address"] not in before
 
 def still_mapped() -> bool:
     return any(c["address"] == popup["address"] for c in d.clients())
 
 
-popup = d.wait(lambda: next((c for c in d.clients() if c["address"] not in before), None), timeout, "the popup window")
+popup = d.wait(lambda: next((c for c in d.clients() if is_popup(c)), None), timeout, "the popup window")
 d.screenshot(f"{mode}-popup-open")
 print(f"popup: class={popup['class']} title={popup['title']!r} at={popup['at']} size={popup['size']} floating={popup['floating']}")
 time.sleep(0.6)
