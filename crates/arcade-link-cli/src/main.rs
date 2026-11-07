@@ -143,9 +143,13 @@ fn main() -> ExitCode {
             println!("arcade-link {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        _ => {
+        None | Some("-h" | "--help" | "help") => {
             println!("{HELP}");
             Ok(())
+        }
+        Some(other) => {
+            eprintln!("arcade-link: unknown command {other:?}\n\n{HELP}");
+            return ExitCode::from(2);
         }
     };
     match r {

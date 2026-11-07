@@ -123,3 +123,13 @@ fn keygen_never_runs_without_a_destination_for_the_secret() {
     assert!(!out.status.success());
     assert!(out.stdout.is_empty());
 }
+
+#[test]
+fn unknown_commands_print_usage_and_exit_2() {
+    let out = run(&["definitely-not-a-command"], None);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("USAGE"));
+    let help = run(&["--help"], None);
+    assert_eq!(help.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("USAGE"));
+}
