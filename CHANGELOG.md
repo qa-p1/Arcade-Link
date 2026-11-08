@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-11-08
+
 ### Fixed
 - Design kit: a tab panel focused from the keyboard shows the focus ring (`.tab-panel:focus` removed it for every
   focus, so Tab could land on an invisible stop). Found by Tools' accessibility checks.
