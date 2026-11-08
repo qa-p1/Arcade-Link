@@ -10,7 +10,7 @@ on:
       appimage-url: { type: string, default: "" }
       artifact: { type: string, default: "", description: "Artifact holding the AppImage (instead of a URL)" }
       expect-exit: { type: number, default: 0, description: "Exit code the test must end with (10: a rule is broken, to prove a known bug)" }
-      link-ref: { type: string, default: v1.0.2 }
+      link-ref: { type: string, default: v1.0.3 }
       hyprland: { type: string, default: v0.56.1, description: "0.56.x tag (v0.56.2's flake does not build: docs/v1/DECISIONS.md D10)" }
       name: { type: string, default: e2e, description: "Names the uploaded screenshots and logs" }
 jobs:
@@ -117,17 +117,23 @@ jobs:
           gc-max-store-size-linux: 6G
       - name: Virtual pointer
         run: bash .arcade-link/tools/desktop/build-vpointer.sh
+      # A released AppImage never changes under its URL: cached, so a GitHub download outage cannot fail the gate.
+      - if: inputs.appimage-url != ''
+        uses: actions/cache@v4
+        with: { path: "${{ runner.temp }}/app", key: "desktop-app-${{ inputs.appimage-url }}" }
       - name: The app
         if: inputs.appimage-url != '' || inputs.artifact != ''
         timeout-minutes: 5
         env:
           URL: ${{ inputs.appimage-url }}
         run: |
-          mkdir -p app
-          if [ -n "$URL" ]; then curl -fsSL --retry 3 --max-time 600 -o "app/$(basename "$URL")" "$URL"; fi
+          # Outside the checkout: a file inside a git work tree counts as a dev build, which refuses to install.
+          mkdir -p "$RUNNER_TEMP/app"
+          file="$RUNNER_TEMP/app/$(basename "$URL")"
+          if [ -n "$URL" ] && [ ! -s "$file" ]; then curl -fsSL --retry 5 --retry-delay 10 --max-time 600 -o "$file" "$URL"; fi
       - if: inputs.artifact != ''
         uses: actions/download-artifact@v4
-        with: { name: "${{ inputs.artifact }}", path: app }
+        with: { name: "${{ inputs.artifact }}", path: "${{ runner.temp }}/app" }
       - name: Run ${{ inputs.test }} in headless Hyprland
         env:
           TEST: ${{ inputs.test }}
@@ -135,7 +141,7 @@ jobs:
           EXPECT_EXIT: ${{ inputs.expect-exit }}
           ARCADE_DESKTOP_ARTIFACTS: ${{ github.workspace }}/desktop-artifacts
         run: |
-          APP=$(find app -name '*.AppImage' 2>/dev/null | head -1); [ -n "$APP" ] && chmod +x "$APP" && APP=$(realpath "$APP")
+          APP=$(find "$RUNNER_TEMP/app" -name '*.AppImage' 2>/dev/null | head -1); [ -n "$APP" ] && chmod +x "$APP" && APP=$(realpath "$APP")
           export APP
           case "$TEST" in link:*) script=".arcade-link/${TEST#link:}" ;; *) script="$TEST" ;; esac
           status=0

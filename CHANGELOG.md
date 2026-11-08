@@ -5,6 +5,25 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.4] — 2026-11-08
+
+### Added
+- `tools/fleet/perf_budget.py`: one app's performance budgets in CI (RT-6, PERF-2) under Xvfb, in a private profile:
+  cold start and show latency (launch → window mapped), idle CPU and wakeups in the background, with the default page
+  open for 60 s and after closing it, and disk use. Limits live in the `perf` block of `budgets.json` (Tools first).
+
+### Fixed
+- `desktop-e2e.yml` and `desktop-tier2.yml` put the app under `$RUNNER_TEMP`, outside the caller's checkout. Inside a
+  git work tree the AppImage counted as a dev build, so a harness test's `--install` was refused (seen in Tools).
+- CI no longer fails on a GitHub download outage (HTTP 504 for 10+ minutes): appimagetool and its runtime for the template,
+  and a released AppImage the desktop workflows fetch by URL, are cached and retried with a delay.
+- Template: the AppImage's root icon and `.DirIcon` are a PNG (appimagetool warns that it will refuse an SVG
+  `.DirIcon`); the SVG stays in `hicolor/scalable`. `build-appimage.sh` takes `APPIMAGE_RUNTIME`, a downloaded type2
+  runtime, so appimagetool need not fetch it on every build.
+
+### Changed
+- The template and the reusable workflows' default `link-ref` are v1.0.3.
+
 ## [1.0.3] — 2026-11-08
 
 ### Changed

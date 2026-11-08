@@ -14,6 +14,11 @@
       "fleet": {"pss": 525, "rss": 690}
     },
     "open": {"tools": {"pss": 281, "rss": 310}, "fleet": {"pss": 720, "rss": 950}},
-    "closed": {"tools": {"pss": 30, "rss": 50}, "fleet": {"pss": 525, "rss": 690}}
+    "closed": {"tools": {"pss": 30, "rss": 50}, "fleet": {"pss": 525, "rss": 690}},
+    "perf": {
+      "_doc": "perf_budget.py (ARCADE_APP.md RT-6, PERF-2), per app: ms from launch to the window being mapped (cold: nothing of the app running; show: running in the background with its window closed and its memory released); idle CPU in % of one core and wakeups (context switches per second, whole tree) in the background, with the default page open for 60 s and after closing it; disk_mb for everything the app puts in a fresh profile (installed copy, unpacked runtime, data, caches). Set from measurements with headroom; Xvfb/llvmpipe is slower than a GPU desktop.",
+      "tools": {"cold_start_ms": 1500, "show_ms": 1000, "background_cpu_pct": 0.5, "background_wakeups": 5, "open_cpu_pct": 2.0, "open_wakeups": 20,
+                "closed_cpu_pct": 0.5, "closed_wakeups": 5, "disk_mb": 400}
+    }
   }
 }

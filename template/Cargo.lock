@@ -84,8 +84,8 @@ dependencies = [
 
 [[package]]
 name = "arcade-link"
-version = "1.0.2"
-source = "git+https://github.com/qa-p1/Arcade-Link?tag=v1.0.2#3e4aa6c858cba284550e67746a173e50cf076982"
+version = "1.0.3"
+source = "git+https://github.com/qa-p1/Arcade-Link?tag=v1.0.3#4cf9eff509d2c8b1fe3b3bee85072d7c73eac468"
 dependencies = [
  "egui",
  "getrandom 0.4.3",
