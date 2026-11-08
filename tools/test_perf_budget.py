@@ -19,8 +19,22 @@ class PerfBudget(unittest.TestCase):
     def test_counters_read_this_process(self):
         ticks, switches = perf_budget.counters(os.getpid())
         self.assertGreaterEqual(ticks, 0)
-        self.assertGreater(switches, 0)
+        self.assertIn(os.getpid(), switches)
+        self.assertGreater(sum(switches.values()), 0)
         self.assertIsNone(perf_budget.counters(2**22 + 12345))
+
+    def test_a_thread_or_process_that_exits_never_makes_the_total_negative(self):
+        # pid 10: thread 11 exits after the first sample having switched 500 times in its life (5 during the window);
+        # thread 12 starts during the window; pid 20 starts during the window and exits before the last sample.
+        samples = [
+            {10: (100, {10: 50, 11: 495})},
+            {10: (104, {10: 52, 11: 500, 12: 3}), 20: (2, {20: 7})},
+            {10: (110, {10: 55, 12: 9})},
+        ]
+        ticks, switches = perf_budget.tree_delta(samples)
+        self.assertEqual(ticks, 10 + 2)
+        self.assertEqual(switches, (55 - 50) + (500 - 495) + 9 + 7)
+        # The old whole-tree difference: (55 + 9) - (50 + 495) = -481.
 
     def test_every_perf_budget_names_a_metric_the_tool_reports(self):
         metrics = {"cold_start_ms", "show_ms", "disk_mb"} | {f"{s}_{m}" for s in ("background", "open", "closed")
