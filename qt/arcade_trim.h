@@ -58,7 +58,11 @@ static inline void arcade_trim(void)
     arcade_trim_finish(&vma);
 }
 
-/* W3b: page out private anonymous memory while the app is hidden. */
+/* W3b: page out this process's private memory while the app is hidden: the
+ * heap and anonymous memory, and the pages of private file mappings (written
+ * ones such as RELRO go to swap, clean ones are read back from the file).
+ * MADV_PAGEOUT never changes contents. Stacks, guard pages and the kernel's
+ * mappings are left alone. */
 static inline void arcade_page_out_hidden(void)
 {
 #ifndef MADV_PAGEOUT
@@ -71,9 +75,12 @@ static inline void arcade_page_out_hidden(void)
     while (fgets(line, sizeof line, maps)) {
         unsigned long start = 0, end = 0;
         char perms[8] = "";
-        if (sscanf(line, "%lx-%lx %7s", &start, &end, perms) != 3 || strncmp(perms, "rw-p", 4) != 0)
+        char name[256] = "";
+        if (sscanf(line, "%lx-%lx %7s %*s %*s %*s %255s", &start, &end, perms, name) < 3)
             continue;
-        if (strchr(line, '/') || strchr(line, '['))
+        if (perms[3] != 'p' || perms[0] == '-')
+            continue;
+        if (name[0] == '[' && strcmp(name, "[heap]") != 0 && strncmp(name, "[anon", 5) != 0)
             continue;
         madvise((void *)start, end - start, MADV_PAGEOUT);
     }

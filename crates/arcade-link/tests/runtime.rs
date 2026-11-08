@@ -264,6 +264,31 @@ fn trimming_never_reverts_a_read_only_mapping_that_was_written() {
     }
 }
 
+/// W3b pages out every private mapping of a hidden app, including written pages of file mappings (RELRO, `.data`);
+/// `MADV_PAGEOUT` must leave every byte as it was.
+#[cfg(target_os = "linux")]
+#[test]
+fn paging_out_a_hidden_app_keeps_every_private_mapping_intact() {
+    const LEN: usize = 64 << 10;
+    let heap: Vec<u8> = (0..LEN).map(|i| (i % 251) as u8).collect();
+    let relro = map_file("pageout-relro", LEN, libc::PROT_READ | libc::PROT_WRITE);
+    let data = map_file("pageout-data", LEN, libc::PROT_READ | libc::PROT_WRITE);
+    // SAFETY: writes inside the mappings created above; one then becomes read-only like RELRO.
+    unsafe {
+        for i in (0..LEN).step_by(512) {
+            *relro.add(i) = 7;
+            *data.add(i) = 9;
+        }
+        assert_eq!(libc::mprotect(relro as *mut libc::c_void, LEN, libc::PROT_READ), 0);
+    }
+    runtime::page_out_hidden();
+    for i in (0..LEN).step_by(512) {
+        assert_eq!(unsafe { *relro.add(i) }, 7, "RELRO-like page changed at {i}");
+        assert_eq!(unsafe { *data.add(i) }, 9, ".data-like page changed at {i}");
+    }
+    assert!(heap.iter().enumerate().all(|(i, b)| *b == (i % 251) as u8), "heap changed");
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn an_appimage_app_relaunches_from_its_unpacked_copy_once() {

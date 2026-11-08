@@ -2,6 +2,12 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-08 (1.0.3)
+
+**v1.0.2 tagged** at 3e4aa6c (CI, Ecosystem e2e and the desktop harness green on that commit); template and the
+reusable workflows' `link-ref` moved to it (#49). **1.0.3 prepared** (#50): W3b page-out covers every private mapping
+of a hidden app (Tools' CI after-close PSS was 36 vs 30), and Tools' window-open cap comes from CI (Tools D10).
+
 ## 2026-11-08 (1.0.2)
 
 **1.0.2 prepared**: PR #47 merged (19a4025) with the fixes found in Tools' Round 5: design-kit tab-panel focus ring,

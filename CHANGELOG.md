@@ -5,7 +5,19 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-11-08
+
 ### Changed
+- W3b page-out (`runtime::page_out_hidden`, `arcade_page_out_hidden()`) now covers every private mapping of a hidden
+  app: the heap (skipped before, with every other `[...]` name), anonymous memory, and the pages of private file
+  mappings (written RELRO and `.data` go to swap, clean pages are read back from the file). `MADV_PAGEOUT` never
+  changes contents; stacks, guard pages and the kernel's mappings are left alone. Measured on a Tools AppImage
+  (Xvfb, with swap): background PSS 15 → 4 MB, 20 s after closing its window 29–34 → 12 MB, reopen latency
+  unchanged (1.41 → 1.40 s over 8 reopens).
+- `tools/fleet/budgets.json`: Tools' window-open cap on Xvfb is 281 MB PSS (was 225, the audit's lab estimate). The
+  value is the higher of two CI runs (267.7) plus 5 %. With the window open, WebKitWebProcess keeps about 123 MB of
+  in-use malloc for llvmpipe compositing, which only UX trades (compositing off, paging out the open window) would
+  remove (Tools D10). RSS stays at 310.
 - The template pins `v1.0.2` (Cargo, lockfile and workflows); the reusable workflows' `link-ref` default is now
   `v1.0.2`.
 

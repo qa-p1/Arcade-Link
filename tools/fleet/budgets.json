@@ -1,5 +1,5 @@
 {
-  "_doc": "MB, PSS/RSS per app INCLUDING its FUSE stub (0 once U1 ships). 'target' = the owner's goal on a real GPU desktop, background state: per-app budgets sum to 365 PSS / 484 RSS, fleet cap 500/500; they assume U1+W1+W0+WH1+CB1a+W3b (memory.md section 4). 'xvfb' = what CI can enforce under llvmpipe: identical except Clipboard 260/335 (the Flutter engine is ~2.3x larger on llvmpipe; drop this allowance when the engine leaves the resident process, CB1b). 'open' and 'closed' caps are ratchets for the one-window case (WebKit window RSS < 500 is not reachable without a UX trade-off, section 6).",
+  "_doc": "MB, PSS/RSS per app INCLUDING its FUSE stub (0 once U1 ships). 'target' = the owner's goal on a real GPU desktop, background state: per-app budgets sum to 365 PSS / 484 RSS, fleet cap 500/500; they assume U1+W1+W0+WH1+CB1a+W3b (memory.md section 4). 'xvfb' = what CI can enforce under llvmpipe: identical except Clipboard 260/335 (the Flutter engine is ~2.3x larger on llvmpipe; drop this allowance when the engine leaves the resident process, CB1b). 'open' and 'closed' caps are ratchets for the one-window case, set from CI measurements and only lowered (Tools open PSS 281 = the higher of two CI runs on Link 1.0.2, 267.7, plus 5 %; Tools docs/v1/DECISIONS.md D10) (WebKit window RSS < 500 is not reachable without a UX trade-off, section 6).",
   "target": {
     "background": {
       "tools": {"pss": 30, "rss": 50}, "box": {"pss": 60, "rss": 80}, "look": {"pss": 50, "rss": 70}, "find": {"pss": 42, "rss": 48},
@@ -13,7 +13,7 @@
       "lens": {"pss": 8, "rss": 8}, "clipboard": {"pss": 260, "rss": 335}, "shelf": {"pss": 40, "rss": 48}, "wheel": {"pss": 30, "rss": 50},
       "fleet": {"pss": 525, "rss": 690}
     },
-    "open": {"tools": {"pss": 225, "rss": 310}, "fleet": {"pss": 720, "rss": 950}},
+    "open": {"tools": {"pss": 281, "rss": 310}, "fleet": {"pss": 720, "rss": 950}},
     "closed": {"tools": {"pss": 30, "rss": 50}, "fleet": {"pss": 525, "rss": 690}}
   }
 }

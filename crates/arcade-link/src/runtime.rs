@@ -391,27 +391,31 @@ pub fn release_webkit() -> usize {
     n
 }
 
-/// W3b: asks the kernel to page out this process's private anonymous memory
-/// while it is hidden. Free unless the machine is under memory pressure.
+/// W3b: asks the kernel to page out this process's private memory while it is
+/// hidden: the heap and anonymous memory, and the pages a private file mapping
+/// holds (written ones such as RELRO and `.data` go to swap, clean ones are
+/// dropped and read back from the file). `MADV_PAGEOUT` never changes contents,
+/// so nothing is lost; it costs nothing unless the memory is needed again.
+/// Stacks, guard pages and the kernel's own mappings are left alone.
 pub fn page_out_hidden() {
     #[cfg(target_os = "linux")]
-    for (start, len) in mappings(|perms, file| !file && perms.starts_with("rw-p")) {
+    for (start, len) in private_mappings() {
         // SAFETY: MADV_PAGEOUT is advisory and keeps contents intact.
         unsafe { libc::madvise(start as *mut libc::c_void, len, libc::MADV_PAGEOUT) };
     }
 }
 
 #[cfg(target_os = "linux")]
-fn mappings(keep: impl Fn(&str, bool) -> bool) -> Vec<(usize, usize)> {
+fn private_mappings() -> Vec<(usize, usize)> {
     let Ok(maps) = std::fs::read_to_string("/proc/self/maps") else { return Vec::new() };
     maps.lines()
         .filter_map(|line| {
             let mut f = line.split_whitespace();
             let range = f.next()?;
             let perms = f.next()?;
-            let path = f.nth(3).unwrap_or("");
-            let file = path.starts_with('/') && !line.ends_with("(deleted)");
-            if path.starts_with('[') || !keep(perms, file) {
+            let name = f.nth(3).unwrap_or("");
+            let special = name.starts_with('[') && name != "[heap]" && !name.starts_with("[anon");
+            if !perms.ends_with('p') || perms.starts_with('-') || special {
                 return None;
             }
             let (a, b) = range.split_once('-')?;

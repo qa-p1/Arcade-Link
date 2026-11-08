@@ -83,6 +83,33 @@ private slots:
     QSKIP("Linux only");
 #endif
   }
+
+  // W3b pages out every private mapping, written file pages included; nothing may change.
+  void pagingOutKeepsEveryPrivateMappingIntact() {
+#if defined(__linux__)
+    const size_t len = 64u << 10;
+    QByteArray heap(int(len), Qt::Uninitialized);
+    for (int i = 0; i < heap.size(); ++i)
+      heap[i] = char(i % 251);
+    auto *relro = mapFile("pageout-relro", len, PROT_READ | PROT_WRITE);
+    auto *data = mapFile("pageout-data", len, PROT_READ | PROT_WRITE);
+    QVERIFY(relro && data);
+    for (size_t i = 0; i < len; i += 512) {
+      relro[i] = 7;
+      data[i] = 9;
+    }
+    QCOMPARE(mprotect(relro, len, PROT_READ), 0);
+    arcade_page_out_hidden();
+    for (size_t i = 0; i < len; i += 512) {
+      QVERIFY2(relro[i] == 7, "RELRO-like page changed");
+      QVERIFY2(data[i] == 9, ".data-like page changed");
+    }
+    for (int i = 0; i < heap.size(); ++i)
+      QVERIFY2(heap[i] == char(i % 251), "heap changed");
+#else
+    QSKIP("Linux only");
+#endif
+  }
 };
 QTEST_GUILESS_MAIN(TrimTest)
 #include "tst_Trim.moc"
