@@ -8,6 +8,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [1.0.5] — 2026-11-08
 
 ### Fixed
+- `perf_budget.py` counts wakeups per thread, sampled every second. It differenced whole-tree totals, so every
+  thread that exited during a window took its lifetime of context switches out of the count: Tools' open window
+  read -2.3 wakeups/s (and 2.2 locally) where it does about 11, and a negative figure passes any budget.
 - Tier 2 `smoke.py` waits up to 45 s for `--status` to say running instead of sleeping 8 s and asking once: a
   first start that unpacks the app before its resident starts (Tools' U1) could miss the window on a slow runner
   (seen once on sway). It then checks the app is still running 5 s later, reports a hanging `--status` as a

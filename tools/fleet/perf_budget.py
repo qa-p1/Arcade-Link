@@ -30,18 +30,41 @@ TICK = os.sysconf('SC_CLK_TCK') if hasattr(os, 'sysconf') else 100  # Linux only
 
 
 def counters(pid):
-    """(cpu ticks, context switches) of one process, all threads."""
+    """(cpu ticks of the whole process, {tid: context switches}) of one process.
+
+    The kernel keeps a process's utime/stime across its exited threads, but context switches only per live thread,
+    so they are returned per thread for `Session.idle` to difference thread by thread."""
     try:
         stat = open(f'/proc/{pid}/stat').read()
         fields = stat[stat.rindex(')') + 2:].split()
         ticks = int(fields[11]) + int(fields[12])  # utime, stime (whole process)
-        switches = 0
+        switches = {}
         for tid in os.listdir(f'/proc/{pid}/task'):
             status = fb.kv(f'/proc/{pid}/task/{tid}/status')
-            switches += status.get('voluntary_ctxt_switches', 0) + status.get('nonvoluntary_ctxt_switches', 0)
+            if status:
+                switches[int(tid)] = status.get('voluntary_ctxt_switches', 0) + status.get('nonvoluntary_ctxt_switches', 0)
         return ticks, switches
     except (OSError, ValueError, IndexError):
         return None
+
+
+def tree_delta(samples):
+    """CPU ticks and context switches a tree spent over a series of `{pid: counters(pid)}` samples (oldest first).
+
+    Each process and each thread counts from the first sample it appears in (0 if it started after the first) to the
+    last; one that exits keeps what it did up to its last sample. Differencing whole-tree sums instead goes negative
+    whenever a thread exits (Tools' window read -2.3 wakeups/s), which hides real wakeups."""
+    first_ticks, last_ticks, first_switches, last_switches = {}, {}, {}, {}
+    for index, sample in enumerate(samples):
+        for pid, (ticks, threads) in sample.items():
+            if index == 0:
+                first_ticks[pid] = ticks
+                first_switches.update({(pid, tid): n for tid, n in threads.items()})
+            last_ticks[pid] = ticks
+            last_switches.update({(pid, tid): n for tid, n in threads.items()})
+    ticks = sum(max(0, n - first_ticks.get(pid, 0)) for pid, n in last_ticks.items())
+    switches = sum(max(0, n - first_switches.get(key, 0)) for key, n in last_switches.items())
+    return ticks, switches
 
 
 def over_budget(name, result, limits):
@@ -138,16 +161,15 @@ class Session:
         time.sleep(0.5)
 
     def idle(self, seconds):
-        """CPU % of one core and wakeups per second of the whole tree over `seconds`."""
-        start = {p: c for p in self.pids() if (c := counters(p))}
-        time.sleep(seconds)
-        ticks = switches = 0
-        for p in self.pids():
-            end = counters(p)
-            if not end:
-                continue
-            before = start.get(p, (0, 0))
-            ticks += end[0] - before[0]; switches += end[1] - before[1]
+        """CPU % of one core and wakeups per second of the whole tree over `seconds`, sampled every second so that
+        threads and processes that exit during it keep what they did (`tree_delta`)."""
+        sample = lambda: {p: c for p in self.pids() if (c := counters(p))}  # noqa: E731
+        samples = [sample()]
+        end = time.monotonic() + seconds
+        while (left := end - time.monotonic()) > 0:
+            time.sleep(min(1.0, left))
+            samples.append(sample())
+        ticks, switches = tree_delta(samples)
         return round(ticks / TICK / seconds * 100, 2), round(switches / seconds, 1)
 
     def disk_mb(self):
