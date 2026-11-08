@@ -5,6 +5,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- The template pins `v1.0.1` (Cargo, lockfile and workflows) and passes `link-ref` to Link's reusable workflows
+  explicitly; their `link-ref` default is now `v1.0.1`.
+
 ## [1.0.1] — 2026-11-08
 
 ### Fixed

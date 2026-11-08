@@ -16,6 +16,6 @@ jobs:
         run: echo "version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
   nightly:
     needs: version
-    uses: qa-p1/Arcade-Link/.github/workflows/app-nightly.yml@v1.0.0
-    with: { app: arcade.template, version: "${{ needs.version.outputs.version }}" }
+    uses: qa-p1/Arcade-Link/.github/workflows/app-nightly.yml@v1.0.1
+    with: { link-ref: v1.0.1, app: arcade.template, version: "${{ needs.version.outputs.version }}" }
     secrets: { ARCADE_UPDATE_SIGNING_KEY: "${{ secrets.ARCADE_UPDATE_SIGNING_KEY }}" }

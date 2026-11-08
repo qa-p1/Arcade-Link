@@ -8,7 +8,7 @@ on:
       appimage-url: { type: string, default: "" }
       artifact: { type: string, default: "" }
       show: { type: string, default: "--background", description: "Argument that starts the app (e.g. --show)" }
-      link-ref: { type: string, default: v1.0.0 }
+      link-ref: { type: string, default: v1.0.1 }
 jobs:
   smoke:
     runs-on: ubuntu-24.04

@@ -14,14 +14,14 @@ jobs:
   build: …            # uploads the AppImage as artifact "release-linux"
   popups:
     needs: build
-    uses: qa-p1/Arcade-Link/.github/workflows/desktop-e2e.yml@v1.0.0
+    uses: qa-p1/Arcade-Link/.github/workflows/desktop-e2e.yml@v1.0.1
     with:
       test: tests/desktop/popups.py      # in the app repo; "link:<path>" for a script in Link
       args: '"$APP"'                     # $APP is the AppImage
       artifact: release-linux
   tier2:
     needs: build
-    uses: qa-p1/Arcade-Link/.github/workflows/desktop-tier2.yml@v1.0.0
+    uses: qa-p1/Arcade-Link/.github/workflows/desktop-tier2.yml@v1.0.1
     with: { artifact: release-linux, show: --show }
 ```
 

@@ -10,7 +10,7 @@ on:
       appimage-url: { type: string, default: "" }
       artifact: { type: string, default: "", description: "Artifact holding the AppImage (instead of a URL)" }
       expect-exit: { type: number, default: 0, description: "Exit code the test must end with (10: a rule is broken, to prove a known bug)" }
-      link-ref: { type: string, default: v1.0.0 }
+      link-ref: { type: string, default: v1.0.1 }
       hyprland: { type: string, default: v0.56.1, description: "0.56.x tag (v0.56.2's flake does not build: docs/v1/DECISIONS.md D10)" }
       name: { type: string, default: e2e, description: "Names the uploaded screenshots and logs" }
 jobs:
