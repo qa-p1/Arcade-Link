@@ -674,10 +674,12 @@ pub fn lock(environment: &Environment, id: &str) -> io::Result<AppLock> {
         if file.metadata()?.len() == 0 {
             return Ok(AppLock { file, path });
         }
-        // An uninstall removed this file while we waited for it (`AppLock::retire`).
+        // An uninstall removed this file while we waited for it (`AppLock::retire`): lock the path afresh.
         retired = true;
         drop(file);
-        wait()?;
+        if std::time::Instant::now() >= deadline {
+            return Err(busy());
+        }
     }
 }
 

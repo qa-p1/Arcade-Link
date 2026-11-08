@@ -997,10 +997,9 @@ public:
         return false;
       if (m_file.size() == 0)
         return true;
-      // An uninstall removed this file while we waited for it.
+      // An uninstall removed this file while we waited for it: lock the path afresh.
       retired = true;
       m_file.close();
-      QThread::msleep(100);
     }
   }
 

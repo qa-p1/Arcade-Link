@@ -704,17 +704,21 @@ fn a_waiter_relocks_the_path_after_an_uninstall_retires_the_lock() {
     let e = Environment::under(&root.0);
     let file = e.receipts().path("arcade.find").unwrap().with_extension("lock");
     let held = lock(&e, "arcade.find").unwrap();
-    let released = Arc::new(AtomicBool::new(false));
-    let (env2, released2) = (e.clone(), released.clone());
+    let (acquired, released) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
+    let (env2, acquired2, released2) = (e.clone(), acquired.clone(), released.clone());
     let waiter = std::thread::spawn(move || {
         let second = lock(&env2, "arcade.find").unwrap();
+        acquired2.store(true, Ordering::SeqCst);
         std::thread::sleep(std::time::Duration::from_millis(400));
         released2.store(true, Ordering::SeqCst);
         drop(second);
     });
     std::thread::sleep(std::time::Duration::from_millis(300));
     held.retire();
-    std::thread::sleep(std::time::Duration::from_millis(250));
+    let start = std::time::Instant::now();
+    while !acquired.load(Ordering::SeqCst) && start.elapsed() < std::time::Duration::from_secs(5) {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     assert!(file.is_file(), "the waiter locks a fresh file at the same path");
     // Had the waiter kept the removed file, this would get the new one at once.
     let third = lock(&e, "arcade.find").unwrap();
