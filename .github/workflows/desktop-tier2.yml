@@ -8,7 +8,7 @@ on:
       appimage-url: { type: string, default: "" }
       artifact: { type: string, default: "" }
       show: { type: string, default: "--background", description: "Argument that starts the app (e.g. --show)" }
-      link-ref: { type: string, default: v1.0.2 }
+      link-ref: { type: string, default: v1.0.3 }
 jobs:
   smoke:
     runs-on: ubuntu-24.04
@@ -34,15 +34,16 @@ jobs:
         if: inputs.appimage-url != ''
         timeout-minutes: 5
         env: { URL: "${{ inputs.appimage-url }}" }
-        run: mkdir -p app && curl -fsSL --retry 3 --max-time 600 -o "app/$(basename "$URL")" "$URL"
+        run: mkdir -p "$RUNNER_TEMP/app" && curl -fsSL --retry 3 --max-time 600 -o "$RUNNER_TEMP/app/$(basename "$URL")" "$URL"
       - if: inputs.artifact != ''
         uses: actions/download-artifact@v4
-        with: { name: "${{ inputs.artifact }}", path: app }
+        with: { name: "${{ inputs.artifact }}", path: "${{ runner.temp }}/app" }
       - name: Smoke on ${{ matrix.desktop }}
         env:
           ARCADE_DESKTOP_ARTIFACTS: ${{ github.workspace }}/desktop-artifacts
         run: |
-          app=$(realpath "$(find app -name '*.AppImage' | head -1)"); chmod +x "$app"
+          # Outside the checkout: a file inside a git work tree counts as a dev build, which refuses to install.
+          app=$(realpath "$(find "$RUNNER_TEMP/app" -name '*.AppImage' | head -1)"); chmod +x "$app"
           .arcade-link/tools/desktop/tier2.sh ${{ matrix.desktop }} python3 .arcade-link/tools/desktop/tests/smoke.py "$app" --show "${{ inputs.show }}"
       - uses: actions/upload-artifact@v4
         if: always()

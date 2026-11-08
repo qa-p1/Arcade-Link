@@ -4,6 +4,11 @@ Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
 ## 2026-11-08 (1.0.3)
 
+**v1.0.3 tagged** at 4cf9eff (CI, Ecosystem e2e and the desktop harness green on that commit). Follow-up: template
+and reusable `link-ref` defaults → v1.0.3, and the desktop workflows download the app to `$RUNNER_TEMP` (inside the
+caller's checkout it counted as a dev build and refused `--install`; Tools' Tier 1 test now copies it out anyway).
+The workflow fix reaches apps with the next Link tag.
+
 **v1.0.2 tagged** at 3e4aa6c (CI, Ecosystem e2e and the desktop harness green on that commit); template and the
 reusable workflows' `link-ref` moved to it (#49). **1.0.3 prepared** (#50): W3b page-out covers every private mapping
 of a hidden app (Tools' CI after-close PSS was 36 vs 30), and Tools' window-open cap comes from CI (Tools D10).

@@ -5,6 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- `desktop-e2e.yml` and `desktop-tier2.yml` put the app under `$RUNNER_TEMP`, outside the caller's checkout. Inside a
+  git work tree the AppImage counted as a dev build, so a harness test's `--install` was refused (seen in Tools).
+
+### Changed
+- The template and the reusable workflows' default `link-ref` are v1.0.3.
+
 ## [1.0.3] — 2026-11-08
 
 ### Changed
