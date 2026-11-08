@@ -5,6 +5,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Design kit: a tab panel focused from the keyboard shows the focus ring (`.tab-panel:focus` removed it for every
+  focus, so Tab could land on an invisible stop). Found by Tools' accessibility checks.
+
 ### Changed
 - The template pins `v1.0.1` (Cargo, lockfile and workflows) and passes `link-ref` to Link's reusable workflows
   explicitly; their `link-ref` default is now `v1.0.1`.
