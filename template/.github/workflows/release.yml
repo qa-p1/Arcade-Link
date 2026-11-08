@@ -29,5 +29,5 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
   publish:
     needs: [build, version]
-    uses: qa-p1/Arcade-Link/.github/workflows/app-publish.yml@v1.0.0
-    with: { app: arcade.template, version: "${{ needs.version.outputs.version }}", tag: "${{ inputs.tag }}" }
+    uses: qa-p1/Arcade-Link/.github/workflows/app-publish.yml@v1.0.1
+    with: { link-ref: v1.0.1, app: arcade.template, version: "${{ needs.version.outputs.version }}", tag: "${{ inputs.tag }}" }

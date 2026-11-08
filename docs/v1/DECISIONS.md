@@ -81,6 +81,11 @@ The template pins Arcade Link by `tag = "v1.0.0"` (LINK-2), which cannot resolve
 before building; the committed `Cargo.toml` keeps the tag. `template/Cargo.lock` is committed right after `v1.0.0`
 is tagged, so a repo made from the template builds with `--locked`.
 
+A reusable workflow cannot see the ref it was called at, so its `link-ref` input (the Link checkout that provides
+the CLI) has a default that lags one tag: `@v1.0.1` still defaults to `v1.0.0`. Callers, the template included,
+therefore pass `link-ref` equal to the `@` ref, and the defaults are bumped on main after each tag. Between v1.0.0
+and v1.0.1 the CLI did not change, so nothing built with the lagging default differs.
+
 ## D8 — Design kit: emoji fallback; contrast pairs were already checked
 
 `design/generate.py --check` already enforces WCAG AA (4.5:1) on every text/surface pair and the accent pairs in
