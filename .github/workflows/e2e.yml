@@ -52,7 +52,7 @@ jobs:
       - name: Coverage table
         if: always()
         run: python3 tools/e2e_coverage.py target/e2e-reports | tee -a "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-contract-results
@@ -74,7 +74,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 tools/e2e_artifacts.py --pick-only --output target/fleet-pick
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: fleet-pick
           path: target/fleet-pick/fleet.json
@@ -133,7 +133,7 @@ jobs:
           mkdir -p target/dev-build/$(dirname "$bin")
           cp "target/fleet/${{ matrix.app }}/sources/$bin" "target/dev-build/$bin"
           echo "${{ steps.source.outputs.sha }}" > target/dev-build/COMMIT
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dev-build-${{ matrix.app }}
           path: target/dev-build/
@@ -238,7 +238,7 @@ jobs:
       - name: Coverage table
         if: always()
         run: python3 tools/e2e_coverage.py target/e2e-reports --fleet target/fleet/fleet.json | tee -a "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-real-${{ matrix.group }}
