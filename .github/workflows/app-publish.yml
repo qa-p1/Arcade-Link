@@ -11,7 +11,7 @@ on:
       channel: { type: string, default: test }
       artifacts: { type: string, default: "release-*" }
       draft: { type: boolean, default: false }
-      link-ref: { type: string, default: v1.0.1 }
+      link-ref: { type: string, default: v1.0.2 }
     secrets:
       ARCADE_UPDATE_SIGNING_KEY: { required: false }
 permissions:
