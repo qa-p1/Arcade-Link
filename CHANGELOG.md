@@ -8,6 +8,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Design kit: a tab panel focused from the keyboard shows the focus ring (`.tab-panel:focus` removed it for every
   focus, so Tab could land on an invisible stop). Found by Tools' accessibility checks.
+- Qt tray host: when the startup gate decided first (a slow machine), the worker's late undecided report put the
+  state back to `none` and emitted `stateChanged`; a decided state now only changes to another decided one.
 
 ### Changed
 - The template pins `v1.0.1` (Cargo, lockfile and workflows) and passes `link-ref` to Link's reusable workflows
