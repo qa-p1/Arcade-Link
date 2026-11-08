@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-11-08
+
 ### Changed
 - W3b page-out (`runtime::page_out_hidden`, `arcade_page_out_hidden()`) now covers every private mapping of a hidden
   app: the heap (skipped before, with every other `[...]` name), anonymous memory, and the pages of private file
