@@ -2,6 +2,14 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-08 (1.0.2)
+
+**1.0.2 prepared**: PR #47 merged (19a4025) with the fixes found in Tools' Round 5: design-kit tab-panel focus ring,
+Qt tray startup race, trim that drops clean `r--p` data and no longer reverts written code pages, and a clean
+uninstall (lock file retired under the lock; empty icon/desktop caches removed), each with a test that failed first.
+Version 1.0.2, CHANGELOG dated. Next: release PR to main, desktop harness on main, "Tag a release" `v1.0.2`, then
+the template and Tools move to it.
+
 ## 2026-11-08
 
 **1.0.1 prepared** on the branch: version 1.0.1, CHANGELOG dated. Contents: the legacy-migration archive fix (Tools
