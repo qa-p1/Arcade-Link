@@ -117,6 +117,10 @@ jobs:
           gc-max-store-size-linux: 6G
       - name: Virtual pointer
         run: bash .arcade-link/tools/desktop/build-vpointer.sh
+      # A released AppImage never changes under its URL: cached, so a GitHub download outage cannot fail the gate.
+      - if: inputs.appimage-url != ''
+        uses: actions/cache@v4
+        with: { path: "${{ runner.temp }}/app", key: "desktop-app-${{ inputs.appimage-url }}" }
       - name: The app
         if: inputs.appimage-url != '' || inputs.artifact != ''
         timeout-minutes: 5
@@ -125,7 +129,8 @@ jobs:
         run: |
           # Outside the checkout: a file inside a git work tree counts as a dev build, which refuses to install.
           mkdir -p "$RUNNER_TEMP/app"
-          if [ -n "$URL" ]; then curl -fsSL --retry 3 --max-time 600 -o "$RUNNER_TEMP/app/$(basename "$URL")" "$URL"; fi
+          file="$RUNNER_TEMP/app/$(basename "$URL")"
+          if [ -n "$URL" ] && [ ! -s "$file" ]; then curl -fsSL --retry 5 --retry-delay 10 --max-time 600 -o "$file" "$URL"; fi
       - if: inputs.artifact != ''
         uses: actions/download-artifact@v4
         with: { name: "${{ inputs.artifact }}", path: "${{ runner.temp }}/app" }

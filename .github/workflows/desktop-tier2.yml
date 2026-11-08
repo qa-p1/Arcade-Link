@@ -30,11 +30,17 @@ jobs:
             sleep $((i * 10))
           done
           command -v sway kwin_wayland mutter Xvfb openbox
+      # A released AppImage never changes under its URL: cached, so a GitHub download outage cannot fail the gate.
+      - if: inputs.appimage-url != ''
+        uses: actions/cache@v4
+        with: { path: "${{ runner.temp }}/app", key: "desktop-app-${{ inputs.appimage-url }}" }
       - name: The app
         if: inputs.appimage-url != ''
         timeout-minutes: 5
         env: { URL: "${{ inputs.appimage-url }}" }
-        run: mkdir -p "$RUNNER_TEMP/app" && curl -fsSL --retry 3 --max-time 600 -o "$RUNNER_TEMP/app/$(basename "$URL")" "$URL"
+        run: |
+          mkdir -p "$RUNNER_TEMP/app"; file="$RUNNER_TEMP/app/$(basename "$URL")"
+          [ -s "$file" ] || curl -fsSL --retry 5 --retry-delay 10 --max-time 600 -o "$file" "$URL"
       - if: inputs.artifact != ''
         uses: actions/download-artifact@v4
         with: { name: "${{ inputs.artifact }}", path: "${{ runner.temp }}/app" }

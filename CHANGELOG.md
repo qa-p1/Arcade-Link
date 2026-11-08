@@ -13,6 +13,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Fixed
 - `desktop-e2e.yml` and `desktop-tier2.yml` put the app under `$RUNNER_TEMP`, outside the caller's checkout. Inside a
   git work tree the AppImage counted as a dev build, so a harness test's `--install` was refused (seen in Tools).
+- CI no longer fails on a GitHub download outage (HTTP 504 for 10+ minutes): appimagetool for the template, and a
+  released AppImage the desktop workflows fetch by URL, are cached and retried with a delay.
 
 ### Changed
 - The template and the reusable workflows' default `link-ref` are v1.0.3.
