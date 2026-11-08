@@ -5,6 +5,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.5] — 2026-11-08
+
+### Fixed
+- Tier 2 `smoke.py` waits up to 45 s for `--status` to say running instead of sleeping 8 s and asking once: a
+  first start that unpacks the app before its resident starts (Tools' U1) could miss the window on a slow runner
+  (seen once on sway). It then checks the app is still running 5 s later, reports a hanging `--status` as a
+  problem instead of a traceback, and removes its temporary home.
+
 ## [1.0.4] — 2026-11-08
 
 ### Added

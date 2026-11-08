@@ -178,10 +178,11 @@ jobs:
         with:
           version: '6.8.*'
           cache: true
-      # Some ubuntu-24.04 images ship a partially installed 1.88.0; rustup's
-      # recovery then fails on a leftover bin/cargo-clippy. Start clean.
+      # Some runner images (ubuntu-24.04, and macos-latest since 2026-11-08) ship a
+      # partially installed 1.88.0; rustup then fails ("the toolchain installation was
+      # interrupted", or a leftover bin/cargo-clippy). Start clean on every OS.
       - name: Remove a partially installed Rust 1.88.0
-        if: runner.os == 'Linux'
+        shell: bash
         run: rustup toolchain uninstall 1.88.0 || true
       - uses: dtolnay/rust-toolchain@v1
         with:

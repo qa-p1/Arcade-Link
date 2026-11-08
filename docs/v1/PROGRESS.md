@@ -2,6 +2,13 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-08 (after 1.0.4)
+
+**v1.0.4 tagged** on a076adb (the merge of PR #51) through "Tag a release", after CI, Ecosystem e2e and the
+desktop harness passed on it; Tools moved to it. Next: Tier 2 `smoke.py` polls `--status` (a fixed 8 s sleep
+missed Tools' first start once on sway): **1.0.5 prepared** in PR #52; tag after the merge commit passes CI,
+e2e and the harness on main.
+
 ## 2026-11-08 (1.0.4)
 
 **1.0.4 prepared** in PR #51 (version bump on top of ac5ea80, whose CI, Ecosystem e2e and harness passed after
