@@ -6,6 +6,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- W3b page-out (`runtime::page_out_hidden`, `arcade_page_out_hidden()`) now covers every private mapping of a hidden
+  app: the heap (skipped before, with every other `[...]` name), anonymous memory, and the pages of private file
+  mappings (written RELRO and `.data` go to swap, clean pages are read back from the file). `MADV_PAGEOUT` never
+  changes contents; stacks, guard pages and the kernel's mappings are left alone. Measured on a Tools AppImage
+  (Xvfb, with swap): background PSS 15 → 4 MB, 20 s after closing its window 29–34 → 12 MB, reopen latency
+  unchanged (1.41 → 1.40 s over 8 reopens).
 - The template pins `v1.0.2` (Cargo, lockfile and workflows); the reusable workflows' `link-ref` default is now
   `v1.0.2`.
 
