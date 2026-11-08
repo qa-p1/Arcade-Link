@@ -279,16 +279,24 @@ fn an_appimage_app_relaunches_from_its_unpacked_copy_once() {
     let data = dir.join("data");
 
     let run = || {
-        Command::new(appdir.join("usr/bin/app"))
-            .args(["--exact", "child", "--nocapture", "--test-threads=1"])
-            .env(ROLE, "unpack")
-            .env(DIR, &dir)
-            .env("APPIMAGE", &appimage)
-            .env("APPDIR", &appdir)
-            .env("XDG_DATA_HOME", &data)
-            .env_remove(runtime::UNPACKED_ENV)
-            .output()
-            .unwrap()
+        // A test on another thread that forks while `copy` above still has the file open for writing makes exec
+        // fail with ETXTBSY until that child execs; wait it out.
+        for _ in 0..100 {
+            match Command::new(appdir.join("usr/bin/app"))
+                .args(["--exact", "child", "--nocapture", "--test-threads=1"])
+                .env(ROLE, "unpack")
+                .env(DIR, &dir)
+                .env("APPIMAGE", &appimage)
+                .env("APPDIR", &appdir)
+                .env("XDG_DATA_HOME", &data)
+                .env_remove(runtime::UNPACKED_ENV)
+                .output()
+            {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => std::thread::sleep(std::time::Duration::from_millis(20)),
+                out => return out.unwrap(),
+            }
+        }
+        panic!("the copied test binary stayed busy");
     };
     let out = run();
     assert_eq!(out.status.code(), Some(7), "the unpacked copy's exit code comes back: {}", String::from_utf8_lossy(&out.stderr));
