@@ -82,21 +82,21 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo build --release
-      # appimagetool comes from a GitHub release; cached so a download outage (HTTP 504 for 10+ minutes) cannot
-      # fail CI.
+      # appimagetool and its type2 runtime come from GitHub releases; cached so a download outage (HTTP 504 for 10+
+      # minutes) cannot fail CI.
       - uses: actions/cache@v4
-        with: { path: ~/.cache/arcade-appimagetool, key: appimagetool-continuous-x86_64-v1 }
+        with: { path: ~/.cache/arcade-appimagetool, key: appimagetool-continuous-x86_64-v2 }
       - name: AppImage
         timeout-minutes: 8
         working-directory: template
         run: |
-          tool=~/.cache/arcade-appimagetool/appimagetool
-          if [ ! -x "$tool" ]; then
-            mkdir -p "$(dirname "$tool")"
-            curl -fsSL --retry 5 --retry-delay 10 --max-time 300 -o "$tool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-            chmod +x "$tool"
-          fi
-          APPIMAGETOOL="$tool" packaging/linux/build-appimage.sh
+          dir=~/.cache/arcade-appimagetool; tool=$dir/appimagetool; runtime=$dir/runtime-x86_64
+          mkdir -p "$dir"
+          get() { [ -s "$2" ] || curl -fsSL --retry 5 --retry-delay 10 --max-time 300 -o "$2" "$1"; }
+          get https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage "$tool"
+          get https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64 "$runtime"
+          chmod +x "$tool"
+          APPIMAGETOOL="$tool" APPIMAGE_RUNTIME="$runtime" packaging/linux/build-appimage.sh
       - name: Conformance (repository and AppImage)
         run: |
           git -C template checkout Cargo.toml
