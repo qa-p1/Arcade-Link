@@ -7,7 +7,11 @@ Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 **v1.0.3 tagged** at 4cf9eff (CI, Ecosystem e2e and the desktop harness green on that commit). Follow-up: template
 and reusable `link-ref` defaults → v1.0.3, and the desktop workflows download the app to `$RUNNER_TEMP` (inside the
 caller's checkout it counted as a dev build and refused `--install`; Tools' Tier 1 test now copies it out anyway).
-The workflow fix reaches apps with the next Link tag.
+The workflow fix reaches apps with the next Link tag. Added `tools/fleet/perf_budget.py` and Tools' `perf`
+budgets (local: cold start 690 ms, show 614 ms, idle CPU 0.0 / 0.4 / 0.03 % background / open / closed, wakeups
+0.2 / 2.2 / 0.4 per second, disk 370 MB = 88 AppImage + 282 unpacked); `app-checks.yml` gets a budgets job when
+Box, the next app, adopts it. Known: Tauri's AppImage keeps three copies of a few versioned libraries (librsvg,
+libgio, ~20 MB of the unpacked copy); not worth a repack step now.
 
 **v1.0.2 tagged** at 3e4aa6c (CI, Ecosystem e2e and the desktop harness green on that commit); template and the
 reusable workflows' `link-ref` moved to it (#49). **1.0.3 prepared** (#50): W3b page-out covers every private mapping

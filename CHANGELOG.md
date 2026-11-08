@@ -5,6 +5,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `tools/fleet/perf_budget.py`: one app's performance budgets in CI (RT-6, PERF-2) under Xvfb, in a private profile:
+  cold start and show latency (launch → window mapped), idle CPU and wakeups in the background, with the default page
+  open for 60 s and after closing it, and disk use. Limits live in the `perf` block of `budgets.json` (Tools first).
+
 ### Fixed
 - `desktop-e2e.yml` and `desktop-tier2.yml` put the app under `$RUNNER_TEMP`, outside the caller's checkout. Inside a
   git work tree the AppImage counted as a dev build, so a harness test's `--install` was refused (seen in Tools).
