@@ -6,8 +6,10 @@ Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
 **v1.0.4 tagged** on a076adb (the merge of PR #51) through "Tag a release", after CI, Ecosystem e2e and the
 desktop harness passed on it; Tools moved to it. Next: Tier 2 `smoke.py` polls `--status` (a fixed 8 s sleep
-missed Tools' first start once on sway): **1.0.5 prepared** in PR #52; tag after the merge commit passes CI,
-e2e and the harness on main.
+missed Tools' first start once on sway): **1.0.5 prepared** in PR #52, merged as 926341f. Before tagging,
+`perf_budget.py`'s wakeup count was found unsound (Tools' open window read -2.3/s in CI: whole-tree differences
+lose exited threads); fixed per thread for 1.0.5 too (11.2/s measured). Tag after CI, e2e and the harness pass on
+that merge.
 
 ## 2026-11-08 (1.0.4)
 
