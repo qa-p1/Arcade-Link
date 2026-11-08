@@ -334,11 +334,21 @@ private slots:
                 .startsWith(u"fish_add_path "));
     const auto data = QDir(e.data).filePath(QStringLiteral("find/data"));
     put(data + QStringLiteral("/settings"), "settings");
+    // What gtk-update-icon-cache and update-desktop-database leave behind.
+    const auto iconCache = QDir(e.data).filePath(QStringLiteral("icons/hicolor/icon-theme.cache"));
+    const auto mimeCache = QDir(e.data).filePath(QStringLiteral("applications/mimeinfo.cache"));
+    put(iconCache, "cache");
+    put(mimeCache, "[MIME Cache]\n");
+    const auto json = e.receipts().path(opts.app.id);
+    const auto lockFile = json.left(json.size() - 4) + QStringLiteral("lock");
+    QVERIFY(QFileInfo::exists(lockFile));
     bool removed = false;
     QVERIFY(installer.uninstall(
         opts.app.id, {true, {QDir(e.data).filePath(QStringLiteral("find"))}},
         &removed, &error));
     QVERIFY(removed);
+    QVERIFY2(!QFileInfo::exists(lockFile), "uninstall leaves no lock file");
+    QVERIFY(!QFileInfo::exists(iconCache) && !QFileInfo::exists(mimeCache));
     QVERIFY(!QFileInfo::exists(moved));
     QVERIFY(!QFileInfo::exists(previous));
     QVERIFY(!QFileInfo::exists(data));

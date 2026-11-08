@@ -694,6 +694,78 @@ fn installs_and_uninstalls_of_one_app_take_turns() {
     assert!(uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap());
 }
 
+#[test]
+fn a_waiter_relocks_the_path_after_an_uninstall_retires_the_lock() {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let file = e.receipts().path("arcade.find").unwrap().with_extension("lock");
+    let held = lock(&e, "arcade.find").unwrap();
+    let (acquired, released) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
+    let (env2, acquired2, released2) = (e.clone(), acquired.clone(), released.clone());
+    let waiter = std::thread::spawn(move || {
+        let second = lock(&env2, "arcade.find").unwrap();
+        acquired2.store(true, Ordering::SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        released2.store(true, Ordering::SeqCst);
+        drop(second);
+    });
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    held.retire();
+    let start = std::time::Instant::now();
+    while !acquired.load(Ordering::SeqCst) && start.elapsed() < std::time::Duration::from_secs(5) {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(file.is_file(), "the waiter locks a fresh file at the same path");
+    // Had the waiter kept the removed file, this would get the new one at once.
+    let third = lock(&e, "arcade.find").unwrap();
+    assert!(released.load(Ordering::SeqCst), "two holders of one app's lock at once");
+    waiter.join().unwrap();
+    third.retire();
+    assert!(!file.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn uninstall_leaves_no_lock_and_no_cache_that_describes_nothing() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"fixture").unwrap();
+    let r = runtime(source);
+    let png = root.0.join("icon.png");
+    fs::write(&png, b"png").unwrap();
+    let icon = [Icon { source: png, size: IconSize::Pixels(256) }];
+    let options = || InstallOptions { icons: &icon, ..find_options(&app, &r, "1") };
+    let receipt = install(&e, options()).unwrap();
+    let lock_file = e.receipts().path(&app.id).unwrap().with_extension("lock");
+    let icons = e.data.join("icons/hicolor");
+    let applications = e.data.join("applications");
+    // What gtk-update-icon-cache and update-desktop-database leave, whether or not they are installed here.
+    fs::create_dir_all(&icons).unwrap();
+    fs::create_dir_all(&applications).unwrap();
+    fs::write(icons.join("icon-theme.cache"), b"cache").unwrap();
+    fs::write(applications.join("mimeinfo.cache"), b"[MIME Cache]\n").unwrap();
+    assert!(lock_file.is_file() && !receipt.integration.icons.is_empty());
+    assert!(uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap());
+    assert!(!lock_file.exists(), "uninstall left {}", lock_file.display());
+    assert!(!icons.join("icon-theme.cache").exists() && !applications.join("mimeinfo.cache").exists());
+
+    // Another program's icon and launcher keep their caches.
+    install(&e, options()).unwrap();
+    fs::create_dir_all(icons.join("48x48/apps")).unwrap();
+    fs::write(icons.join("48x48/apps/other.png"), b"png").unwrap();
+    fs::write(applications.join("other.desktop"), b"[Desktop Entry]\n").unwrap();
+    fs::write(icons.join("icon-theme.cache"), b"cache").unwrap();
+    fs::write(applications.join("mimeinfo.cache"), b"[MIME Cache]\n").unwrap();
+    assert!(uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap());
+    assert!(icons.join("icon-theme.cache").is_file() && applications.join("mimeinfo.cache").is_file());
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn install_errors_name_the_folder() {

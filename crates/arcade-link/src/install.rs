@@ -575,9 +575,31 @@ fn at<'a>(path: &'a Path, action: &'static str) -> impl FnOnce(io::Error) -> io:
 
 /// Held for the whole of an install, repair or uninstall of one app, across
 /// processes: Rust and Qt lock the same `<installs>/<id>.lock`. A second
-/// installer waits for the first instead of interleaving with it.
+/// installer waits for the first instead of interleaving with it. An uninstall
+/// removes the file again ([`AppLock::retire`]).
 pub struct AppLock {
-    _file: fs::File,
+    file: fs::File,
+    path: PathBuf,
+}
+
+/// What [`AppLock::retire`] writes into the lock file before removing it. A
+/// live lock file is always empty, so a waiter that gets the lock on a file
+/// with content knows it was removed and locks the path afresh.
+const RETIRED: &[u8] = b"retired\n";
+
+impl AppLock {
+    /// Removes `<installs>/<id>.lock` while still holding it, so an uninstall
+    /// leaves nothing behind (README: a fresh-HOME test proves nothing is
+    /// left). Waiters that opened the old file see the marker once they get
+    /// the lock and lock the path again, so two installers never run at once.
+    /// If the file can't be removed it is emptied again and stays a working lock.
+    pub fn retire(mut self) {
+        use std::io::Write;
+        let marked = self.file.write_all(RETIRED).and_then(|()| self.file.flush()).is_ok();
+        if !marked || fs::remove_file(&self.path).is_err() {
+            let _ = self.file.set_len(0);
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -626,15 +648,39 @@ pub fn lock(environment: &Environment, id: &str) -> io::Result<AppLock> {
     let store = environment.receipts();
     let path = store.path(id)?.with_extension("lock");
     crate::paths::ensure_private_dir(store.dir())?;
-    let file = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(&path).map_err(at(&path, "Couldn't open"))?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
-    while !try_lock(&file)? {
+    let busy = || io::Error::new(io::ErrorKind::WouldBlock, "another install, update or uninstall of this app is still running");
+    let wait = || {
         if std::time::Instant::now() >= deadline {
-            return Err(io::Error::new(io::ErrorKind::WouldBlock, "another install, update or uninstall of this app is still running"));
+            return Err(busy());
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
+        Ok(())
+    };
+    let mut retired = false;
+    loop {
+        let file = match fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(&path) {
+            Ok(file) => file,
+            // Windows keeps a removed file's name until every handle closes; other waiters still hold it.
+            Err(e) if retired && e.kind() == io::ErrorKind::PermissionDenied => {
+                wait()?;
+                continue;
+            }
+            Err(e) => return Err(at(&path, "Couldn't open")(e)),
+        };
+        while !try_lock(&file)? {
+            wait()?;
+        }
+        if file.metadata()?.len() == 0 {
+            return Ok(AppLock { file, path });
+        }
+        // An uninstall removed this file while we waited for it (`AppLock::retire`): lock the path afresh.
+        retired = true;
+        drop(file);
+        if std::time::Instant::now() >= deadline {
+            return Err(busy());
+        }
     }
-    Ok(AppLock { _file: file })
 }
 
 /// `<stem>.<token>.stage` copies left behind by an installer that was killed.
@@ -1074,7 +1120,10 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
 
 /// Rebuild integration using the receipt's paths. The app supplies its stable
 /// desktop identity and display metadata; no path is guessed. `moved_to` is
-/// explicit consent to repoint a moved installation.
+/// explicit consent to repoint a moved installation: pass the running copy
+/// only when the receipt's file is gone. Passing it unconditionally (e.g.
+/// `$APPIMAGE` from a `--repair` run in the download) repoints everything at
+/// that copy, and a later uninstall deletes it and leaves the installed copy.
 #[cfg(target_os = "linux")]
 pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>) -> io::Result<Receipt> {
     environment.validate()?;
@@ -1140,8 +1189,11 @@ pub fn uninstall(environment: &Environment, id: &str, opts: UninstallOptions<'_>
     if environment.receipts().read(id)?.is_none() {
         return Ok(false);
     }
-    let _lock = lock(environment, id)?;
-    let Some(receipt) = environment.receipts().read(id)? else { return Ok(false) };
+    let lock = lock(environment, id)?;
+    let Some(receipt) = environment.receipts().read(id)? else {
+        lock.retire();
+        return Ok(false);
+    };
     receipt.validate_native_paths()?;
     #[cfg(target_os = "linux")]
     validate_integration_roots(environment, &receipt)?;
@@ -1203,7 +1255,35 @@ pub fn uninstall(environment: &Environment, id: &str, opts: UninstallOptions<'_>
     environment.receipts().remove(id)?;
     #[cfg(windows)]
     platform::windows::remove_path_if_last(environment, &environment.bin)?;
+    #[cfg(target_os = "linux")]
+    drop_empty_caches(environment);
+    lock.retire();
     Ok(true)
+}
+
+/// The desktop and icon caches an install refreshes stay behind once the last
+/// entry they describe is gone; remove a cache only when it is the last file in
+/// its folder, so other programs' entries keep theirs.
+#[cfg(target_os = "linux")]
+fn drop_empty_caches(environment: &Environment) {
+    fn only(dir: &Path, cache: &Path) -> bool {
+        let Ok(entries) = fs::read_dir(dir) else { return false };
+        entries.flatten().all(|entry| {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => only(&path, cache),
+                Ok(_) => path == cache,
+                Err(_) => false,
+            }
+        })
+    }
+    for (dir, name) in [("applications", "mimeinfo.cache"), ("icons/hicolor", "icon-theme.cache")] {
+        let dir = environment.data.join(dir);
+        let cache = dir.join(name);
+        if cache.is_file() && only(&dir, &cache) {
+            let _ = fs::remove_file(&cache);
+        }
+    }
 }
 fn remove_installation(path: &Path) -> io::Result<()> {
     match fs::symlink_metadata(path) {

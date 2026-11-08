@@ -320,21 +320,59 @@ mod signals {
 // Memory (RT-5; AUDIT/memory.md W0, W1, W3b)
 
 /// W0: gives freed heap back to the OS and drops this process's resident
-/// executable code pages (`r-xp` file mappings). Code refaults from the page
+/// pages of read-only file mappings (code `r-xp` and read-only data `r--p`)
+/// that hold nothing but the file's own bytes. They refault from the page
 /// cache in microseconds. Call it after startup and after each hide.
-/// Read-only data and RELRO mappings are never touched: discarding them
-/// would undo relocations. Linux only; elsewhere it does nothing.
+/// A mapping with any private copy (RELRO after relocation, text
+/// relocations, a debugger's breakpoint) is never touched: discarding it
+/// would undo the change. Linux only; elsewhere it does nothing.
 pub fn trim() {
     #[cfg(target_os = "linux")]
     {
         // SAFETY: malloc_trim only releases free memory; madvise(DONTNEED)
-        // on private, never-written executable file mappings refaults the
-        // same bytes from the file.
+        // on a private file mapping none of whose pages was ever copied
+        // (smaps: Anonymous and Swap 0) refaults the same bytes from the file.
         unsafe { libc::malloc_trim(0) };
-        for (start, len) in mappings(|perms, file| file && perms.starts_with("r-xp")) {
+        for (start, len) in clean_read_only_file_mappings() {
             unsafe { libc::madvise(start as *mut libc::c_void, len, libc::MADV_DONTNEED) };
         }
     }
+}
+
+/// `r-xp` and `r--p` file mappings of this process whose resident pages all
+/// come from the file (`/proc/self/smaps`: no anonymous or swapped pages).
+#[cfg(target_os = "linux")]
+fn clean_read_only_file_mappings() -> Vec<(usize, usize)> {
+    let Ok(smaps) = std::fs::read_to_string("/proc/self/smaps") else { return Vec::new() };
+    let mut out = Vec::new();
+    // (start, len, candidate, copied) of the mapping being read.
+    let mut current: Option<(usize, usize, bool, bool)> = None;
+    fn finish(current: Option<(usize, usize, bool, bool)>, out: &mut Vec<(usize, usize)>) {
+        if let Some((start, len, true, false)) = current {
+            out.push((start, len));
+        }
+    }
+    for line in smaps.lines() {
+        let mut fields = line.split_whitespace();
+        let Some(first) = fields.next() else { continue };
+        if let Some((a, b)) = first.split_once('-').filter(|_| !first.ends_with(':')) {
+            finish(current.take(), &mut out);
+            let perms = fields.next().unwrap_or("");
+            let path = fields.nth(3).unwrap_or("");
+            let file = path.starts_with('/') && !line.ends_with("(deleted)");
+            let candidate = file && (perms == "r-xp" || perms == "r--p");
+            current = match (usize::from_str_radix(a, 16), usize::from_str_radix(b, 16)) {
+                (Ok(a), Ok(b)) if b > a => Some((a, b - a, candidate, false)),
+                _ => None,
+            };
+        } else if first == "Anonymous:" || first == "Swap:" {
+            if let Some(mapping) = current.as_mut() {
+                mapping.3 |= fields.next().is_some_and(|kb| kb != "0");
+            }
+        }
+    }
+    finish(current, &mut out);
+    out
 }
 
 /// W1: after the last WebKit window closed, ends this app's

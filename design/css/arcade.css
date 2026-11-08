@@ -224,7 +224,7 @@ html[data-theme="dark"] .brand-mark img { filter: none; }
 .shell-main { position: relative; flex: 1; min-width: 0; }
 .page-main { width: min(100%, var(--content-max)); margin: 0 auto; padding: var(--sp-32) 36px 72px; }
 .tab-panel[hidden] { display: none; }
-.tab-panel:focus { outline: none; }
+.tab-panel:focus:not(:focus-visible) { outline: none; }
 
 /* Page structure */
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-16); margin-bottom: var(--sp-24); }
