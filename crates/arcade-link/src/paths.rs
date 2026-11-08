@@ -477,6 +477,8 @@ pub struct Migration {
     pub moved: Vec<(PathBuf, PathBuf)>,
     /// Legacy folders left in place, with the reason (logged by the app).
     pub kept: Vec<(PathBuf, String)>,
+    /// Legacy files that differed from the new folder's copy, kept under `archived-legacy/` in the new folder.
+    pub archived: Vec<PathBuf>,
 }
 
 impl Migration {
@@ -492,9 +494,12 @@ pub fn migrate_app_dirs(app_id: &str) -> Migration {
 
 /// Moves every existing legacy folder into the app's new folders: copy,
 /// verify byte for byte, and only then remove the old folder. A file that
-/// already exists in the new folder with different contents, a link, or any
-/// I/O error leaves that legacy folder untouched (and removes what this run
-/// copied); the reason is in [`Migration::kept`]. Safe to run on every start.
+/// already exists in the new folder with different contents is never
+/// overwritten: the legacy copy goes to `archived-legacy/<old folder>/` in the
+/// new folder ([`Migration::archived`]), so the migration finishes once. A
+/// link or any I/O error leaves that legacy folder untouched (and removes what
+/// this run copied); the reason is in [`Migration::kept`]. Safe to run on every
+/// start.
 pub fn migrate_app_dirs_in(user: &UserDirs, platform: Platform, app_id: &str) -> Migration {
     let dirs = app_dirs_in(user, platform, app_id);
     let mut report = Migration::default();
@@ -511,8 +516,9 @@ pub fn migrate_app_dirs_in(user: &UserDirs, platform: Platform, app_id: &str) ->
             continue;
         }
         match migrate_one(&from, &to) {
-            Ok(()) => {
+            Ok(archived) => {
                 remove_empty_parents(&from, user, platform);
+                report.archived.extend(archived);
                 report.moved.push((from, to));
             }
             Err(reason) => report.kept.push((from, reason)),
@@ -544,15 +550,26 @@ fn same_contents(a: &Path, b: &Path) -> io::Result<bool> {
     Ok(ma.len() == mb.len() && fs::read(a)? == fs::read(b)?)
 }
 
-fn migrate_one(from: &Path, to: &Path) -> Result<(), String> {
+/// Returns the archived copies of legacy files that conflicted with the new folder.
+fn migrate_one(from: &Path, to: &Path) -> Result<Vec<PathBuf>, String> {
     let (mut files, mut folders) = (Vec::new(), Vec::new());
     files_under(from, &mut files, &mut folders)?;
-    // 1. Refuse conflicts before writing anything.
+    let archive = to.join("archived-legacy").join(from.file_name().unwrap_or_default());
+    // 1. Decide where each file goes before writing anything: a file whose name is taken by different contents
+    //    goes to the archive, never over the new copy.
+    let mut targets = Vec::new();
+    let mut archived = Vec::new();
     for file in &files {
-        let target = to.join(file.strip_prefix(from).expect("under from"));
+        let relative = file.strip_prefix(from).expect("under from");
+        let mut target = to.join(relative);
         if target.exists() && !same_contents(file, &target).unwrap_or(false) {
-            return Err(format!("{} already exists with different contents", target.display()));
+            target = archive.join(relative);
+            if target.exists() && !same_contents(file, &target).unwrap_or(false) {
+                return Err(format!("{} already exists with different contents", target.display()));
+            }
+            archived.push(target.clone());
         }
+        targets.push(target);
     }
     // 2. Copy what is missing, keeping modification times.
     let mut copied = Vec::new();
@@ -561,21 +578,22 @@ fn migrate_one(from: &Path, to: &Path) -> Result<(), String> {
         for folder in &folders {
             fs::create_dir_all(to.join(folder.strip_prefix(from).expect("under from")))?;
         }
-        for file in &files {
-            let target = to.join(file.strip_prefix(from).expect("under from"));
+        for (file, target) in files.iter().zip(&targets) {
             if target.exists() {
                 continue;
             }
-            fs::copy(file, &target)?;
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(file, target)?;
             copied.push(target.clone());
             if let Ok(modified) = fs::metadata(file).and_then(|m| m.modified()) {
-                let _ = fs::File::options().write(true).open(&target).and_then(|f| f.set_modified(modified));
+                let _ = fs::File::options().write(true).open(target).and_then(|f| f.set_modified(modified));
             }
         }
         // 3. Verify every byte before removing anything.
-        for file in &files {
-            let target = to.join(file.strip_prefix(from).expect("under from"));
-            if !same_contents(file, &target)? {
+        for (file, target) in files.iter().zip(&targets) {
+            if !same_contents(file, target)? {
                 return Err(io::Error::other(format!("{} differs after copying", target.display())));
             }
         }
@@ -588,7 +606,8 @@ fn migrate_one(from: &Path, to: &Path) -> Result<(), String> {
         return Err(format!("couldn't copy {} to {}: {e}", from.display(), to.display()));
     }
     // 4. Remove the old folder.
-    fs::remove_dir_all(from).map_err(|e| format!("copied, but couldn't remove {}: {e}", from.display()))
+    fs::remove_dir_all(from).map_err(|e| format!("copied, but couldn't remove {}: {e}", from.display()))?;
+    Ok(archived)
 }
 
 /// Removes now-empty parents such as `~/.config/Arcade Wheel` after its
@@ -685,7 +704,7 @@ mod app_dir_tests {
     }
 
     #[test]
-    fn a_conflict_leaves_everything_in_place() {
+    fn a_conflict_archives_the_old_file_and_keeps_the_new_one() {
         let root = temp("conflict");
         let user = UserDirs::under(&root);
         let old = root.join(".config/arcade-find");
@@ -696,11 +715,15 @@ mod app_dir_tests {
         fs::create_dir_all(&new).unwrap();
         fs::write(new.join("settings.json"), b"new").unwrap();
         let report = migrate_app_dirs_in(&user, Platform::Linux, "arcade.find");
-        assert!(report.moved.is_empty());
-        assert_eq!(report.kept.len(), 1);
-        assert_eq!(fs::read(old.join("settings.json")).unwrap(), b"old");
+        assert_eq!(report.moved.len(), 1, "{report:?}");
+        assert!(report.kept.is_empty(), "{report:?}");
+        let archived = new.join("archived-legacy/arcade-find/settings.json");
+        assert_eq!(report.archived, [archived.clone()]);
+        assert_eq!(fs::read(&archived).unwrap(), b"old");
         assert_eq!(fs::read(new.join("settings.json")).unwrap(), b"new");
-        assert!(!new.join("extra.json").exists(), "nothing copied on conflict");
+        assert_eq!(fs::read(new.join("extra.json")).unwrap(), b"x");
+        assert!(!old.exists());
+        assert!(migrate_app_dirs_in(&user, Platform::Linux, "arcade.find").is_empty(), "the next start has nothing to do");
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -2,7 +2,19 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-08
+
+**1.0.1 prepared** on the branch: version 1.0.1, CHANGELOG dated. Contents: the legacy-migration archive fix (Tools
+T3) and the committed `template/Cargo.lock`. Next: PR to main, CI green, "Tag a release" `v1.0.1` with the merge
+SHA, then move `template/` to `v1.0.1` with its lockfile (D7), and bump Tools. Later shared fixes go into 1.0.2.
+
 ## 2026-11-07
+
+**v1.0.0 tagged** at `d60772c` (main, through "Tag a release"), 17:45 UTC. Gates on that commit: CI (Rust and Qt on
+Linux, Windows, macOS; design kit; template build, AppImage and conformance; cargo deny; N-1), Ecosystem e2e,
+release-flow e2e (draft rc → promote → signature → byte-identical, run 42397612055); Desktop harness and Contract on
+`7b42736` (same code). `template/Cargo.lock` committed against the tag (D7). Next for Link: 1.0.1 with shared fixes
+found while doing the apps (first: legacy folders with conflicting files are archived, not kept forever: Tools T3).
 
 Open PR: https://github.com/qa-p1/Arcade-Link/pull/32 (branch `claude/tender-feynman-3vt7dg`).
 

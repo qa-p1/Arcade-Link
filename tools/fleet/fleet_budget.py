@@ -7,6 +7,9 @@ measures again, closes it and measures after the release delay. Exits 1 when a b
 Read-only on the apps; Linux only. Needs: Xvfb (or an existing $DISPLAY), dbus-daemon, xdotool, the eight AppImages.
 
   fleet_budget.py --apps DIR [--budgets budgets.json] [--settle 75] [--open tools --close-wait 45] [--json out.json]
+                  [--only tools]   (one app's own CI: start and measure only these apps)
+An app that relaunches itself from its unpacked copy (U1) is followed: its launcher exits and the copy, run from
+$XDG_DATA_HOME/arcade/runtime/<app>-*, is measured instead.
 DIR holds Arcade-<App>.AppImage (Tools Box Look Find Lens Clipboard Shelf Wheel). Budgets are per app and per state; "fleet" is the sum
 (apps + stubs). Xvfb uses llvmpipe, so GL apps (Clipboard, WebKit windows) read higher than on a GPU: the budget file has a separate "xvfb" section.
 """
@@ -39,7 +42,7 @@ def children_map():
 
 
 def tree(root):
-    ppid = children_map(); out = [root]
+    ppid = children_map(); out = list(root) if isinstance(root, list) else [root]
     for q in out:
         out += [p for p, pp in ppid.items() if pp == q and p not in out]
     return out
@@ -60,10 +63,24 @@ def find_stubs(home):
     return out
 
 
-def measure(launch, home):
+def unpacked(app, home, data):
+    """Processes of this session running from the app's unpacked copy (U1). Their launcher has exited, so they are
+    no longer descendants of the pid we started."""
+    prefix = os.path.join(data, 'arcade', 'runtime', f'{app}-'); out = []
+    for d in os.listdir('/proc'):
+        if not d.isdigit(): continue
+        try:
+            if os.readlink(f'/proc/{d}/exe').startswith(prefix) and f'HOME={home}'.encode() in open(f'/proc/{d}/environ', 'rb').read().split(b'\0'):
+                out.append(int(d))
+        except OSError:
+            pass
+    return out
+
+
+def measure(launch, home, data):
     rows = {}; tot = collections.Counter(); stubs = find_stubs(home)
     for app, pid in launch.items():
-        pids = [p for p in tree(pid) if os.path.exists(f'/proc/{p}')]
+        pids = [p for p in tree([pid] + unpacked(app, home, data)) if os.path.exists(f'/proc/{p}')]
         stub = stubs.get(f'Arcade-{app.capitalize()}.AppImage', []); run = [p for p in pids if p not in stub]
         r = dict(rss=0.0, pss=0.0, stub_rss=0.0, stub_pss=0.0, procs=len(run))
         for p in run:
@@ -109,7 +126,8 @@ def main():
     ap.add_argument('--apps', required=True); ap.add_argument('--budgets'); ap.add_argument('--settle', type=int, default=75)
     ap.add_argument('--open'); ap.add_argument('--close-wait', type=int, default=45); ap.add_argument('--json')
     ap.add_argument('--section', default=None, help='budget section prefix, e.g. "xvfb" (default: none)')
-    a = ap.parse_args()
+    ap.add_argument('--only', default=None, help='comma-separated apps to start and measure (default: all eight)')
+    a = ap.parse_args(); a.apps = os.path.abspath(a.apps)  # the apps start in their private HOME
     budgets = json.load(open(a.budgets)) if a.budgets else {}
     if a.section: budgets = budgets.get(a.section, {})
     root = tempfile.mkdtemp(prefix='arcade-fleet-'); run = tempfile.mkdtemp(prefix='arf-'); os.chmod(run, 0o700)
@@ -120,31 +138,33 @@ def main():
     for d in ('home', 'config', 'data', 'cache', 'state'): os.makedirs(f'{root}/{d}')
     env.update(HOME=f'{root}/home', XDG_CONFIG_HOME=f'{root}/config', XDG_DATA_HOME=f'{root}/data', XDG_CACHE_HOME=f'{root}/cache', XDG_STATE_HOME=f'{root}/state',
                XDG_RUNTIME_DIR=run, GDK_BACKEND='x11', ARCADE_NO_INSTALL_PROMPT='1')
-    out = subprocess.run(['dbus-daemon', '--session', '--fork', '--print-address', '--print-pid'], env=env, capture_output=True, text=True).stdout.split('\n')
+    out = subprocess.run(['dbus-daemon', '--session', '--fork', '--print-address=1', '--print-pid=1'], env=env, capture_output=True, text=True).stdout.split('\n')
     env['DBUS_SESSION_BUS_ADDRESS'] = out[0]; dbus_pid = int(out[1])
-    launch = {}; failures = []; result = {}
+    launch = {}; failures = []; result = {}; data = env['XDG_DATA_HOME']
+    apps = a.only.split(',') if a.only else APPS
+    assert set(apps) <= set(APPS), f'unknown app in --only: {a.only}'
     try:
-        for app in APPS:
+        for app in apps:
             exe = os.path.join(a.apps, f'Arcade-{app.capitalize()}.AppImage')
             launch[app] = subprocess.Popen([exe, '--background'], env=env, cwd=env['HOME'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True).pid
             time.sleep(2)
-        time.sleep(a.settle); rows = measure(launch, env['HOME']); table('background', rows); check('background', rows, budgets, failures); result['background'] = rows
+        time.sleep(a.settle); rows = measure(launch, env['HOME'], data); table('background', rows); check('background', rows, budgets, failures); result['background'] = rows
         if a.open:
             args, pat = OPEN_ARGS[a.open]; exe = os.path.join(a.apps, f'Arcade-{a.open.capitalize()}.AppImage')
             sample = f'{root}/home/sample.txt'; open(sample, 'w').write('x\n' * 100)
             subprocess.run([exe, *[sample if x == '@FILE' else x for x in args]], env=env, timeout=30, capture_output=True)
-            time.sleep(6); rows = measure(launch, env['HOME']); table(f'{a.open} window open', rows); check('open', rows, budgets, failures); result['open'] = rows
+            time.sleep(6); rows = measure(launch, env['HOME'], data); table(f'{a.open} window open', rows); check('open', rows, budgets, failures); result['open'] = rows
             wid = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', pat], env=env, capture_output=True, text=True).stdout.split()
             for w in wid: close_window(w, env)
-            time.sleep(a.close_wait); rows = measure(launch, env['HOME']); table(f'{a.open} closed +{a.close_wait}s', rows); check('closed', rows, budgets, failures); result['closed'] = rows
+            time.sleep(a.close_wait); rows = measure(launch, env['HOME'], data); table(f'{a.open} closed +{a.close_wait}s', rows); check('closed', rows, budgets, failures); result['closed'] = rows
     finally:
-        extra = [p for v in find_stubs(env['HOME']).values() for p in v]
+        extra = [p for v in find_stubs(env['HOME']).values() for p in v] + [p for app in launch for p in unpacked(app, env['HOME'], data)]
         for pid in list(launch.values()) + extra:
             for p in tree(pid):
                 try: os.kill(p, signal.SIGTERM)
                 except OSError: pass
         time.sleep(2)
-        for pid in list(launch.values()):
+        for pid in list(launch.values()) + extra:
             for p in tree(pid):
                 try: os.kill(p, signal.SIGKILL)
                 except OSError: pass
