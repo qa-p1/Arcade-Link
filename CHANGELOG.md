@@ -10,8 +10,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
   focus, so Tab could land on an invisible stop). Found by Tools' accessibility checks.
 - Qt tray host: when the startup gate decided first (a slow machine), the worker's late undecided report put the
   state back to `none` and emitted `stateChanged`; a decided state now only changes to another decided one.
+- Runtime trim (`runtime::trim`, `arcade_trim()` and the WebKit helper preload) reverted private copies in an
+  executable mapping (text relocations, a debugger's breakpoints) to the file's bytes. A mapping is now dropped only
+  when `/proc/self/smaps` shows no anonymous or swapped pages.
 
 ### Changed
+- Runtime trim also drops clean read-only data mappings (`r--p`, e.g. WebKit's and the app's `.rodata`), which
+  stayed resident after every trim. RELRO and other copied mappings
+  are still never touched.
+- `install::repair` documents that `moved_to` must only be passed when the receipt's file is gone.
 - The template pins `v1.0.1` (Cargo, lockfile and workflows) and passes `link-ref` to Link's reusable workflows
   explicitly; their `link-ref` default is now `v1.0.1`.
 

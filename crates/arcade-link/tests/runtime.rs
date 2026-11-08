@@ -203,6 +203,67 @@ fn trimming_returns_freed_heap_to_the_system() {
     assert_eq!(pin[0], 1);
 }
 
+/// Resident kB of the mapping that starts at `addr`, from /proc/self/smaps.
+#[cfg(target_os = "linux")]
+fn resident_kb(addr: usize) -> u64 {
+    let smaps = std::fs::read_to_string("/proc/self/smaps").unwrap();
+    let header = format!("{addr:x}-");
+    let mut lines = smaps.lines().skip_while(|l| !l.starts_with(&header));
+    lines.next().expect("mapping listed");
+    let rss = lines.find(|l| l.starts_with("Rss:")).unwrap();
+    rss.split_whitespace().nth(1).unwrap().parse().unwrap()
+}
+
+/// Maps `len` bytes of a fresh file privately with `prot`, filled with 7s.
+#[cfg(target_os = "linux")]
+fn map_file(name: &str, len: usize, prot: i32) -> *mut u8 {
+    use std::os::fd::AsRawFd;
+    let path = tmp(name).join("data");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, vec![7u8; len]).unwrap();
+    let file = std::fs::File::open(&path).unwrap();
+    // SAFETY: a new private mapping of a file this test owns.
+    let ptr = unsafe { libc::mmap(std::ptr::null_mut(), len, prot, libc::MAP_PRIVATE, file.as_raw_fd(), 0) };
+    assert_ne!(ptr, libc::MAP_FAILED);
+    ptr as *mut u8
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn trimming_drops_clean_read_only_data_and_it_refaults_intact() {
+    const LEN: usize = 4 << 20;
+    let ptr = map_file("trim-rodata", LEN, libc::PROT_READ);
+    // SAFETY: reads inside the mapping created above.
+    let sum: u64 = (0..LEN).step_by(4096).map(|i| unsafe { *ptr.add(i) } as u64).sum();
+    assert_eq!(sum, 7 * (LEN / 4096) as u64);
+    assert!(resident_kb(ptr as usize) >= 4096);
+    runtime::trim();
+    assert_eq!(resident_kb(ptr as usize), 0, "clean read-only data stays resident");
+    assert_eq!(unsafe { *ptr.add(LEN - 1) }, 7);
+}
+
+/// RELRO and text relocations: pages written before the mapping became read-only are private copies; trimming
+/// them would bring the file's bytes back.
+#[cfg(target_os = "linux")]
+#[test]
+fn trimming_never_reverts_a_read_only_mapping_that_was_written() {
+    const LEN: usize = 64 << 10;
+    for (name, prot) in [("trim-relro", libc::PROT_READ), ("trim-textrel", libc::PROT_READ | libc::PROT_EXEC)] {
+        let ptr = map_file(name, LEN, libc::PROT_READ | libc::PROT_WRITE);
+        // SAFETY: writes inside the mapping created above, then it becomes read-only like RELRO or relocated text.
+        unsafe {
+            for i in (0..LEN).step_by(4096) {
+                *ptr.add(i) = 42;
+            }
+            assert_eq!(libc::mprotect(ptr as *mut libc::c_void, LEN, prot), 0);
+        }
+        runtime::trim();
+        for i in (0..LEN).step_by(4096) {
+            assert_eq!(unsafe { *ptr.add(i) }, 42, "{name}: relocated page reverted at {i}");
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn an_appimage_app_relaunches_from_its_unpacked_copy_once() {

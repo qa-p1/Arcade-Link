@@ -1074,7 +1074,10 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
 
 /// Rebuild integration using the receipt's paths. The app supplies its stable
 /// desktop identity and display metadata; no path is guessed. `moved_to` is
-/// explicit consent to repoint a moved installation.
+/// explicit consent to repoint a moved installation: pass the running copy
+/// only when the receipt's file is gone. Passing it unconditionally (e.g.
+/// `$APPIMAGE` from a `--repair` run in the download) repoints everything at
+/// that copy, and a later uninstall deletes it and leaves the installed copy.
 #[cfg(target_os = "linux")]
 pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>) -> io::Result<Receipt> {
     environment.validate()?;
