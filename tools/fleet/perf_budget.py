@@ -26,7 +26,7 @@ import argparse, json, os, shlex, shutil, signal, statistics, subprocess, sys, t
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fleet_budget as fb  # noqa: E402
 
-TICK = os.sysconf('SC_CLK_TCK')
+TICK = os.sysconf('SC_CLK_TCK') if hasattr(os, 'sysconf') else 100  # Linux only; importable elsewhere for tests
 
 
 def counters(pid):

@@ -15,6 +15,7 @@ class PerfBudget(unittest.TestCase):
         failures = perf_budget.over_budget("x", {"cold_start_ms": 1501, "open_cpu_pct": 0.1}, limits)
         self.assertEqual(failures, ["x: cold_start_ms 1501 > budget 1500", "x: disk_mb was not measured"])
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "perf_budget reads /proc (Linux only)")
     def test_counters_read_this_process(self):
         ticks, switches = perf_budget.counters(os.getpid())
         self.assertGreaterEqual(ticks, 0)
