@@ -8,6 +8,6 @@ permissions:
   contents: write
 jobs:
   promote:
-    uses: qa-p1/Arcade-Link/.github/workflows/app-promote.yml@v1.0.1
-    with: { link-ref: v1.0.1, rc-tag: "${{ inputs.rc-tag }}" }
+    uses: qa-p1/Arcade-Link/.github/workflows/app-promote.yml@v1.0.2
+    with: { link-ref: v1.0.2, rc-tag: "${{ inputs.rc-tag }}" }
     secrets: { ARCADE_UPDATE_SIGNING_KEY: "${{ secrets.ARCADE_UPDATE_SIGNING_KEY }}" }

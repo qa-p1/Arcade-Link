@@ -31,5 +31,5 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
   checks:
     needs: build
-    uses: qa-p1/Arcade-Link/.github/workflows/app-checks.yml@v1.0.1
-    with: { link-ref: v1.0.1, artifact: release-linux }
+    uses: qa-p1/Arcade-Link/.github/workflows/app-checks.yml@v1.0.2
+    with: { link-ref: v1.0.2, artifact: release-linux }
