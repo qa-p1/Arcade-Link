@@ -588,7 +588,7 @@ fn migrate_one(from: &Path, to: &Path) -> Result<Vec<PathBuf>, String> {
             fs::copy(file, target)?;
             copied.push(target.clone());
             if let Ok(modified) = fs::metadata(file).and_then(|m| m.modified()) {
-                let _ = fs::File::options().write(true).open(&target).and_then(|f| f.set_modified(modified));
+                let _ = fs::File::options().write(true).open(target).and_then(|f| f.set_modified(modified));
             }
         }
         // 3. Verify every byte before removing anything.
