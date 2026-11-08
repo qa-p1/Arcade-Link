@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.4] — 2026-11-08
+
 ### Added
 - `tools/fleet/perf_budget.py`: one app's performance budgets in CI (RT-6, PERF-2) under Xvfb, in a private profile:
   cold start and show latency (launch → window mapped), idle CPU and wakeups in the background, with the default page

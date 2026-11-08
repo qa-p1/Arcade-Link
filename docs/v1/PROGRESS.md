@@ -2,6 +2,13 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-08 (1.0.4)
+
+**1.0.4 prepared** in PR #51 (version bump on top of ac5ea80, whose CI, Ecosystem e2e and harness passed after
+GitHub's release-download outage of ~08:45–11:10 UTC): the desktop workflows run the app from `$RUNNER_TEMP` and cache
+released AppImages by URL, `perf_budget.py`, the template's PNG `.DirIcon` and cached AppImage runtime. Tag after the
+merge commit passes CI, e2e and the harness on main.
+
 ## 2026-11-08 (1.0.3)
 
 **v1.0.3 tagged** at 4cf9eff (CI, Ecosystem e2e and the desktop harness green on that commit). Follow-up: template
