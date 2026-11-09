@@ -186,7 +186,8 @@ pub fn crash_dir(app_id: &str) -> PathBuf {
 /// report, and the user may copy it or open a GitHub issue after reviewing it.
 pub fn install_crash_reports(app_name: &str, version: &str, dir: PathBuf) {
     let header = format!("app: {app_name}\nversion: {version}\nos: {} {}\npid: {}\n", std::env::consts::OS, std::env::consts::ARCH, std::process::id());
-    let _ = crate::paths::ensure_private_dir(&dir);
+    // The folder is made with the first report, so a process that never crashes (a one-shot `--version`) creates
+    // nothing (ARCADE_APP.md CLI-4).
     prune_reports(&dir, KEEP_REPORTS - 1);
     #[cfg(unix)]
     signals::install(&dir, &header);
@@ -230,6 +231,7 @@ fn report_name(kind: &str) -> String {
 }
 
 fn write_report(dir: &Path, kind: &str, bytes: &[u8]) -> io::Result<PathBuf> {
+    crate::paths::ensure_private_dir(dir)?;
     let path = dir.join(report_name(kind));
     crate::paths::write_atomic(&path, bytes, true)?;
     prune_reports(dir, KEEP_REPORTS);
@@ -245,6 +247,9 @@ mod signals {
     const FATAL: [libc::c_int; 5] = [libc::SIGSEGV, libc::SIGBUS, libc::SIGILL, libc::SIGFPE, libc::SIGABRT];
 
     struct Prepared {
+        /// The report folder and the ancestors it may lack, outermost first; `mkdir` on one that exists fails
+        /// harmlessly.
+        dirs: Vec<CString>,
         path: CString,
         text: Vec<u8>,
     }
@@ -257,8 +262,14 @@ mod signals {
     pub(super) fn install(dir: &Path, header: &str) {
         let path = dir.join(super::report_name("signal"));
         let Ok(path) = CString::new(path.as_os_str().as_encoded_bytes()) else { return };
+        let mut dirs: Vec<CString> = dir
+            .ancestors()
+            .take_while(|ancestor| !ancestor.exists())
+            .filter_map(|ancestor| CString::new(ancestor.as_os_str().as_encoded_bytes()).ok())
+            .collect();
+        dirs.reverse();
         let text = format!("{header}kind: fatal signal\nsignal: ").into_bytes();
-        if PREPARED.set(Prepared { path, text }).is_err() {
+        if PREPARED.set(Prepared { dirs, path, text }).is_err() {
             return;
         }
         // SAFETY: an alternate stack lets the handler run after a stack
@@ -285,6 +296,10 @@ mod signals {
         // before any handler could run.
         unsafe {
             if let Some(p) = PREPARED.get() {
+                // mkdir is async-signal-safe: make the folders that did not exist when the handler was installed.
+                for dir in &p.dirs {
+                    libc::mkdir(dir.as_ptr(), 0o700);
+                }
                 let fd = libc::open(p.path.as_ptr(), libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_CLOEXEC, 0o600);
                 if fd >= 0 {
                     libc::write(fd, p.text.as_ptr().cast(), p.text.len());

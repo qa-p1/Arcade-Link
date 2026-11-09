@@ -42,6 +42,9 @@ fn child() {
             runtime::install_crash_reports("Arcade Test", "1.2.3", dir);
             unsafe { libc_raise_segv() };
         }
+        "install" => {
+            runtime::install_crash_reports("Arcade Test", "1.2.3", dir);
+        }
         "successor" => {
             std::fs::write(dir.join("successor"), std::env::var(runtime::RESTART_AFTER_ENV).unwrap_or_default()).unwrap();
         }
@@ -122,6 +125,31 @@ fn a_fatal_signal_leaves_a_report_and_still_kills_the_process() {
     assert_eq!(reports.len(), 1, "{reports:?}");
     let text = std::fs::read_to_string(&reports[0]).unwrap();
     assert!(text.contains("kind: fatal signal") && text.contains("signal: 11"), "{text}");
+}
+
+#[test]
+fn installing_creates_no_folder_until_a_crash() {
+    let base = tmp("lazy");
+    let dir = base.join("app").join("crashes");
+    let out = run_child("install", &dir).output().unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert!(!base.join("app").exists(), "a process that never crashed created its crash folder");
+
+    let out = run_child("panic", &dir).output().unwrap();
+    assert!(!out.status.success());
+    assert_eq!(runtime::crash_reports(&dir).len(), 1, "a panic into a missing folder left no report");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fatal_signal_creates_the_missing_folders_for_its_report() {
+    use std::os::unix::process::ExitStatusExt;
+    let dir = tmp("lazy-segv").join("app").join("crashes");
+    let out = run_child("segv", &dir).output().unwrap();
+    assert_eq!(out.status.signal(), Some(11), "{:?}", out.status);
+    let reports = runtime::crash_reports(&dir);
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    assert!(std::fs::read_to_string(&reports[0]).unwrap().contains("signal: 11"));
 }
 
 #[test]
