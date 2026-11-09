@@ -47,6 +47,9 @@ d.screenshot("after-escape")                    # uploaded as an artifact
 
 `session.sh` gives each run a private D-Bus, a StatusNotifierWatcher, the GlobalShortcuts portal stand-in
 (`portal_shortcuts.py`), two 1920×1080 outputs (`HEADLESS-1`, `HEADLESS-2`) and `input:follow_mouse = 1`.
+Like xdg-desktop-portal-hyprland, the stand-in registers each bound shortcut with Hyprland as `<app id>:<id>`
+(through `gshortcuts`, which `build-vpointer.sh` builds next to `vpointer`), so `hyprctl globalshortcuts` lists it
+and `hl.dsp.global("<app id>:<id>")` reaches the app.
 Hyprland's own log and any crash report land in the artifacts.
 
 Proof of the harness itself: `.github/workflows/desktop-harness.yml` (driver self-test; the popup rule on a fixed and

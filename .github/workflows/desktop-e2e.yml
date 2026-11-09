@@ -126,19 +126,20 @@ jobs:
           sudo ln -sfn "$mesa" /run/opengl-driver
           echo "Mesa $mesa" | tee -a "$GITHUB_STEP_SUMMARY"
           for i in 1 2 3; do
-            nix profile install nixpkgs#grim nixpkgs#wl-clipboard nixpkgs#foot nixpkgs#wlr-protocols && break
+            nix profile install nixpkgs#grim nixpkgs#wl-clipboard nixpkgs#foot nixpkgs#wlr-protocols nixpkgs#hyprland-protocols && break
             sleep $((i * 10))
           done
           command -v Hyprland hyprctl grim wl-copy foot
           Hyprland --version | head -1 | grep -E "0\.56\."
           echo "WLR_PROTOCOLS=$(nix eval --raw nixpkgs#wlr-protocols)/share/wlr-protocols" >> "$GITHUB_ENV"
+          echo "HYPRLAND_PROTOCOLS=$(nix eval --raw nixpkgs#hyprland-protocols)/share/hyprland-protocols" >> "$GITHUB_ENV"
       # Saved right after the install, so a failing test still keeps the build.
       - if: steps.nix-cache.outputs.hit-primary-key != 'true'
         uses: nix-community/cache-nix-action/save@v6
         with:
           primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
           gc-max-store-size-linux: 6G
-      - name: Virtual pointer
+      - name: Virtual pointer and Hyprland shortcuts client
         run: bash .arcade-link/tools/desktop/build-vpointer.sh
       # A released AppImage never changes under its URL: cached, so a GitHub download outage cannot fail the gate.
       - if: inputs.appimage-url != ''

@@ -6,11 +6,22 @@ driver then presses and releases a shortcut with dev.arcade.TestPortal.Press /
 Release, which emit Activated and Deactivated (the real `hl.dsp.global` sends
 Activated only, so hold-to-use shortcuts can't be tested through it).
 
+Under Hyprland it also does what xdg-desktop-portal-hyprland does for a bound
+shortcut: registers it with the compositor (hyprland_global_shortcuts_manager_v1,
+through the `gshortcuts` helper built by build-vpointer.sh) as
+"<app id>:<shortcut id>", so `hyprctl globalshortcuts` lists it, and forwards the
+compositor's pressed/released events as Activated/Deactivated. The app ID is the
+one the caller registered (empty if it did not, as with the real portal).
+
 Like xdg-desktop-portal 1.19 and later, it also serves the host app registry
 (`org.freedesktop.host.portal.Registry.Register`), which unsandboxed apps call
 first to name their desktop-file ID; dev.arcade.TestPortal.Registered lists them.
 """
+import os
+import select
+import subprocess
 import time
+from pathlib import Path
 
 import dbus
 import dbus.service
@@ -25,6 +36,59 @@ REGISTRY = "org.freedesktop.host.portal.Registry"
 PATH = "/org/freedesktop/portal/desktop"
 
 
+class Hyprland:
+    """The gshortcuts helper: one Wayland client holding every registered shortcut."""
+
+    def __init__(self, on_event):
+        helper = Path(__file__).with_name("gshortcuts")
+        self.proc = subprocess.Popen([str(helper)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        self.fd = self.proc.stdout.fileno()
+        self.buf = b""
+        self.on_event = on_event
+        self.registered = set()  # (app id, shortcut id)
+        GLib.io_add_watch(self.fd, GLib.IO_IN | GLib.IO_HUP, self._readable)
+
+    def _drain(self):
+        """Handles the complete lines read so far; returns how many were "ok"."""
+        oks = 0
+        while b"\n" in self.buf:
+            line, self.buf = self.buf.split(b"\n", 1)
+            words = line.decode().split(" ", 1)
+            if words[0] == "ok":
+                oks += 1
+            elif words[0] in ("pressed", "released") and len(words) == 2:
+                self.on_event(words[0], words[1])
+        return oks
+
+    def _readable(self, fd, condition):
+        data = os.read(fd, 4096)
+        if not data:
+            print(f"gshortcuts exited with {self.proc.wait()}", flush=True)
+            return False
+        self.buf += data
+        self._drain()
+        return True
+
+    def register(self, app_id, sid, description, trigger):
+        if (app_id, sid) in self.registered:  # a second registration is a protocol error (already_taken)
+            return
+        clean = lambda v: str(v).replace("\t", " ").replace("\n", " ")
+        self.proc.stdin.write(("\t".join(["register", clean(sid), clean(app_id), clean(description), clean(trigger)]) + "\n").encode())
+        self.proc.stdin.flush()
+        # Before BindShortcuts answers, as with xdph: the app checks the compositor's list right after.
+        deadline = time.monotonic() + 5
+        while not self._drain():
+            left = deadline - time.monotonic()
+            if left <= 0 or not select.select([self.fd], [], [], left)[0]:
+                raise dbus.exceptions.DBusException("Hyprland did not confirm the shortcut", name="org.freedesktop.portal.Error.Failed")
+            data = os.read(self.fd, 4096)
+            if not data:
+                raise dbus.exceptions.DBusException(f"gshortcuts exited with {self.proc.wait()}", name="org.freedesktop.portal.Error.Failed")
+            self.buf += data
+        self.registered.add((app_id, sid))
+        print(f"registered {app_id}:{sid} with Hyprland", flush=True)
+
+
 class Request(dbus.service.Object):
     @dbus.service.signal(REQUEST, signature="ua{sv}")
     def Response(self, response, results):
@@ -35,6 +99,7 @@ class Session(dbus.service.Object):
     @dbus.service.method(SESSION, in_signature="", out_signature="")
     def Close(self):
         portal.sessions.pop(self.__dbus_object_path__, None)
+        portal.owners.pop(self.__dbus_object_path__, None)
 
 
 class Portal(dbus.service.Object):
@@ -43,7 +108,9 @@ class Portal(dbus.service.Object):
         self.bus = bus
         self.sessions = {}  # session path -> {shortcut id: description}
         self.registered = {}  # bus name -> desktop-file ID
+        self.owners = {}  # session path -> bus name
         self.n = 0
+        self.hyprland = Hyprland(self._compositor_event) if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") else None
 
     def _request(self, sender, options, results):
         token = str(options.get("handle_token", f"t{self.n}"))
@@ -72,6 +139,7 @@ class Portal(dbus.service.Object):
         path = f"/org/freedesktop/portal/desktop/session/{sender[1:].replace('.', '_')}/{token}"
         Session(self.bus, path)
         self.sessions[path] = {}
+        self.owners[path] = sender
         return self._request(sender, options, {"session_handle": dbus.String(path)})
 
     @dbus.service.method(PORTAL, in_signature="oa(sa{sv})sa{sv}", out_signature="o", sender_keyword="sender")
@@ -79,6 +147,9 @@ class Portal(dbus.service.Object):
         bound = self.sessions.setdefault(str(session), {})
         for sid, props in shortcuts:
             bound[str(sid)] = dict(props)
+            if self.hyprland:
+                self.hyprland.register(self.registered.get(sender, ""), str(sid), props.get("description", ""),
+                                       props.get("preferred_trigger", ""))
         print(f"bound {sorted(bound)} for {session}", flush=True)
         return self._request(sender, options, {"shortcuts": self._results(bound)})
 
@@ -107,8 +178,15 @@ class Portal(dbus.service.Object):
     def Deactivated(self, session, shortcut, timestamp, options):
         pass
 
-    def _emit(self, shortcut, signal):
-        hits = [s for s, ids in self.sessions.items() if shortcut in ids]
+    def _compositor_event(self, kind, target):
+        """Hyprland pressed or released "<app id>:<shortcut id>": signal the sessions of that app that bound it."""
+        app_id, _, sid = target.partition(":")  # desktop-file IDs have no colon
+        signal = self.Activated if kind == "pressed" else self.Deactivated
+        hits = self._emit(sid, signal, lambda s: self.registered.get(self.owners.get(s), "") == app_id)
+        print(f"Hyprland {kind} {target}: {int(hits)} session(s)", flush=True)
+
+    def _emit(self, shortcut, signal, owner_matches=lambda s: True):
+        hits = [s for s, ids in self.sessions.items() if shortcut in ids and owner_matches(s)]
         for s in hits:
             signal(dbus.ObjectPath(s), shortcut, dbus.UInt64(int(time.time() * 1000)), dbus.Dictionary({}, signature="sv"))
         return dbus.UInt32(len(hits))
