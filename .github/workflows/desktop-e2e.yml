@@ -63,20 +63,29 @@ jobs:
           echo "ARCADE_SEATD=1" >> "$GITHUB_ENV"
       # Single-user Nix: the store belongs to the runner, so cache-nix-action can
       # unpack into it (a multi-user, root-owned store fails with EACCES).
-      # The Nix archive comes from a GitHub release download, which sometimes returns an error page instead
-      # ("zstd: unsupported format"): a second attempt after a pause.
-      - id: nix-install
-        continue-on-error: true
-        uses: nixbuild/nix-quick-install-action@v35
+      # The action pipes `curl -sL` (no --fail) into unzstd, so a GitHub error page for its archive fails the job
+      # as "zstd: unsupported format", and its own retries never see the error. Fetch the archive here, failing on
+      # HTTP errors, retrying, and checking it decompresses, then hand it to the action as a file:// URL (which its
+      # curl reads). The versions match the action's pin: release v35, Nix 2.34.7.
+      - name: Nix archive
+        timeout-minutes: 5
+        env:
+          NIX_RELEASE: v35
+          NIX_VERSION: 2.34.7
+        run: |
+          dir="$RUNNER_TEMP/nix-archives"; mkdir -p "$dir"
+          file="$dir/nix-$NIX_VERSION-x86_64-linux.tar.zstd"
+          url="https://github.com/nixbuild/nix-quick-install-action/releases/download/$NIX_RELEASE/nix-$NIX_VERSION-x86_64-linux.tar.zstd"
+          for i in 1 2 3 4 5; do
+            curl -fsSL --retry 3 --retry-all-errors -o "$file" "$url" && zstd -tq "$file" && break
+            echo "attempt $i failed"; rm -f "$file"; sleep $((i * 15))
+          done
+          zstd -tq "$file"
+          echo "NIX_ARCHIVES_DIR=$dir" >> "$GITHUB_ENV"
+      - uses: nixbuild/nix-quick-install-action@v35
         with:
-          nix_conf: |
-            extra-substituters = https://hyprland.cachix.org
-            extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
-      - if: steps.nix-install.outcome == 'failure'
-        run: sleep 30
-      - if: steps.nix-install.outcome == 'failure'
-        uses: nixbuild/nix-quick-install-action@v35
-        with:
+          nix_version: 2.34.7
+          nix_archives_url: file://${{ env.NIX_ARCHIVES_DIR }}
           nix_conf: |
             extra-substituters = https://hyprland.cachix.org
             extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
