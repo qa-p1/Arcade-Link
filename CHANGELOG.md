@@ -17,6 +17,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
   (`org.freedesktop.host.portal.Registry.Register`), as xdg-desktop-portal 1.19 and later do. Box registers its
   desktop-file ID there before binding its shortcut and gave up on the stand-in's UnknownMethod, so no Box shortcut
   could be tested on headless Hyprland. `Desktop.registered_apps()` lists the registered IDs.
+- The portal stand-in reports bound shortcuts as a real portal does, with `description` and `trigger_description`
+  (the app's preferred trigger), instead of echoing the request. Box's portal client (ashpd) refused the reply for
+  the missing `trigger_description`, so Box still reported no shortcut.
+- The desktop harness waits until seatd's socket accepts the runner's connection, after stopping the seatd service
+  Ubuntu's package starts. It waited only for the socket to exist, which the service's socket already did, so
+  Hyprland could start before ours replaced it and crash on "Permission denied" (seen in Box's first Tier 1 run).
+- The desktop harness downloads the Nix archive itself, failing on HTTP errors, retrying and checking it
+  decompresses, and gives it to the Nix install action as a file. The action streamed GitHub's error pages into
+  unzstd ("unsupported format"), which failed whole runs and also defeated its own retries.
 - `runtime::install_crash_reports` no longer creates the crash folder up front: the first report makes it (the
   fatal-signal handler makes the missing folders with `mkdir`, which is async-signal-safe). An app that installed
   the reports at start broke CLI-4, since `--version` or `--arcade-manifest` then left `arcade/<app>/crashes/`

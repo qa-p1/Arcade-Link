@@ -80,14 +80,24 @@ class Portal(dbus.service.Object):
         for sid, props in shortcuts:
             bound[str(sid)] = dict(props)
         print(f"bound {sorted(bound)} for {session}", flush=True)
-        out = dbus.Array([dbus.Struct((dbus.String(k), dbus.Dictionary(v, signature="sv"))) for k, v in bound.items()], signature="(sa{sv})")
-        return self._request(sender, options, {"shortcuts": out})
+        return self._request(sender, options, {"shortcuts": self._results(bound)})
+
+    @staticmethod
+    def _results(bound):
+        """What the portal reports for bound shortcuts: the description and the trigger it assigned. Real portals
+        always send trigger_description (ashpd, which Box uses, refuses a result without it); the stand-in assigns
+        the app's preferred trigger, or none."""
+        return dbus.Array([
+            dbus.Struct((dbus.String(k), dbus.Dictionary({
+                "description": dbus.String(str(v.get("description", ""))),
+                "trigger_description": dbus.String(str(v.get("preferred_trigger", ""))),
+            }, signature="sv")))
+            for k, v in bound.items()], signature="(sa{sv})")
 
     @dbus.service.method(PORTAL, in_signature="oa{sv}", out_signature="o", sender_keyword="sender")
     def ListShortcuts(self, session, options, sender=None):
         bound = self.sessions.get(str(session), {})
-        out = dbus.Array([dbus.Struct((dbus.String(k), dbus.Dictionary(v, signature="sv"))) for k, v in bound.items()], signature="(sa{sv})")
-        return self._request(sender, options, {"shortcuts": out})
+        return self._request(sender, options, {"shortcuts": self._results(bound)})
 
     @dbus.service.signal(PORTAL, signature="osta{sv}")
     def Activated(self, session, shortcut, timestamp, options):
