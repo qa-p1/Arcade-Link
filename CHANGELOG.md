@@ -7,6 +7,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [1.0.6] — 2026-11-09
 
+### Added
+- `runtime::cap_malloc_arenas()`: caps glibc's malloc arenas at two in the app and its WebKit processes (unless the
+  user set `MALLOC_ARENA_MAX`), which keeps a WebKit window's memory from varying with thread timing (Tools D18);
+  `childenv::sanitize` removes the cap for programs the app starts. Shared so Box and Look need no copy of Tools'.
+
 ### Fixed
 - The desktop harness's portal stand-in serves the host app registry
   (`org.freedesktop.host.portal.Registry.Register`), as xdg-desktop-portal 1.19 and later do. Box registers its

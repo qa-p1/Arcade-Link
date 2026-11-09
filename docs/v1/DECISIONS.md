@@ -137,3 +137,10 @@ Box's Tier 1 test found the stand-in has no host app registry, which unsandboxed
 request since xdg-desktop-portal 1.19 (Hyprland's Tier 1 desktop ships a current portal). The stand-in now serves
 `Registry.Register` with the real portal's one-registration-per-connection rule. An app must still work without
 the registry (older portals, e.g. Ubuntu 24.04's 1.18); that is the app's own test, not the harness's.
+
+## D13 — The malloc arena cap moves to Link
+
+Tools D18 found glibc thread arenas in WebKit made open-window PSS bimodal (about 257 or about 300 MB) and capped
+them at two in Tools' own code. Box and Look run the same WebKit, so the cap is `runtime::cap_malloc_arenas` here
+(PLAN: shared code moves to Link), and `childenv::sanitize` drops it for other programs, as Tools does. Tools keeps
+its copy until its next change, since rc.10 is the verified candidate.

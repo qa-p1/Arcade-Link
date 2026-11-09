@@ -319,6 +319,34 @@ mod signals {
 // ---------------------------------------------------------------------------
 // Memory (RT-5; AUDIT/memory.md W0, W1, W3b)
 
+const ARENA_MAX: &str = "MALLOC_ARENA_MAX";
+/// Set when [`cap_malloc_arenas`] set `MALLOC_ARENA_MAX` itself.
+static CAPPED_ARENAS: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+/// Caps glibc's malloc arenas at two in this process and the WebKit processes it starts, unless the user set
+/// `MALLOC_ARENA_MAX`. glibc gives a thread its own arena when the main one is contended, so how many WebKit made
+/// while a window opened depended on timing: Tools' open-window PSS read about 257 or about 300 MB on the same build,
+/// and capped, eight runners read 252–254 (Tools D18). Child processes inherit the variable; this process started
+/// allocating before `main`, so it also gets `mallopt`. Call it first in `main`, while the process has one thread.
+/// [`crate::childenv::sanitize`] removes the cap again for programs the app starts. Linux (glibc) only.
+pub fn cap_malloc_arenas() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        if std::env::var_os(ARENA_MAX).is_some() {
+            return;
+        }
+        std::env::set_var(ARENA_MAX, "2");
+        let _ = CAPPED_ARENAS.set(());
+        // SAFETY: mallopt only changes allocator tuning; M_ARENA_MAX limits arenas created from now on.
+        unsafe { libc::mallopt(libc::M_ARENA_MAX, 2) };
+    }
+}
+
+/// The variable to remove from a child's environment: `MALLOC_ARENA_MAX` when [`cap_malloc_arenas`] set it.
+pub(crate) fn capped_arena_variable() -> Option<&'static str> {
+    CAPPED_ARENAS.get().map(|()| ARENA_MAX)
+}
+
 /// W0: gives freed heap back to the OS and drops this process's resident
 /// pages of read-only file mappings (code `r-xp` and read-only data `r--p`)
 /// that hold nothing but the file's own bytes. They refault from the page

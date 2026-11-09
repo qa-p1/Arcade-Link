@@ -218,6 +218,9 @@ pub fn sanitize(cmd: &mut Command) -> &mut Command {
             None => cmd.env_remove(key),
         };
     }
+    if let Some(variable) = crate::runtime::capped_arena_variable() {
+        cmd.env_remove(variable);
+    }
     let appdir = std::env::var("APPDIR").ok();
     if let Ok(current) = std::env::current_dir() {
         let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
