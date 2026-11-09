@@ -20,6 +20,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The desktop harness waits until seatd's socket accepts the runner's connection, after stopping the seatd service
   Ubuntu's package starts. It waited only for the socket to exist, which the service's socket already did, so
   Hyprland could start before ours replaced it and crash on "Permission denied" (seen in Box's first Tier 1 run).
+- The desktop harness installs Nix a second time, after a pause, when GitHub's release download of the Nix archive
+  fails.
 - `runtime::install_crash_reports` no longer creates the crash folder up front: the first report makes it (the
   fatal-signal handler makes the missing folders with `mkdir`, which is async-signal-safe). An app that installed
   the reports at start broke CLI-4, since `--version` or `--arcade-manifest` then left `arcade/<app>/crashes/`

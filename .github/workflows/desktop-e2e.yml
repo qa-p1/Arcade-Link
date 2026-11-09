@@ -63,7 +63,19 @@ jobs:
           echo "ARCADE_SEATD=1" >> "$GITHUB_ENV"
       # Single-user Nix: the store belongs to the runner, so cache-nix-action can
       # unpack into it (a multi-user, root-owned store fails with EACCES).
-      - uses: nixbuild/nix-quick-install-action@v35
+      # The Nix archive comes from a GitHub release download, which sometimes returns an error page instead
+      # ("zstd: unsupported format"): a second attempt after a pause.
+      - id: nix-install
+        continue-on-error: true
+        uses: nixbuild/nix-quick-install-action@v35
+        with:
+          nix_conf: |
+            extra-substituters = https://hyprland.cachix.org
+            extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
+      - if: steps.nix-install.outcome == 'failure'
+        run: sleep 30
+      - if: steps.nix-install.outcome == 'failure'
+        uses: nixbuild/nix-quick-install-action@v35
         with:
           nix_conf: |
             extra-substituters = https://hyprland.cachix.org
