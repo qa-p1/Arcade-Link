@@ -32,6 +32,12 @@ shot = d.screenshot("selftest")
 assert shot.stat().st_size > 10_000, shot.stat().st_size
 assert isinstance(d.layers(), list)
 assert d.bound_shortcuts() == []
+assert d.registered_apps() == []
+registry = subprocess.run([sys.executable, "-c", (
+    "import dbus; o = dbus.SessionBus().get_object('org.freedesktop.portal.Desktop', '/org/freedesktop/portal/desktop');"
+    "dbus.Interface(o, 'org.freedesktop.host.portal.Registry').Register('harness.term', {})")], capture_output=True, text=True)
+assert registry.returncode == 0, registry.stderr
+assert d.registered_apps() == ["harness.term"], d.registered_apps()
 print(f"harness ok: {len(mons)} outputs, keys, pointer, clipboard, screenshot ({shot.stat().st_size} bytes)")
 term.terminate()
 term.wait(5)

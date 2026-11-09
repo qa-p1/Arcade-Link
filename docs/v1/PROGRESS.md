@@ -2,6 +2,12 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-09 (1.0.6)
+
+**v1.0.5 tagged** on 601af05 (PR #53). Box's first Tier 1 run found the harness portal had no host app registry
+(D12): **1.0.6 prepared**, the stand-in serves `Registry.Register` and the self-test checks it. Tag after CI,
+Ecosystem e2e and the desktop harness pass on the merge.
+
 ## 2026-11-08 (after 1.0.4)
 
 **v1.0.4 tagged** on a076adb (the merge of PR #51) through "Tag a release", after CI, Ecosystem e2e and the

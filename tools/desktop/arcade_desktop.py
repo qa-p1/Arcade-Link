@@ -256,6 +256,10 @@ class Desktop:
     def bound_shortcuts(self) -> list[str]:
         return [str(s) for s in self._portal().Bound()]
 
+    def registered_apps(self) -> list[str]:
+        """Desktop-file IDs apps named through the host app registry (portal 1.19+)."""
+        return [str(a) for a in self._portal().Registered()]
+
     def global_shortcut(self, shortcut_id: str, hold: float = 0.08) -> None:
         """Press, hold for `hold` seconds, and release a portal shortcut."""
         portal = self._portal()

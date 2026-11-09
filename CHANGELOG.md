@@ -5,6 +5,23 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.6] — 2026-11-09
+
+### Added
+- `runtime::cap_malloc_arenas()`: caps glibc's malloc arenas at two in the app and its WebKit processes (unless the
+  user set `MALLOC_ARENA_MAX`), which keeps a WebKit window's memory from varying with thread timing (Tools D18);
+  `childenv::sanitize` removes the cap for programs the app starts. Shared so Box and Look need no copy of Tools'.
+
+### Fixed
+- The desktop harness's portal stand-in serves the host app registry
+  (`org.freedesktop.host.portal.Registry.Register`), as xdg-desktop-portal 1.19 and later do. Box registers its
+  desktop-file ID there before binding its shortcut and gave up on the stand-in's UnknownMethod, so no Box shortcut
+  could be tested on headless Hyprland. `Desktop.registered_apps()` lists the registered IDs.
+- `runtime::install_crash_reports` no longer creates the crash folder up front: the first report makes it (the
+  fatal-signal handler makes the missing folders with `mkdir`, which is async-signal-safe). An app that installed
+  the reports at start broke CLI-4, since `--version` or `--arcade-manifest` then left `arcade/<app>/crashes/`
+  behind (found adding crash reports to Tools).
+
 ## [1.0.5] — 2026-11-08
 
 ### Fixed
