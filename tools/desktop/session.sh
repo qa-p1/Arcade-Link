@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Starts a private D-Bus, a StatusNotifierWatcher, the global-shortcuts portal
-# stand-in and headless Hyprland, then runs "$@" inside that session.
+# Starts a private D-Bus, a StatusNotifierWatcher, headless Hyprland and the
+# global-shortcuts portal stand-in, then runs "$@" inside that session.
 # Exports HYPRLAND_INSTANCE_SIGNATURE, WAYLAND_DISPLAY, DBUS_SESSION_BUS_ADDRESS
 # and ARCADE_DESKTOP_ARTIFACTS (screenshots and logs) to the command.
 set -euo pipefail
@@ -15,7 +15,6 @@ exec dbus-run-session -- bash -c '
   set -euo pipefail
   here="$1"; shift
   python3 "$here/sni_watcher_service.py" > "$ARCADE_DESKTOP_ARTIFACTS/sni-watcher.log" 2>&1 &
-  python3 "$here/portal_shortcuts.py" > "$ARCADE_DESKTOP_ARTIFACTS/portal.log" 2>&1 &
   # A real desktop has a Secret Service; apps keep their keys there.
   if command -v gnome-keyring-daemon >/dev/null; then
     # A non-empty password creates and unlocks the "login" collection; an empty
@@ -65,6 +64,11 @@ exec dbus-run-session -- bash -c '
   outputs() { hyprctl -j monitors | python3 -c "import json,sys; print(\" \".join(m[\"name\"] for m in json.load(sys.stdin)))"; }
   for _ in $(seq 1 50); do [ "$(outputs)" = "HEADLESS-1 HEADLESS-2" ] && break; sleep 0.1; done
   [ "$(outputs)" = "HEADLESS-1 HEADLESS-2" ] || { echo "outputs are [$(outputs)], expected HEADLESS-1 HEADLESS-2"; hyprctl monitors all; dump; exit 1; }
+  # After Hyprland: like xdg-desktop-portal-hyprland, the stand-in registers bound shortcuts with the compositor.
+  python3 "$here/portal_shortcuts.py" > "$ARCADE_DESKTOP_ARTIFACTS/portal.log" 2>&1 &
+  portal=$!
+  for _ in $(seq 1 100); do grep -q "stand-in ready" "$ARCADE_DESKTOP_ARTIFACTS/portal.log" && break; kill -0 "$portal" 2>/dev/null || break; sleep 0.1; done
+  grep -q "stand-in ready" "$ARCADE_DESKTOP_ARTIFACTS/portal.log" || { echo "the portal stand-in did not start:"; cat "$ARCADE_DESKTOP_ARTIFACTS/portal.log"; exit 1; }
   echo "Hyprland $HYPRLAND_INSTANCE_SIGNATURE on $WAYLAND_DISPLAY"
   status=0
   "$@" || status=$?

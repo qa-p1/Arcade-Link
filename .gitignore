@@ -2,6 +2,7 @@
 /qt/build
 __pycache__/
 /tools/desktop/vpointer
+/tools/desktop/gshortcuts
 /template/target
 /template/dist
 /tools/fleet/wmclose

@@ -38,6 +38,23 @@ registry = subprocess.run([sys.executable, "-c", (
     "dbus.Interface(o, 'org.freedesktop.host.portal.Registry').Register('harness.term', {})")], capture_output=True, text=True)
 assert registry.returncode == 0, registry.stderr
 assert d.registered_apps() == ["harness.term"], d.registered_apps()
-print(f"harness ok: {len(mons)} outputs, keys, pointer, clipboard, screenshot ({shot.stat().st_size} bytes)")
+
+# Like xdg-desktop-portal-hyprland, a bound shortcut is registered with Hyprland as "<app id>:<id>", and the
+# compositor's global dispatcher reaches the app as Activated.
+client = subprocess.Popen([sys.executable, str(Path(__file__).with_name("shortcut_client.py")), "harness.shortcut", "selftest"],
+                          stdout=subprocess.PIPE, text=True)
+assert client.stdout
+line = client.stdout.readline().strip()
+assert line == "bound selftest=SUPER+F12", line
+published = subprocess.run(["hyprctl", "globalshortcuts"], capture_output=True, text=True, check=True).stdout
+assert any(l.startswith("harness.shortcut:selftest ->") for l in published.splitlines()), published
+subprocess.run(["hyprctl", "dispatch", 'hl.dsp.global("harness.shortcut:selftest")'], check=True, capture_output=True)
+line = client.stdout.readline().strip()
+assert line == "activated selftest", line
+d.global_shortcut("selftest")
+assert [client.stdout.readline().strip() for _ in range(2)] == ["activated selftest", "deactivated selftest"]
+client.terminate()
+client.wait(5)
+print(f"harness ok: {len(mons)} outputs, keys, pointer, clipboard, global shortcuts, screenshot ({shot.stat().st_size} bytes)")
 term.terminate()
 term.wait(5)

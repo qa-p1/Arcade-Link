@@ -20,6 +20,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The portal stand-in reports bound shortcuts as a real portal does, with `description` and `trigger_description`
   (the app's preferred trigger), instead of echoing the request. Box's portal client (ashpd) refused the reply for
   the missing `trigger_description`, so Box still reported no shortcut.
+- Under Hyprland the portal stand-in registers each bound shortcut with the compositor as `<app id>:<id>`, as
+  xdg-desktop-portal-hyprland does (new `gshortcuts` helper, hyprland_global_shortcuts_manager_v1), and forwards the
+  compositor's pressed/released events as Activated/Deactivated. Box checks that `hyprctl globalshortcuts` lists its
+  shortcut before adding its key binding, and reported "hyprland_binding_unavailable" against the stand-in. The
+  stand-in now starts after Hyprland; the harness self-test covers the path.
 - The desktop harness waits until seatd's socket accepts the runner's connection, after stopping the seatd service
   Ubuntu's package starts. It waited only for the socket to exist, which the service's socket already did, so
   Hyprland could start before ours replaced it and crash on "Permission denied" (seen in Box's first Tier 1 run).
