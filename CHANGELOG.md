@@ -5,6 +5,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.6] — 2026-11-09
+
+### Fixed
+- The desktop harness's portal stand-in serves the host app registry
+  (`org.freedesktop.host.portal.Registry.Register`), as xdg-desktop-portal 1.19 and later do. Box registers its
+  desktop-file ID there before binding its shortcut and gave up on the stand-in's UnknownMethod, so no Box shortcut
+  could be tested on headless Hyprland. `Desktop.registered_apps()` lists the registered IDs.
+
 ## [1.0.5] — 2026-11-08
 
 ### Fixed

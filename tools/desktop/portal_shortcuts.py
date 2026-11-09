@@ -5,6 +5,10 @@ Apps bind their shortcuts through it exactly as through the real portal. The
 driver then presses and releases a shortcut with dev.arcade.TestPortal.Press /
 Release, which emit Activated and Deactivated (the real `hl.dsp.global` sends
 Activated only, so hold-to-use shortcuts can't be tested through it).
+
+Like xdg-desktop-portal 1.19 and later, it also serves the host app registry
+(`org.freedesktop.host.portal.Registry.Register`), which unsandboxed apps call
+first to name their desktop-file ID; dev.arcade.TestPortal.Registered lists them.
 """
 import time
 
@@ -17,6 +21,7 @@ PORTAL = "org.freedesktop.portal.GlobalShortcuts"
 REQUEST = "org.freedesktop.portal.Request"
 SESSION = "org.freedesktop.portal.Session"
 CONTROL = "dev.arcade.TestPortal"
+REGISTRY = "org.freedesktop.host.portal.Registry"
 PATH = "/org/freedesktop/portal/desktop"
 
 
@@ -37,6 +42,7 @@ class Portal(dbus.service.Object):
         super().__init__(bus, PATH)
         self.bus = bus
         self.sessions = {}  # session path -> {shortcut id: description}
+        self.registered = {}  # bus name -> desktop-file ID
         self.n = 0
 
     def _request(self, sender, options, results):
@@ -46,6 +52,19 @@ class Portal(dbus.service.Object):
         req = Request(self.bus, path)
         GLib.timeout_add(20, lambda: (req.Response(dbus.UInt32(0), results), req.remove_from_connection(), False)[2])
         return dbus.ObjectPath(path)
+
+    @dbus.service.method(REGISTRY, in_signature="sa{sv}", out_signature="", sender_keyword="sender")
+    def Register(self, app_id, options, sender=None):
+        # The real portal refuses a second registration from one connection.
+        if sender in self.registered:
+            raise dbus.exceptions.DBusException("Connection already associated with an application ID",
+                                                name="org.freedesktop.portal.Error.Failed")
+        self.registered[sender] = str(app_id)
+        print(f"registered {app_id} for {sender}", flush=True)
+
+    @dbus.service.method(CONTROL, in_signature="", out_signature="as")
+    def Registered(self):
+        return sorted(set(self.registered.values()))
 
     @dbus.service.method(PORTAL, in_signature="a{sv}", out_signature="o", sender_keyword="sender")
     def CreateSession(self, options, sender=None):
