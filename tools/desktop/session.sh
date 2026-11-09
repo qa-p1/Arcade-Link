@@ -23,9 +23,17 @@ exec dbus-run-session -- bash -c '
     printf "arcade-ci\n" | gnome-keyring-daemon --unlock --components=secrets --daemonize > "$ARCADE_DESKTOP_ARTIFACTS/keyring.log" 2>&1 || true
   fi
   if [ "${ARCADE_SEATD:-}" = 1 ]; then
+    # Ubuntu ships seatd with its own service, whose socket ours replaces: waiting for the socket to exist could
+    # pass on that one, and Hyprland then got Permission denied (or got ours before seatd gave it our group).
+    # Stop that service, and wait until this user can actually connect.
+    sudo -n systemctl stop seatd.service 2>/dev/null || true
+    sudo -n rm -f /run/seatd.sock
     sudo -n seatd -g "$(id -gn)" -l info > "$ARCADE_DESKTOP_ARTIFACTS/seatd.log" 2>&1 &
-    for _ in $(seq 1 50); do [ -S /run/seatd.sock ] && break; sleep 0.1; done
-    [ -S /run/seatd.sock ] || { echo "seatd did not start:"; cat "$ARCADE_DESKTOP_ARTIFACTS/seatd.log"; exit 1; }
+    seat_ready() {
+      python3 -c "import socket; socket.socket(socket.AF_UNIX).connect(\"/run/seatd.sock\")" 2>/dev/null
+    }
+    for _ in $(seq 1 100); do seat_ready && break; sleep 0.1; done
+    seat_ready || { echo "seatd did not start:"; ls -l /run/seatd.sock; cat "$ARCADE_DESKTOP_ARTIFACTS/seatd.log"; exit 1; }
   fi
   if [ -n "${AQ_DRM_DEVICES:-}" ] && ! [ -r "$AQ_DRM_DEVICES" -a -w "$AQ_DRM_DEVICES" ]; then
     echo "cannot open $AQ_DRM_DEVICES for reading and writing:"; ls -l "$AQ_DRM_DEVICES"; exit 1

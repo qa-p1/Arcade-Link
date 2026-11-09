@@ -17,6 +17,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   (`org.freedesktop.host.portal.Registry.Register`), as xdg-desktop-portal 1.19 and later do. Box registers its
   desktop-file ID there before binding its shortcut and gave up on the stand-in's UnknownMethod, so no Box shortcut
   could be tested on headless Hyprland. `Desktop.registered_apps()` lists the registered IDs.
+- The desktop harness waits until seatd's socket accepts the runner's connection, after stopping the seatd service
+  Ubuntu's package starts. It waited only for the socket to exist, which the service's socket already did, so
+  Hyprland could start before ours replaced it and crash on "Permission denied" (seen in Box's first Tier 1 run).
 - `runtime::install_crash_reports` no longer creates the crash folder up front: the first report makes it (the
   fatal-signal handler makes the missing folders with `mkdir`, which is async-signal-safe). An app that installed
   the reports at start broke CLI-4, since `--version` or `--arcade-manifest` then left `arcade/<app>/crashes/`

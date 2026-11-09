@@ -35,6 +35,8 @@ jobs:
           # and seatd so libseat can open it without a logind session.
           for i in 1 2 3; do sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends seatd && break; sleep $((i * 10)); done
           command -v seatd || { echo "::error::seatd did not install"; exit 1; }
+          # The package enables a system seatd; the session starts its own for the runner's group (session.sh).
+          sudo systemctl disable --now seatd.service 2>/dev/null || true
           # vkms is built into some runner kernels; others need linux-modules-extra
           # (which not every kernel flavour publishes).
           if ! sudo modprobe vkms; then
