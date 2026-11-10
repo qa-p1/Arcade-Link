@@ -8,6 +8,10 @@ Read-only on the apps; Linux only. Needs: Xvfb (or an existing $DISPLAY), dbus-d
 
   fleet_budget.py --apps DIR [--budgets budgets.json] [--settle 75] [--open tools --close-wait 45] [--json out.json]
                   [--only tools]   (one app's own CI: start and measure only these apps)
+The open window is measured 6 s after it was asked for, as long as the app's processes used under 5 % of a CPU in the
+two seconds before; an app still busy then (a slow or loaded machine: the page is loading, not open) is measured after
+its first quiet two seconds instead, and fails if it is not quiet within 30 s. So the reading is always the open, idle
+window, never earlier than 6 s, whatever the machine's speed (Tools D22).
 An app that relaunches itself from its unpacked copy (U1) is followed: its launcher exits and the copy, run from
 $XDG_DATA_HOME/arcade/runtime/<app>-*, is measured instead.
 DIR holds Arcade-<App>.AppImage (Tools Box Look Find Lens Clipboard Shelf Wheel). Budgets are per app and per state; "fleet" is the sum
@@ -75,6 +79,33 @@ def unpacked(app, home, data):
         except OSError:
             pass
     return out
+
+
+def cpu_seconds(pids):
+    """CPU time used so far by these processes (user + system)."""
+    ticks = 0
+    for p in pids:
+        try:
+            s = open(f'/proc/{p}/stat').read(); f = s[s.rindex(')') + 2:].split(); ticks += int(f[11]) + int(f[12])
+        except (OSError, ValueError, IndexError):
+            pass
+    return ticks / os.sysconf('SC_CLK_TCK')
+
+
+OPEN_AFTER, QUIET_WINDOW, QUIET_CPU, QUIET_LIMIT = 6, 2, 0.05, 30
+
+
+def wait_until_open(pids, opened):
+    """Sleeps until OPEN_AFTER seconds after `opened`, then on until the processes `pids()` returns used less than
+    QUIET_CPU of one CPU over QUIET_WINDOW seconds. Returns (seconds since opened, quiet): quiet is False when
+    QUIET_LIMIT passed first. Processes that exit in a window take their CPU time with them; the difference is then
+    negative, which counts as quiet."""
+    time.sleep(max(0, opened + OPEN_AFTER - QUIET_WINDOW - time.time())); before = cpu_seconds(pids())
+    while True:
+        time.sleep(QUIET_WINDOW); now = cpu_seconds(pids()); waited = time.time() - opened
+        if now - before < QUIET_CPU * QUIET_WINDOW: return waited, True
+        if waited >= QUIET_LIMIT: return waited, False
+        before = now
 
 
 def measure(launch, home, data):
@@ -153,7 +184,11 @@ def main():
             args, pat = OPEN_ARGS[a.open]; exe = os.path.join(a.apps, f'Arcade-{a.open.capitalize()}.AppImage')
             sample = f'{root}/home/sample.txt'; open(sample, 'w').write('x\n' * 100)
             subprocess.run([exe, *[sample if x == '@FILE' else x for x in args]], env=env, timeout=30, capture_output=True)
-            time.sleep(6); rows = measure(launch, env['HOME'], data); table(f'{a.open} window open', rows); check('open', rows, budgets, failures); result['open'] = rows
+            waited, quiet = wait_until_open(lambda: tree([launch[a.open]] + unpacked(a.open, env['HOME'], data)), time.time())
+            rows = measure(launch, env['HOME'], data); table(f'{a.open} window open', rows); check('open', rows, budgets, failures); result['open'] = rows
+            result['open_measured_after_s'] = round(waited, 1)
+            if waited > OPEN_AFTER + 1: print(f'  ({a.open} was still busy {OPEN_AFTER} s after opening: measured after {waited:.0f} s)')
+            if not quiet: failures.append(f'open/{a.open}: still busy {waited:.0f} s after opening (never under {QUIET_CPU:.0%} of a CPU for {QUIET_WINDOW} s)')
             wid = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', pat], env=env, capture_output=True, text=True).stdout.split()
             for w in wid: close_window(w, env)
             time.sleep(a.close_wait); rows = measure(launch, env['HOME'], data); table(f'{a.open} closed +{a.close_wait}s', rows); check('closed', rows, budgets, failures); result['closed'] = rows
