@@ -54,8 +54,19 @@ fn child() {
             std::fs::write(dir.join("predecessor"), std::process::id().to_string()).unwrap();
         }
         "unpack" => {
+            // As an app's main: the arena cap first, then the relaunch.
+            runtime::cap_malloc_arenas();
             if let Some(code) = runtime::relaunch_unpacked("arcade.test", "1.2.3", true) {
                 std::process::exit(code);
+            }
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            {
+                let mut other_app = Command::new("sh");
+                other_app.args(["-c", "printf %s \"${MALLOC_ARENA_MAX-unset}\""]);
+                arcade_link::childenv::sanitize(&mut other_app);
+                let started = String::from_utf8_lossy(&other_app.output().unwrap().stdout).into_owned();
+                let own = std::env::var("MALLOC_ARENA_MAX").unwrap_or_default();
+                std::fs::write(dir.join("arenas"), format!("{own} {started}")).unwrap();
             }
             let exe = std::env::current_exe().unwrap();
             std::fs::write(dir.join("ran-from"), format!("{}\n{}", exe.display(), std::env::var("APPDIR").unwrap_or_default())).unwrap();
@@ -343,6 +354,7 @@ fn an_appimage_app_relaunches_from_its_unpacked_copy_once() {
                 .env("APPDIR", &appdir)
                 .env("XDG_DATA_HOME", &data)
                 .env_remove(runtime::UNPACKED_ENV)
+                .env_remove("MALLOC_ARENA_MAX")
                 .output()
             {
                 Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => std::thread::sleep(std::time::Duration::from_millis(20)),
@@ -362,6 +374,9 @@ fn an_appimage_app_relaunches_from_its_unpacked_copy_once() {
     assert_eq!(std::fs::read_to_string(copy.join("usr/data.txt")).unwrap(), "payload");
     assert!(std::fs::symlink_metadata(copy.join("AppRun")).unwrap().file_type().is_symlink());
     assert!(copy.join(".complete").exists());
+    // The unpacked copy owns its arena cap: it keeps it, and an app it starts does not inherit it (Tools D18).
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    assert_eq!(std::fs::read_to_string(dir.join("arenas")).unwrap(), "2 unset");
 
     // A second start reuses the copy; a changed AppImage gets a new one.
     std::fs::write(copy.join("usr/marker"), "kept").unwrap();
