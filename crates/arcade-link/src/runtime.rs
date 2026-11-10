@@ -529,6 +529,11 @@ pub fn relaunch_unpacked(app_id: &str, version: &str, wait: bool) -> Option<i32>
         let mut cmd = Command::new(dir.join("AppRun"));
         cmd.args(std::env::args_os().skip(1)).env("APPDIR", &dir).env(UNPACKED_ENV, "1");
         crate::childenv::detach_from_image(&mut cmd);
+        // The copy sets the arena cap itself and so owns it: inherited, it took the cap for the user's and passed it
+        // on to every program it started.
+        if let Some(variable) = capped_arena_variable() {
+            cmd.env_remove(variable);
+        }
         let mut child = cmd.spawn().ok()?;
         if wait {
             return Some(child.wait().ok().and_then(|s| s.code()).unwrap_or(1));

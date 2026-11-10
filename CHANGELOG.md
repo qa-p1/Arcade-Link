@@ -5,6 +5,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- The WebKit trimmer (`packaging/linux/arcade-trim-preload.c`) trims again each time a helper process settles during
+  its first 15 s, not only at 2 s and then every 20 s. On a slow runner the page was still loading at 2 s, the code it
+  ran afterwards stayed resident until the 22 s trim, and a window read about 48 MB more PSS for that time: Tools'
+  open-window gate measured 250 on most runners and 289–309 on a slow one, on the same build (Link D14, Tools D21).
+- `runtime::relaunch_unpacked` no longer passes the arena cap to the unpacked copy. The copy took the inherited
+  `MALLOC_ARENA_MAX=2` for the user's own setting, so `childenv::sanitize` kept it and every app or installer it
+  started ran with two arenas, contrary to Tools D18. The copy now sets the cap itself (test fails without the fix).
+
 ## [1.0.6] — 2026-11-09
 
 ### Added
