@@ -37,7 +37,8 @@ registry = subprocess.run([sys.executable, "-c", (
     "import dbus; o = dbus.SessionBus().get_object('org.freedesktop.portal.Desktop', '/org/freedesktop/portal/desktop');"
     "dbus.Interface(o, 'org.freedesktop.host.portal.Registry').Register('harness.term', {})")], capture_output=True, text=True)
 assert registry.returncode == 0, registry.stderr
-assert d.registered_apps() == ["harness.term"], d.registered_apps()
+# As with the real portal, the registration ended with that client's connection.
+d.wait(lambda: d.registered_apps() == [], 5, "a client that left the bus to be unregistered")
 
 # Like xdg-desktop-portal-hyprland, a bound shortcut is registered with Hyprland as "<app id>:<id>", and the
 # compositor's global dispatcher reaches the app as Activated.
@@ -46,6 +47,7 @@ client = subprocess.Popen([sys.executable, str(Path(__file__).with_name("shortcu
 assert client.stdout
 line = client.stdout.readline().strip()
 assert line == "bound selftest=SUPER+F12", line
+assert d.registered_apps() == ["harness.shortcut"], d.registered_apps()
 published = subprocess.run(["hyprctl", "globalshortcuts"], capture_output=True, text=True, check=True).stdout
 assert any(l.startswith("harness.shortcut:selftest ->") for l in published.splitlines()), published
 subprocess.run(["hyprctl", "dispatch", 'hl.dsp.global("harness.shortcut:selftest")'], check=True, capture_output=True)
@@ -55,6 +57,9 @@ d.global_shortcut("selftest")
 assert [client.stdout.readline().strip() for _ in range(2)] == ["activated selftest", "deactivated selftest"]
 client.terminate()
 client.wait(5)
+# A client that quits without closing its session is forgotten: no stale session answers a press.
+d.wait(lambda: d.bound_shortcuts() == [] and d.registered_apps() == [], 5, "the quit client's session to end")
+assert int(d._portal().Press("selftest")) == 0
 print(f"harness ok: {len(mons)} outputs, keys, pointer, clipboard, global shortcuts, screenshot ({shot.stat().st_size} bytes)")
 term.terminate()
 term.wait(5)

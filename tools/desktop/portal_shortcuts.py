@@ -16,6 +16,10 @@ one the caller registered (empty if it did not, as with the real portal).
 Like xdg-desktop-portal 1.19 and later, it also serves the host app registry
 (`org.freedesktop.host.portal.Registry.Register`), which unsandboxed apps call
 first to name their desktop-file ID; dev.arcade.TestPortal.Registered lists them.
+
+As with the real portal, a client's sessions and registration end with its bus
+connection: an app that quits without closing its session no longer counts in
+Bound, Registered or a Press.
 """
 import os
 import select
@@ -98,8 +102,7 @@ class Request(dbus.service.Object):
 class Session(dbus.service.Object):
     @dbus.service.method(SESSION, in_signature="", out_signature="")
     def Close(self):
-        portal.sessions.pop(self.__dbus_object_path__, None)
-        portal.owners.pop(self.__dbus_object_path__, None)
+        portal.close_session(self.__dbus_object_path__)
 
 
 class Portal(dbus.service.Object):
@@ -109,8 +112,30 @@ class Portal(dbus.service.Object):
         self.sessions = {}  # session path -> {shortcut id: description}
         self.registered = {}  # bus name -> desktop-file ID
         self.owners = {}  # session path -> bus name
+        self.objects = {}  # session path -> Session
         self.n = 0
         self.hyprland = Hyprland(self._compositor_event) if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") else None
+        bus.add_signal_receiver(self._name_owner_changed, "NameOwnerChanged", "org.freedesktop.DBus",
+                                path="/org/freedesktop/DBus")
+
+    def close_session(self, path):
+        self.sessions.pop(path, None)
+        self.owners.pop(path, None)
+        obj = self.objects.pop(path, None)
+        if obj is not None:
+            obj.remove_from_connection()
+
+    def _name_owner_changed(self, name, old_owner, new_owner):
+        """A client left the bus: its sessions and registration end with it."""
+        if new_owner or not name.startswith(":"):
+            return
+        gone = [path for path, owner in self.owners.items() if owner == name]
+        for path in gone:
+            self.close_session(path)
+        app_id = self.registered.pop(name, None)
+        if gone or app_id is not None:
+            print(f"{name} left the bus: closed {len(gone)} session(s){f', unregistered {app_id}' if app_id else ''}",
+                  flush=True)
 
     def _request(self, sender, options, results):
         token = str(options.get("handle_token", f"t{self.n}"))
@@ -137,7 +162,7 @@ class Portal(dbus.service.Object):
     def CreateSession(self, options, sender=None):
         token = str(options.get("session_handle_token", f"s{self.n}"))
         path = f"/org/freedesktop/portal/desktop/session/{sender[1:].replace('.', '_')}/{token}"
-        Session(self.bus, path)
+        self.objects[path] = Session(self.bus, path)
         self.sessions[path] = {}
         self.owners[path] = sender
         return self._request(sender, options, {"session_handle": dbus.String(path)})
