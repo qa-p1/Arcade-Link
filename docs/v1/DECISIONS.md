@@ -144,3 +144,20 @@ Tools D18 found glibc thread arenas in WebKit made open-window PSS bimodal (abou
 them at two in Tools' own code. Box and Look run the same WebKit, so the cap is `runtime::cap_malloc_arenas` here
 (PLAN: shared code moves to Link), and `childenv::sanitize` drops it for other programs, as Tools does. Tools keeps
 its copy until its next change, since rc.10 is the verified candidate.
+
+## D14 — The WebKit trimmer trims again while a helper settles
+
+Tools PR #49 failed its open-window gate at 309 MB PSS (cap 281). The memory probe on unchanged rc.10 (Tools run
+42750339792) showed the same: 7 runners at 247.6–251.5, one slow runner at 281–295 in both passes and 289.5 in the
+gate's own command, with WebKitWebProcess's file-backed PSS at 104 MB instead of 56 (libwebkit2gtk 34, libLLVM 18,
+libjavascriptcoregtk 16). The trimmer dropped clean code pages once at 2 s and then every 20 s; when the page was
+still loading at 2 s, the code it ran afterwards stayed resident until 22 s, past the gate's 6 s sample. So the
+gate read one of two levels depending on runner speed, which D18's arena cap did not cover.
+
+For its first 15 s the trimmer now polls the process's page-fault count twice a second and trims again whenever two
+quiet polls follow an active one, then returns to every 20 s. CPU time was tried as the signal and does not work (the
+read-back costs under 20 ms of CPU). This is a bounded timer, not background polling: it runs only in a WebKit helper
+that has just started, which happens when a window opens, and stops after 15 s (about 30 wakeups and 3 extra trims of
+14–23 ms on the trimmer's own thread). Locally, the gate command on the same build read 302–351 MB before and
+265–274 after, idle or with busy CPUs. Diagnosed with Fable 5.2's advice (owner rule, catalog PROGRESS 2026-11-10).
+Verification: Tools' memory probe on every runner, plus a busy-CPU pass, on the build that vendors this file.
