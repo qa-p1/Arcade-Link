@@ -5,15 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.7] — 2026-11-10
+
 ### Fixed
 - `tools/fleet/fleet_budget.py` measures the open window once the app is idle: 6 s after the open as before, but on a
   loaded machine whose app still uses 5 % of a CPU or more then, after its first quiet 2 s; an app not quiet within
   30 s fails. A saturated runner's 6 s sample read the page still loading (file-backed code in WebKit), 263–290 MB
   against 206–222 when settled (Tools D21/D22). Idle runners are measured exactly as before.
-
-## [1.0.7] — 2026-11-10
-
-### Fixed
 - The desktop harness's portal stand-in forgets a client that left the bus, as the real portal does: its sessions
   and host-registry entry end with its connection. It kept them until `Session.Close`, which a quitting app never
   sends, so `Bound()` still listed a quit app's shortcut and `Press` reached its dead session (Box's Island test
