@@ -5,7 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.7] — 2026-11-10
+
 ### Fixed
+- The desktop harness's portal stand-in forgets a client that left the bus, as the real portal does: its sessions
+  and host-registry entry end with its connection. It kept them until `Session.Close`, which a quitting app never
+  sends, so `Bound()` still listed a quit app's shortcut and `Press` reached its dead session (Box's Island test
+  pressed before the restarted Box listened). The self-test checks both.
 - The WebKit trimmer (`packaging/linux/arcade-trim-preload.c`) trims again each time a helper process settles during
   its first 15 s, not only at 2 s and then every 20 s. On a slow runner the page was still loading at 2 s, the code it
   ran afterwards stayed resident until the 22 s trim, and a window read about 48 MB more PSS for that time: Tools'

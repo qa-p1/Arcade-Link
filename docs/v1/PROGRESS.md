@@ -2,6 +2,13 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-10 (1.0.7)
+
+**v1.0.6 tagged** on cd380d6. **1.0.7 prepared**: the portal stand-in forgets a client that left the bus (PR #57),
+the WebKit trimmer trims again while a helper settles (D14) and the unpacked copy owns its arena cap (PR #58). Both
+came from Tools PR #49's memory gate and Box PR #19's Island test (diagnosed with Fable 5.2's advice). Tag after CI,
+Ecosystem e2e and the desktop harness pass on the merge.
+
 ## 2026-11-09 (1.0.6)
 
 **v1.0.5 tagged** on 601af05 (PR #53). Box's first Tier 1 run found the harness portal had no host app registry
