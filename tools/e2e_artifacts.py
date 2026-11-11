@@ -65,8 +65,11 @@ def select(spec):
     """The newest green run with an unexpired Linux artifact: (runs, chosen)."""
     repo = spec['repo']
     runs = json.loads(command(['gh', 'run', 'list', '-R', repo, '--branch', BRANCH,
-                              '--status', 'success', '--limit', '5',
-                              '--json', 'databaseId,headSha,headBranch,conclusion,url']))
+                              '--status', 'success', '--limit', '30',
+                              '--json', 'databaseId,headSha,headBranch,conclusion,url,event']))
+    # Dependabot's update jobs (event "dynamic") report as successful runs on the default branch and
+    # carry no artifacts; a few of them can fill the newest five. Drop them before taking five.
+    runs = [run for run in runs if run.get('event') != 'dynamic'][:5]
     # Runs are newest first. Ignore unrelated successful workflows (e.g. tags)
     # and select the newest green packaging run with an unexpired Linux asset.
     for run in runs:
@@ -94,7 +97,7 @@ def pick(app, spec):
 
 def no_artifact_reason(spec, runs):
     return (f'no unexpired {spec["artifact"]} AppImage artifact in the latest five successful '
-            f'{BRANCH} runs of {spec["repo"]}' if runs else
+            f'{BRANCH} runs of {spec["repo"]} (Dependabot jobs aside)' if runs else
             f'{spec["repo"]} has no successful {BRANCH} workflow run')
 
 
