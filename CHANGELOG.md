@@ -26,6 +26,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The real-fleet e2e adapter (`tools/real_app_driver.rs`) uses the backup Tools ships (`backup::export`,
   `plan_restore`, `restore`). It called `portable_backup`, a second implementation Tools removed as unused
   (Tools 1953dbf), so every real-fleet group stopped compiling. The backup checks now read that module's report.
+- The real-fleet loopback releases are signed and listed as GitHub releases are: Link's CLI signs each fixture's
+  `manifest.json` with the test-only key debug builds of Tools trust for loopback sources, and the server answers
+  Tools' release list. Tools refused the unsigned fixtures ("That release isn't published on GitHub."), so every
+  install, update and self-update check failed.
+- The real-fleet artifact picker skips Dependabot's update jobs, which report as successful runs on main without
+  artifacts; five of them hid Box's packaging run, so every Box check failed as "missing artifact".
 
 ## [1.0.6] — 2026-11-09
 
