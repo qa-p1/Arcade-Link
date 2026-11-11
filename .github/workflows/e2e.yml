@@ -34,7 +34,7 @@ jobs:
           toolchain: 1.88.0
       - uses: Swatinem/rust-cache@v2
       - name: Isolation tools
-        run: sudo apt-get update && sudo apt-get install -y dbus-x11 xvfb xdotool
+        run: "$GITHUB_WORKSPACE/tools/ci/apt-install.sh" dbus-x11 xvfb xdotool
       - name: Build pinned CLI and install harness
         run: |
           cargo build -p arcade-link-cli --locked
@@ -107,8 +107,7 @@ jobs:
           test -n "$sha"
       - name: System packages
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config ninja-build file libssl-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev wayland-protocols \
+          "$GITHUB_WORKSPACE/tools/ci/apt-install.sh" build-essential pkg-config ninja-build file libssl-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev wayland-protocols \
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev libayatana-appindicator3-dev libdbus-1-dev libsecret-1-dev \
             libglib2.0-dev libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxcb-cursor0
       - uses: actions/setup-node@v4
@@ -164,8 +163,7 @@ jobs:
           key: e2e-tools-driver
       - name: Runtime and adapter dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y dbus-x11 xvfb xdotool gnome-keyring python3-dbus python3-gi libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libfuse2 libssl-dev pkg-config libwayland-dev libxkbcommon-dev \
+          "$GITHUB_WORKSPACE/tools/ci/apt-install.sh" dbus-x11 xvfb xdotool gnome-keyring python3-dbus python3-gi libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libfuse2 libssl-dev pkg-config libwayland-dev libxkbcommon-dev \
             libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libegl1 libgl1
       - uses: actions/download-artifact@v4
@@ -216,7 +214,7 @@ jobs:
         continue-on-error: true
         working-directory: target/fleet/arcade.tools/sources
         run: |
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
+          "$GITHUB_WORKSPACE/tools/ci/apt-install.sh" libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
           npm ci
           npm run build
           cargo build -p arcade-tools -p arcade-tools-overlay --locked
