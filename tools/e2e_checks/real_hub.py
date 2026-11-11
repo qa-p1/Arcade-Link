@@ -74,6 +74,19 @@ def per_app(group, app, suffix, body, known=None):
     check(group)(run)
 
 
+def threads(pid):
+    """What each thread of a process that won't quit is doing (name, state, kernel wait), for the failure message."""
+    rows = []
+    for task in sorted(Path(f'/proc/{pid}/task').glob('*')) if pid else []:
+        try:
+            name = (task / 'comm').read_text().strip()
+            state = next((l.split(':', 1)[1].strip() for l in (task / 'status').read_text().splitlines() if l.startswith('State:')), '?')
+            rows.append(f'  {task.name} {name}: {state}, wchan={(task / "wchan").read_text().strip() or "-"}')
+        except OSError:
+            continue
+    return 'threads:\n' + '\n'.join(rows) if rows else f'no /proc entry for pid {pid}'
+
+
 def _install_case(app):
     def lifecycle(s):
         artifact = package(app)
@@ -146,7 +159,7 @@ def _install_case(app):
             assert manifest['executable'] == current['path'], manifest
             current_pid = json.loads(child.endpoint(app).read_text(encoding='utf-8')).get('pid')
             call(child, app, 'app.quit')
-            wait(lambda: not child.endpoint(app).exists(), lambda: f'{app} did not quit; endpoint pid={json.loads(child.endpoint(app).read_text(encoding="utf-8")).get("pid") if child.endpoint(app).exists() else None}, quit pid={current_pid}\n{child.log(app)}')
+            wait(lambda: not child.endpoint(app).exists(), lambda: f'{app} did not quit; endpoint pid={json.loads(child.endpoint(app).read_text(encoding="utf-8")).get("pid") if child.endpoint(app).exists() else None}, quit pid={current_pid}\n{threads(current_pid)}\n{child.log(app)}')
             run_app(child, Path(current['path']), '--uninstall', '--silent')
             assert not Path(current['path']).exists()
             return f'{artifact}: install/files/0600 receipt/update older fixture/moved repair/uninstall/installed re-exec'
