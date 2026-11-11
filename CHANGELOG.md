@@ -23,6 +23,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - `runtime::relaunch_unpacked` no longer passes the arena cap to the unpacked copy. The copy took the inherited
   `MALLOC_ARENA_MAX=2` for the user's own setting, so `childenv::sanitize` kept it and every app or installer it
   started ran with two arenas, contrary to Tools D18. The copy now sets the cap itself (test fails without the fix).
+- The real-fleet e2e adapter (`tools/real_app_driver.rs`) uses the backup Tools ships (`backup::export`,
+  `plan_restore`, `restore`). It called `portable_backup`, a second implementation Tools removed as unused
+  (Tools 1953dbf), so every real-fleet group stopped compiling. The backup checks now read that module's report.
 
 ## [1.0.6] — 2026-11-09
 

@@ -2,11 +2,11 @@
 //! Built into an ignored directory with sibling path dependencies by e2e.py.
 use arcade_shortcuts::{build_index, hyprland, lua, BuildInputs};
 use arcade_tools_core::{
+    backup,
     catalog::BundleApps,
     diagnostics_archive,
     manager::{LaunchMode, Manager, Request},
     paths::Paths,
-    portable_backup,
     self_update::StagedSelfUpdate,
     source::Source,
 };
@@ -53,13 +53,20 @@ fn run() -> Result<Value, Box<dyn std::error::Error>> {
         "diagnostics" => {
             json!(diagnostics_archive::create_archive(&manager.paths, &manager.list(true)?, &PathBuf::from(input["path"].as_str().ok_or("missing path")?))?)
         }
-        "backup" => json!(portable_backup::create_archive(&manager, &PathBuf::from(input["path"].as_str().ok_or("missing path")?))?),
+        "backup" => {
+            // Tools writes the archive into its own exports folder; the runner
+            // inspects and moves a copy at the path it asked for.
+            let report = backup::export(&manager, &cancel)?;
+            std::fs::copy(&report.file, PathBuf::from(input["path"].as_str().ok_or("missing path")?))?;
+            json!(report)
+        }
         "restore" => {
-            let preview = portable_backup::preview_restore(&manager, &PathBuf::from(input["path"].as_str().ok_or("missing path")?))?;
+            let path = PathBuf::from(input["path"].as_str().ok_or("missing path")?);
             // The runner explicitly requests this isolated restore after inspecting
-            // the ZIP. No interactive app confirmation hook is overridden.
-            let restored = portable_backup::apply_restore(&manager, &preview.plan_id, &cancel, &mut progress, &mut |enabled| manager.set_link(enabled))?;
-            json!({"preview": preview, "restored": restored})
+            // the ZIP; the plan's digest is what the app's review step confirms.
+            let plan = backup::plan_restore(&manager, &path)?;
+            let restored = backup::restore(&manager, &path, &plan.sha256, &cancel)?;
+            json!({"plan": plan, "restored": restored})
         }
         "self-stage" => json!(manager.prepare_self_update(LaunchMode::Background, &cancel, &mut progress, &mut |_: &StagedSelfUpdate| Ok(()))?),
         "self-finish" => json!({"message": manager.finish_self_update(&serde_json::from_value(input["plan"].clone())?, &cancel, &mut progress)?}),

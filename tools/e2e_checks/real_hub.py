@@ -23,7 +23,7 @@ from validate_shortcuts import normalize, validate
 # Confirmed product defects outside Link (docs/dev/history/e2e-0.3.md, "Known product
 # bugs"). The runner reports XFAIL only when the failure message contains the
 # expected Tools rejection; any other failure, or a pass, still fails the run.
-BACKUP_REJECTED = 'The app settings contained excluded data or exceeded backup limits.'
+BACKUP_REJECTED = 'Settings contain excluded identity, secrets, history, index or cache fields.'
 # Lens, Wheel and Shelf backups were rejected before Arcade Tools 0.2.0 (fixed in
 # qa-p1/Arcade-tools cf8f0c5); every app must now round-trip.
 BACKUP_BUGS: dict[str, str] = {}
@@ -536,10 +536,11 @@ def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
         saved = driver(first, 'backup', path=str(archive))
         # Only the documented product defects may be left out; every other
         # app must still round-trip before the known failure is raised.
-        rejected = {row['appId'] for row in saved['notIncluded'] if row['reason'] == BACKUP_REJECTED and row['appId'] in BACKUP_BUGS}
-        assert len(saved['notIncluded']) == len(rejected), saved
+        left_out = {row['id']: row['notIncluded'] for row in saved['apps'] if row['notIncluded']}
+        rejected = {app for app, reason in left_out.items() if reason == BACKUP_REJECTED and app in BACKUP_BUGS}
+        assert set(left_out) == rejected, saved
         portable = [app for app in APP_IDS if app not in rejected]
-        assert saved['includedSettings'] >= len(portable), saved
+        assert set(portable) <= {row['id'] for row in saved['apps'] if row['settings']}, saved
         with zipfile.ZipFile(archive) as z:
             assert 'backup.json' in z.namelist(), z.namelist()
             backup_document = json.loads(z.read('backup.json'))
@@ -554,11 +555,10 @@ def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
         first.close()
         fleet(second)
         result = driver(second, 'restore', path=str(destination))
-        restored = result['restored']
-        assert restored['toolsSettingsRestored'] and all(a['imported'] for a in restored['apps'] if a['appId'] in portable), result
-        assert {a['appId'] for a in restored['apps'] if a['imported']} == set(portable), result
+        # Tools' own preferences are restored before any app; a failure there fails the whole restore.
+        assert {row['app'] for row in result['restored'] if row['imported']} == set(portable), result
         restored_prefs = json.loads((second.root / TOOLS_DATA / 'preferences.json').read_text(encoding='utf-8'))
-        expected_prefs = backup_document['toolsPreferences']
+        expected_prefs = backup_document['tools']
         assert restored_prefs['linkEnabled'] == expected_prefs['linkEnabled'] and restored_prefs['updates']['enabled'] == expected_prefs['updates']['enabled'], restored_prefs
         assert restored_prefs['channels']['arcade.find'] == 'nightly' and restored_prefs['updates']['autoUpdate']['arcade.find'], restored_prefs
         for app in portable:
@@ -879,7 +879,8 @@ def _backup_one(s, app):
         originals = [export_snapshot(o['path']) for o in exported['outputs']]
         archive = first.root / 'portable.zip'
         saved = driver(first, 'backup', path=str(archive))
-        assert saved['includedSettings'] >= 1 and not saved['notIncluded'], (app, saved, exported)
+        rows = [row for row in saved['apps'] if row['id'] == app]
+        assert len(rows) == 1 and rows[0]['settings'] and not any(row['notIncluded'] for row in saved['apps']), (app, saved, exported)
         with zipfile.ZipFile(archive) as z:
             assert 'backup.json' in z.namelist(), z.namelist()
             raw = '\n'.join(z.read(name).decode('utf-8', errors='replace') for name in z.namelist())
@@ -889,7 +890,7 @@ def _backup_one(s, app):
         first.close()
         fleet(second, [app])
         restored = driver(second, 'restore', path=str(destination))['restored']
-        rows = [row for row in restored['apps'] if row['appId'] == app]
+        rows = [row for row in restored if row['app'] == app]
         assert len(rows) == 1 and rows[0]['imported'], restored
         exported = call(second, app, 'app.settings.export')
         actual = [export_snapshot(o['path']) for o in exported['outputs']]
@@ -913,8 +914,7 @@ def tools_preferences_restore_without_any_app_binary(s):
         tools_preferences(first)
         path = first.root / TOOLS_DATA / 'preferences.json'
         preferences = json.loads(path.read_text())
-        # Tools intentionally restores connection/update policy, channels and
-        # shortcut labels. Theme/notifications/onboarding are not portable.
+        # Tools restores its whole preferences file; this checks the parts a user notices most.
         preferences.update(channels={'arcade.find': 'nightly'}, updates={'enabled': False, 'autoUpdate': {'arcade.find': True}})
         path.write_text(json.dumps(preferences))
         archive = first.root / 'preferences.zip'
@@ -924,12 +924,12 @@ def tools_preferences_restore_without_any_app_binary(s):
         destination = second.root / 'preferences.zip'
         shutil.copy2(archive, destination)
         restored = driver(second, 'restore', path=str(destination))['restored']
-        assert restored['toolsSettingsRestored'], restored
+        assert restored == [], restored  # no app in the source home, so no app rows
         actual = json.loads((second.root / TOOLS_DATA / 'preferences.json').read_text())
-        saved = document['toolsPreferences']
+        saved = document['tools']
         assert actual['linkEnabled'] == saved['linkEnabled'] and actual['updates']['enabled'] == saved['updates']['enabled'], (preferences, actual)
         assert actual['channels']['arcade.find'] == 'nightly' and actual['updates']['autoUpdate']['arcade.find'], actual
-        return 'actual Tools core: Link/update policy + nondefault channel/auto-update restored across two homes; theme/notification/onboarding are outside the portable subset'
+        return 'actual Tools core: Link/update policy + nondefault channel/auto-update restored across two homes'
     finally:
         first.close()
         second.close()
