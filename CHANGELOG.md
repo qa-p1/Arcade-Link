@@ -8,6 +8,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [1.0.7] — 2026-11-10
 
 ### Fixed
+- Updates and repairs retire an app's launcher and login entries under its older desktop ids
+  (`AppInfo::legacy_desktop_ids` / `legacyDesktopIds`) even when they run the very file that is installed now, in
+  both the Rust and the Qt installer. Only entries for another copy were removed, so on a real desktop updated from
+  the 0.4 releases Box, Look, Shelf, Clipboard and Wheel each showed two menu entries (e.g. `arcade.shelf` and
+  `dev.arcade.Shelf`) and Look started twice at login. Start at login carries over to the new id, with the entry's
+  own on/off choice. Tested in `tests/install.rs` and `qt/tests/tst_Install.cpp` (both failed before the fix); the
+  real-fleet e2e plants the old entries before an update (`*_update_retires_old_desktop_ids`, XFAIL per app until
+  it vendors 1.0.7: `LEGACY_PENDING` in `tools/e2e_checks/real_hub.py`).
 - `tools/fleet/wmclose.c` (the fleet harness's window close, a title bar's WM_DELETE_WINDOW) waits for the X server
   with `XSync` before it exits. It only flushed, and an X server that polls a client after it has exited sees its
   request and the hang-up together and drops the client unread, so on a busy runner the close never reached the app:

@@ -161,6 +161,69 @@ for _app in FLEET:
     check('install')(_install_case(_app))
 
 
+# Desktop ids each app wrote before `dev.arcade.<App>` (Arcade-catalog dev/v1 PLAN.md, "One launcher per app").
+# An update must leave exactly one launcher and at most one login item, even when the old entries run the very
+# file that is installed now (the real-desktop case: two menu entries for Box, Look, Shelf, Clipboard, Wheel).
+LEGACY_DESKTOP_IDS = {
+    'arcade.tools': ['app.arcadetools', 'arcade-tools'],
+    'arcade.box': ['dev.arcadebox.app'],
+    'arcade.clipboard': ['dev.arcade.clipboard'],
+    'arcade.look': ['arcade-look', 'app.arcadelook'],
+    'arcade.find': ['arcade-find'],
+    'arcade.lens': ['arcade-lens'],
+    'arcade.shelf': ['arcade.shelf'],
+    'arcade.wheel': ['com.arcadewheel.ArcadeWheel'],
+}
+# Apps whose main build still vendors Link < 1.0.7, which kept such entries. XFAIL only on this exact failure;
+# remove an app here in the same change that moves it to Link 1.0.7 (a pass while listed fails the run).
+LEGACY_ENTRIES_LEFT = 'left a second'
+LEGACY_PENDING = set(LEGACY_DESKTOP_IDS)
+
+
+def _legacy_entries_case(app):
+    def legacy_entries(s):
+        artifact = package(app)
+        child = child_session(s, app.replace('.', '-') + '-legacy')
+        try:
+            source = child.root / 'home/Downloads' / artifact.name
+            source.parent.mkdir(parents=True)
+            shutil.copy2(artifact, source)
+            run_app(child, source, '--install', '--silent', '--no-launch')
+            first = receipt(child, app)
+            installed = Path(first['path'])
+            launcher = Path(first['integration']['desktopEntry'])
+            applications, autostart = launcher.parent, child.root / 'config/autostart'
+            autostart.mkdir(parents=True, exist_ok=True)
+            planted = []
+            for old in LEGACY_DESKTOP_IDS[app]:
+                if old == launcher.stem:
+                    continue
+                entry = f'[Desktop Entry]\nType=Application\nName=Old\nExec="{installed}" --background\n'
+                for folder in (applications, autostart):
+                    (folder / f'{old}.desktop').write_text(entry, encoding='utf-8')
+                    planted.append(folder / f'{old}.desktop')
+            assert planted, f'{app}: no old desktop id differs from {launcher.stem}'
+            shutil.copy2(artifact, source)
+            run_app(child, source, '--install', '--silent', '--no-launch')
+            left = [p for p in planted if p.exists()]
+            assert not left, f'{app}: update {LEGACY_ENTRIES_LEFT} launcher or login item: {left}'
+            runs = lambda folder: [p for p in folder.glob('*.desktop') if str(installed) in p.read_text(encoding='utf-8')]
+            assert len(runs(applications)) == 1, runs(applications)
+            assert len(runs(autostart)) == 1, f'Start at login carries over to the new id: {runs(autostart)}'
+            return f'{artifact}: {len(planted)} old entries retired, one launcher, one login item'
+        finally:
+            child.close()
+    legacy_entries.__name__ = app.replace('.', '_') + '_update_retires_old_desktop_ids'
+    legacy_entries.apps = [app]
+    if app in LEGACY_PENDING:
+        known_bug(legacy_entries, f'{app} main still vendors Link < 1.0.7', LEGACY_ENTRIES_LEFT)
+    return legacy_entries
+
+
+for _app in FLEET:
+    check('install')(_legacy_entries_case(_app))
+
+
 def _development_case(app):
     def development(s):
         spec = FLEET[app]

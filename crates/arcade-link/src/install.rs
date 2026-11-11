@@ -779,6 +779,25 @@ fn validate_integration_roots(environment: &Environment, receipt: &Receipt) -> i
 }
 
 #[cfg(target_os = "linux")]
+fn legacy_id(app: &AppInfo, path: &Path) -> bool {
+    path.file_stem().is_some_and(|id| app.legacy_desktop_ids.iter().any(|legacy| id == legacy.as_str()))
+}
+
+/// Login entries this app wrote under an older desktop id (e.g. `arcade-look`
+/// before `dev.arcade.Look`), which would start it a second time at login.
+#[cfg(target_os = "linux")]
+fn legacy_logins(environment: &Environment, app: &AppInfo, current: &Path) -> Vec<PathBuf> {
+    let dir = environment.config.join("autostart");
+    app.legacy_desktop_ids.iter().map(|id| dir.join(format!("{id}.desktop"))).filter(|path| path != current && desktop_owned(path, app, false)).collect()
+}
+
+/// The legacy login entry whose choices (enabled or switched off) carry over.
+#[cfg(target_os = "linux")]
+fn carried_legacy_login(legacy: &[PathBuf]) -> Option<PathBuf> {
+    legacy.iter().find(|path| autostart_enabled(path)).or(legacy.first()).cloned()
+}
+
+#[cfg(target_os = "linux")]
 fn cleanup_duplicates(environment: &Environment, app: &AppInfo, main: &Path, executable: &Path) -> io::Result<()> {
     let dir = environment.data.join("applications");
     for entry in fs::read_dir(&dir)?.flatten() {
@@ -790,7 +809,9 @@ fn cleanup_duplicates(environment: &Environment, app: &AppInfo, main: &Path, exe
         let owned = desktop_owned(&path, app, false);
         let Some(entry_executable) = desktop_executable(&text) else { continue };
         let same = canonical(&entry_executable) == canonical(executable);
-        if owned && !same {
+        // An entry under an older desktop id is a second launcher even when it
+        // runs the same file (e.g. `arcade.shelf` and `dev.arcade.Shelf`).
+        if owned && (!same || legacy_id(app, &path)) {
             remove_file(&path)?;
         }
     }
@@ -969,7 +990,9 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
         .collect();
     // Start at login carries over to the new id, with the entry's own choices
     // (such as the desktop's switched-off flag) intact.
-    let carried_login = old.as_ref().and_then(|r| r.integration.autostart.clone()).filter(|p| renamed.contains(p));
+    let legacy_login = legacy_logins(environment, opts.app, &autostart);
+    let carried_login =
+        old.as_ref().and_then(|r| r.integration.autostart.clone()).filter(|p| renamed.contains(p)).or_else(|| carried_legacy_login(&legacy_login));
     if fs::symlink_metadata(&autostart).is_ok() || opts.start_at_login || carried_login.is_some() {
         let recorded = old.as_ref().is_some_and(|r| r.integration.autostart.as_ref() == Some(&autostart));
         let owned = if recorded {
@@ -1085,6 +1108,11 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     for path in renamed.iter().filter(|p| replaced_by(p)) {
         remove_file(path)?;
     }
+    if integration.autostart.is_some() {
+        for path in &legacy_login {
+            remove_file(path)?;
+        }
+    }
     let now = manifest::now_rfc3339();
     let receipt = Receipt {
         schema: 1,
@@ -1166,6 +1194,20 @@ pub fn repair(environment: &Environment, app: &AppInfo, moved_to: Option<&Path>)
     }
     if let Some(path) = &receipt.integration.autostart {
         repair_autostart(path, app, &receipt.path, true, false)?;
+    }
+    let autostart = environment.config.join("autostart").join(format!("{}.desktop", app.autostart_id));
+    let legacy_login = legacy_logins(environment, app, &autostart);
+    if receipt.integration.autostart.is_none() && fs::symlink_metadata(&autostart).is_err() {
+        if let Some(previous) = carried_legacy_login(&legacy_login) {
+            write(&autostart, &fs::read(previous)?)?;
+            repair_autostart(&autostart, app, &receipt.path, true, false)?;
+            receipt.integration.autostart = Some(autostart);
+        }
+    }
+    if receipt.integration.autostart.is_some() {
+        for path in &legacy_login {
+            remove_file(path)?;
+        }
     }
     receipt.updated_at = manifest::now_rfc3339();
     environment.receipts().write(&receipt)?;

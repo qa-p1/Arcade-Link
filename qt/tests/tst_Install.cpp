@@ -710,6 +710,52 @@ private slots:
     QVERIFY(!QFileInfo::exists(legacy));
     QVERIFY(installer.legacyCopies(appInfo()).isEmpty());
   }
+  // Entries an app wrote under an older id before it used Link (no receipt
+  // records them) that run the same installed file are second launchers and
+  // second login items: an update or a repair retires them, and Start at
+  // login carries over to the new id.
+  void legacyIdEntriesRunningTheInstalledFileAreRetired() {
+    for (const bool viaRepair : {false, true}) {
+      QTemporaryDir root;
+      auto e = ArcadeInstall::Environment::under(root.path());
+      ArcadeInstall installer(e);
+      auto app = appInfo();
+      app.desktopId = app.autostartId = QStringLiteral("dev.arcade.Find");
+      app.legacyDesktopIds = {QStringLiteral("arcade-find")};
+      const auto source = root.filePath(QStringLiteral("download.AppImage"));
+      put(source, "v1");
+      auto opts = options(source, QStringLiteral("1"));
+      opts.app = app;
+      QJsonObject receipt;
+      QString error;
+      QVERIFY2(installer.install(opts, &receipt, &error), qPrintable(error));
+      const auto exe = receipt.value(QStringLiteral("path")).toString();
+      const auto entry = [](const QString &exec) {
+        return QStringLiteral("[Desktop Entry]\nType=Application\nName=Arcade Find\nExec=\"%1\" --background\n").arg(exec).toUtf8();
+      };
+      const auto oldLauncher = QDir(e.data).filePath(QStringLiteral("applications/arcade-find.desktop"));
+      const auto oldLogin = QDir(e.config).filePath(QStringLiteral("autostart/arcade-find.desktop"));
+      const auto foreign = QDir(e.config).filePath(QStringLiteral("autostart/someone-else.desktop"));
+      put(oldLauncher, entry(exe));
+      put(oldLogin, entry(exe));
+      put(foreign, entry(QStringLiteral("/foreign/program")));
+      if (viaRepair) {
+        QVERIFY2(installer.repair(app, QString(), &receipt, &error), qPrintable(error));
+      } else {
+        put(source, "v2");
+        auto update = options(source, QStringLiteral("2"));
+        update.app = app;
+        QVERIFY2(installer.install(update, &receipt, &error), qPrintable(error));
+      }
+      QVERIFY2(!QFileInfo::exists(oldLauncher), viaRepair ? "repair left a second launcher" : "update left a second launcher");
+      QVERIFY2(!QFileInfo::exists(oldLogin), viaRepair ? "repair left a second login item" : "update left a second login item");
+      QCOMPARE(QDir(QDir(e.data).filePath(QStringLiteral("applications"))).entryList({QStringLiteral("*.desktop")}, QDir::Files).size(), 1);
+      const auto login = receipt.value(QStringLiteral("integration")).toObject().value(QStringLiteral("autostart")).toString();
+      QCOMPARE(QFileInfo(login).fileName(), QStringLiteral("dev.arcade.Find.desktop"));
+      QVERIFY2(ArcadeInstall::autostartEnabled(login) && get(login).contains("X-Arcade-Id=arcade.find"), get(login).constData());
+      QVERIFY(QFileInfo::exists(foreign));
+    }
+  }
   void onlyDownloadsAreRemovedAndStaleStagesCleaned() {
     QTemporaryDir root;
     auto e = ArcadeInstall::Environment::under(root.path());

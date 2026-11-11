@@ -904,3 +904,53 @@ fn a_changed_desktop_id_keeps_an_old_entry_someone_else_now_owns() {
     assert!(second.integration.autostart.is_none());
     assert_eq!(fs::read_to_string(&old_launcher).unwrap(), foreign);
 }
+
+/// Entries an app wrote under an older id before it used Link (no receipt
+/// records them) and that run the same installed file are second launchers
+/// and second login items: an update or a repair retires them, and Start at
+/// login carries over to the new id. Seen on a real desktop after 0.4 → 0.5
+/// updates: two menu entries for Box, Look, Shelf, Clipboard and Wheel.
+#[cfg(target_os = "linux")]
+#[test]
+fn legacy_id_entries_running_the_installed_file_are_retired() {
+    for via_repair in [false, true] {
+        let root = Root::new();
+        let e = Environment::under(&root.0);
+        let app = AppInfo {
+            desktop_id: "dev.arcade.Find".into(),
+            autostart_id: "dev.arcade.Find".into(),
+            legacy_desktop_ids: vec!["arcade-find".into()],
+            ..find_info()
+        };
+        let source = root.0.join("download.AppImage");
+        fs::write(&source, b"v1").unwrap();
+        let r = runtime(source.clone());
+        let first = install(&e, find_options(&app, &r, "1")).unwrap();
+        assert!(first.integration.autostart.is_none());
+        let entry = |exec: &Path| format!("[Desktop Entry]\nType=Application\nName=Arcade Find\nExec=\"{}\" --background\nIcon=arcade-find\n", exec.display());
+        let old_launcher = e.data.join("applications/arcade-find.desktop");
+        let old_login = e.config.join("autostart/arcade-find.desktop");
+        fs::create_dir_all(old_login.parent().unwrap()).unwrap();
+        fs::write(&old_launcher, entry(&first.path)).unwrap();
+        fs::write(&old_login, entry(&first.path)).unwrap();
+        let foreign = e.config.join("autostart/someone-else.desktop");
+        fs::write(&foreign, entry(Path::new("/foreign/program"))).unwrap();
+
+        let after = if via_repair {
+            repair(&e, &app, None).unwrap()
+        } else {
+            fs::write(&source, b"v2").unwrap();
+            install(&e, find_options(&app, &r, "2")).unwrap()
+        };
+        assert!(!old_launcher.exists(), "a second launcher under the old id is left (repair: {via_repair})");
+        assert!(!old_login.exists(), "a second login item under the old id is left (repair: {via_repair})");
+        let launchers: Vec<_> =
+            fs::read_dir(e.data.join("applications")).unwrap().flatten().filter(|f| f.path().extension().is_some_and(|x| x == "desktop")).collect();
+        assert_eq!(launchers.len(), 1, "exactly one launcher");
+        let login = after.integration.autostart.clone().expect("Start at login carries over to the new id");
+        assert_eq!(login.file_name().unwrap(), "dev.arcade.Find.desktop");
+        let text = fs::read_to_string(&login).unwrap();
+        assert!(text.contains("X-Arcade-Id=arcade.find") && autostart_enabled(&login), "{text}");
+        assert!(foreign.is_file(), "another app's login item is untouched");
+    }
+}
