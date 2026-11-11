@@ -138,9 +138,9 @@ def check(state, rows, budgets, failures):
 def close_window(wid, env):
     """Xvfb has no window manager, so a 'close' must be WM_DELETE_WINDOW sent by us (what a title-bar button sends).
     xdotool windowclose destroys the X window (the apps then exit) and windowquit needs a WM: use wmclose.c next to this script."""
-    here = os.path.dirname(os.path.abspath(__file__)); exe = os.path.join(here, 'wmclose')
-    if not os.path.exists(exe):
-        subprocess.run(['gcc', '-O2', '-o', exe, os.path.join(here, 'wmclose.c'), '-lX11'], check=True)
+    here = os.path.dirname(os.path.abspath(__file__)); exe = os.path.join(here, 'wmclose'); source = exe + '.c'
+    if not os.path.exists(exe) or os.path.getmtime(exe) < os.path.getmtime(source):
+        subprocess.run(['gcc', '-O2', '-o', exe, source, '-lX11'], check=True)
     subprocess.run([exe, wid], env=env)
 
 

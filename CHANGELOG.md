@@ -8,6 +8,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [1.0.7] — 2026-11-10
 
 ### Fixed
+- `tools/fleet/wmclose.c` (the fleet harness's window close, a title bar's WM_DELETE_WINDOW) waits for the X server
+  with `XSync` before it exits. It only flushed, and an X server that polls a client after it has exited sees its
+  request and the hang-up together and drops the client unread, so on a busy runner the close never reached the app:
+  a window "would not close" in the memory gate about half the time under load (7 of 13 local runs; 0 of 10 with the
+  fix; an X protocol trace showed the event never delivered, to the app or to any other listener). Not a Tools bug.
+  `fleet_budget.py` rebuilds the helper when its source is newer than the (untracked) binary.
 - `tools/fleet/fleet_budget.py` measures the open window once the app is idle: 6 s after the open as before, but on a
   loaded machine whose app still uses 5 % of a CPU or more then, after its first quiet 2 s; an app not quiet within
   30 s fails. A saturated runner's 6 s sample read the page still loading (file-backed code in WebKit), 263–290 MB
