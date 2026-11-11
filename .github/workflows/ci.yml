@@ -192,7 +192,8 @@ jobs:
         run: cargo build -p arcade-link-cli --locked
       - name: OpenGL headers for Qt Quick (design kit test)
         if: runner.os == 'Linux'
-        run: "$GITHUB_WORKSPACE/tools/ci/apt-install.sh" libgl1-mesa-dev libxkbcommon-dev
+        run: |
+          "$GITHUB_WORKSPACE/tools/ci/apt-install.sh" libgl1-mesa-dev libxkbcommon-dev
       - name: Configure
         shell: bash
         run: cmake -S qt -B qt/build -DCMAKE_BUILD_TYPE=Release ${{ runner.os == 'Linux' && '-DARCADE_LINK_REQUIRE_DESIGN_TESTS=ON' || '' }}
