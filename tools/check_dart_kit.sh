@@ -244,6 +244,24 @@ void main() {
     final label = tester.renderObject<RenderParagraph>(find.text('Paste as plain text'));
     expect(label.didExceedMaxLines, isFalse, reason: 'the label is cut off');
   });
+  testWidgets('key chips stay compact in a stretched row (Clipboard RD-CLIPBOARD-2)', (tester) async {
+    tester.view.physicalSize = const Size(900, 300);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      theme: arcadeTheme(Brightness.light, 'arcade.clipboard'),
+      home: const Scaffold(
+        body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
+          ArcadeKeyCombo(<String>['Ctrl', 'Shift', 'Space']),
+        ]),
+      ),
+    ));
+    expect(tester.takeException(), isNull);
+    for (final key in <String>['Ctrl', 'Shift', 'Space']) {
+      final chip = tester.getSize(find.ancestor(of: find.text(key), matching: find.byType(ArcadeKeyChip)));
+      expect(chip.width, lessThan(200), reason: '$key chip is ${chip.width} px wide');
+    }
+  });
   testWidgets('confirm dialog: Keep is the default, the destructive verb confirms', (tester) async {
     late BuildContext context;
     await tester.pumpWidget(MaterialApp(
