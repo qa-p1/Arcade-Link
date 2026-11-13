@@ -123,6 +123,16 @@ class HubHarnessTests(unittest.TestCase):
         self.assertEqual(chosen[0]['databaseId'], 11)
         self.assertEqual(chosen[1]['name'], 'package-linux-x64')
 
+    def test_dependabot_jobs_do_not_hide_the_packaging_run(self):
+        # Box main, 2026-11-11: five Dependabot update jobs were the newest successful runs.
+        runs = [{'databaseId': 20 + n, 'event': 'dynamic'} for n in range(5)] + [{'databaseId': 19, 'event': 'push'}]
+        responses = [json.dumps(runs), json.dumps([{'artifacts': [{'name': 'arcade-box-appimage', 'expired': False}]}])]
+        with patch.object(e2e_artifacts, 'command', side_effect=responses) as command:
+            _, chosen = e2e_artifacts.select(e2e.FLEET['arcade.box'])
+        self.assertIsNotNone(chosen)
+        self.assertEqual(chosen[0]['databaseId'], 19)
+        self.assertIn('actions/runs/19/artifacts', ' '.join(command.call_args_list[1].args[0]))
+
     def test_link_off_edits_current_profiles_without_recreating_legacy_files(self):
         with patch.object(e2e, 'CHECKS', {}):
             e2e.load_check_modules(real_apps=True)

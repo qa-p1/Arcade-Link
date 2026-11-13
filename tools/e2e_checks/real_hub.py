@@ -23,7 +23,7 @@ from validate_shortcuts import normalize, validate
 # Confirmed product defects outside Link (docs/dev/history/e2e-0.3.md, "Known product
 # bugs"). The runner reports XFAIL only when the failure message contains the
 # expected Tools rejection; any other failure, or a pass, still fails the run.
-BACKUP_REJECTED = 'The app settings contained excluded data or exceeded backup limits.'
+BACKUP_REJECTED = 'Settings contain excluded identity, secrets, history, index or cache fields.'
 # Lens, Wheel and Shelf backups were rejected before Arcade Tools 0.2.0 (fixed in
 # qa-p1/Arcade-tools cf8f0c5); every app must now round-trip.
 BACKUP_BUGS: dict[str, str] = {}
@@ -72,6 +72,19 @@ def per_app(group, app, suffix, body, known=None):
     if known:
         known_bug(run, known)
     check(group)(run)
+
+
+def threads(pid):
+    """What each thread of a process that won't quit is doing (name, state, kernel wait), for the failure message."""
+    rows = []
+    for task in sorted(Path(f'/proc/{pid}/task').glob('*')) if pid else []:
+        try:
+            name = (task / 'comm').read_text().strip()
+            state = next((l.split(':', 1)[1].strip() for l in (task / 'status').read_text().splitlines() if l.startswith('State:')), '?')
+            rows.append(f'  {task.name} {name}: {state}, wchan={(task / "wchan").read_text().strip() or "-"}')
+        except OSError:
+            continue
+    return 'threads:\n' + '\n'.join(rows) if rows else f'no /proc entry for pid {pid}'
 
 
 def _install_case(app):
@@ -146,7 +159,7 @@ def _install_case(app):
             assert manifest['executable'] == current['path'], manifest
             current_pid = json.loads(child.endpoint(app).read_text(encoding='utf-8')).get('pid')
             call(child, app, 'app.quit')
-            wait(lambda: not child.endpoint(app).exists(), lambda: f'{app} did not quit; endpoint pid={json.loads(child.endpoint(app).read_text(encoding="utf-8")).get("pid") if child.endpoint(app).exists() else None}, quit pid={current_pid}\n{child.log(app)}')
+            wait(lambda: not child.endpoint(app).exists(), lambda: f'{app} did not quit; endpoint pid={json.loads(child.endpoint(app).read_text(encoding="utf-8")).get("pid") if child.endpoint(app).exists() else None}, quit pid={current_pid}\n{threads(current_pid)}\n{child.log(app)}')
             run_app(child, Path(current['path']), '--uninstall', '--silent')
             assert not Path(current['path']).exists()
             return f'{artifact}: install/files/0600 receipt/update older fixture/moved repair/uninstall/installed re-exec'
@@ -159,6 +172,69 @@ def _install_case(app):
 
 for _app in FLEET:
     check('install')(_install_case(_app))
+
+
+# Desktop ids each app wrote before `dev.arcade.<App>` (Arcade-catalog dev/v1 PLAN.md, "One launcher per app").
+# An update must leave exactly one launcher and at most one login item, even when the old entries run the very
+# file that is installed now (the real-desktop case: two menu entries for Box, Look, Shelf, Clipboard, Wheel).
+LEGACY_DESKTOP_IDS = {
+    'arcade.tools': ['app.arcadetools', 'arcade-tools'],
+    'arcade.box': ['dev.arcadebox.app'],
+    'arcade.clipboard': ['dev.arcade.clipboard'],
+    'arcade.look': ['arcade-look', 'app.arcadelook'],
+    'arcade.find': ['arcade-find'],
+    'arcade.lens': ['arcade-lens'],
+    'arcade.shelf': ['arcade.shelf'],
+    'arcade.wheel': ['com.arcadewheel.ArcadeWheel'],
+}
+# Apps whose main build still vendors Link < 1.0.7, which kept such entries. XFAIL only on this exact failure;
+# remove an app here in the same change that moves it to Link 1.0.7 (a pass while listed fails the run).
+LEGACY_ENTRIES_LEFT = 'left a second'
+LEGACY_PENDING = set(LEGACY_DESKTOP_IDS)
+
+
+def _legacy_entries_case(app):
+    def legacy_entries(s):
+        artifact = package(app)
+        child = child_session(s, app.replace('.', '-') + '-legacy')
+        try:
+            source = child.root / 'home/Downloads' / artifact.name
+            source.parent.mkdir(parents=True)
+            shutil.copy2(artifact, source)
+            run_app(child, source, '--install', '--silent', '--no-launch')
+            first = receipt(child, app)
+            installed = Path(first['path'])
+            launcher = Path(first['integration']['desktopEntry'])
+            applications, autostart = launcher.parent, child.root / 'config/autostart'
+            autostart.mkdir(parents=True, exist_ok=True)
+            planted = []
+            for old in LEGACY_DESKTOP_IDS[app]:
+                if old == launcher.stem:
+                    continue
+                entry = f'[Desktop Entry]\nType=Application\nName=Old\nExec="{installed}" --background\n'
+                for folder in (applications, autostart):
+                    (folder / f'{old}.desktop').write_text(entry, encoding='utf-8')
+                    planted.append(folder / f'{old}.desktop')
+            assert planted, f'{app}: no old desktop id differs from {launcher.stem}'
+            shutil.copy2(artifact, source)
+            run_app(child, source, '--install', '--silent', '--no-launch')
+            left = [p for p in planted if p.exists()]
+            assert not left, f'{app}: update {LEGACY_ENTRIES_LEFT} launcher or login item: {left}'
+            runs = lambda folder: [p for p in folder.glob('*.desktop') if str(installed) in p.read_text(encoding='utf-8')]
+            assert len(runs(applications)) == 1, runs(applications)
+            assert len(runs(autostart)) == 1, f'Start at login carries over to the new id: {runs(autostart)}'
+            return f'{artifact}: {len(planted)} old entries retired, one launcher, one login item'
+        finally:
+            child.close()
+    legacy_entries.__name__ = app.replace('.', '_') + '_update_retires_old_desktop_ids'
+    legacy_entries.apps = [app]
+    if app in LEGACY_PENDING:
+        known_bug(legacy_entries, f'{app} main still vendors Link < 1.0.7', LEGACY_ENTRIES_LEFT)
+    return legacy_entries
+
+
+for _app in FLEET:
+    check('install')(_legacy_entries_case(_app))
 
 
 def _development_case(app):
@@ -536,10 +612,11 @@ def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
         saved = driver(first, 'backup', path=str(archive))
         # Only the documented product defects may be left out; every other
         # app must still round-trip before the known failure is raised.
-        rejected = {row['appId'] for row in saved['notIncluded'] if row['reason'] == BACKUP_REJECTED and row['appId'] in BACKUP_BUGS}
-        assert len(saved['notIncluded']) == len(rejected), saved
+        left_out = {row['id']: row['notIncluded'] for row in saved['apps'] if row['notIncluded']}
+        rejected = {app for app, reason in left_out.items() if reason == BACKUP_REJECTED and app in BACKUP_BUGS}
+        assert set(left_out) == rejected, saved
         portable = [app for app in APP_IDS if app not in rejected]
-        assert saved['includedSettings'] >= len(portable), saved
+        assert set(portable) <= {row['id'] for row in saved['apps'] if row['settings']}, saved
         with zipfile.ZipFile(archive) as z:
             assert 'backup.json' in z.namelist(), z.namelist()
             backup_document = json.loads(z.read('backup.json'))
@@ -554,11 +631,10 @@ def portable_backup_restores_real_app_settings_in_a_second_arcade_home(s):
         first.close()
         fleet(second)
         result = driver(second, 'restore', path=str(destination))
-        restored = result['restored']
-        assert restored['toolsSettingsRestored'] and all(a['imported'] for a in restored['apps'] if a['appId'] in portable), result
-        assert {a['appId'] for a in restored['apps'] if a['imported']} == set(portable), result
+        # Tools' own preferences are restored before any app; a failure there fails the whole restore.
+        assert {row['app'] for row in result['restored'] if row['imported']} == set(portable), result
         restored_prefs = json.loads((second.root / TOOLS_DATA / 'preferences.json').read_text(encoding='utf-8'))
-        expected_prefs = backup_document['toolsPreferences']
+        expected_prefs = backup_document['tools']
         assert restored_prefs['linkEnabled'] == expected_prefs['linkEnabled'] and restored_prefs['updates']['enabled'] == expected_prefs['updates']['enabled'], restored_prefs
         assert restored_prefs['channels']['arcade.find'] == 'nightly' and restored_prefs['updates']['autoUpdate']['arcade.find'], restored_prefs
         for app in portable:
@@ -879,7 +955,8 @@ def _backup_one(s, app):
         originals = [export_snapshot(o['path']) for o in exported['outputs']]
         archive = first.root / 'portable.zip'
         saved = driver(first, 'backup', path=str(archive))
-        assert saved['includedSettings'] >= 1 and not saved['notIncluded'], (app, saved, exported)
+        rows = [row for row in saved['apps'] if row['id'] == app]
+        assert len(rows) == 1 and rows[0]['settings'] and not any(row['notIncluded'] for row in saved['apps']), (app, saved, exported)
         with zipfile.ZipFile(archive) as z:
             assert 'backup.json' in z.namelist(), z.namelist()
             raw = '\n'.join(z.read(name).decode('utf-8', errors='replace') for name in z.namelist())
@@ -889,7 +966,7 @@ def _backup_one(s, app):
         first.close()
         fleet(second, [app])
         restored = driver(second, 'restore', path=str(destination))['restored']
-        rows = [row for row in restored['apps'] if row['appId'] == app]
+        rows = [row for row in restored if row['app'] == app]
         assert len(rows) == 1 and rows[0]['imported'], restored
         exported = call(second, app, 'app.settings.export')
         actual = [export_snapshot(o['path']) for o in exported['outputs']]
@@ -913,8 +990,7 @@ def tools_preferences_restore_without_any_app_binary(s):
         tools_preferences(first)
         path = first.root / TOOLS_DATA / 'preferences.json'
         preferences = json.loads(path.read_text())
-        # Tools intentionally restores connection/update policy, channels and
-        # shortcut labels. Theme/notifications/onboarding are not portable.
+        # Tools restores its whole preferences file; this checks the parts a user notices most.
         preferences.update(channels={'arcade.find': 'nightly'}, updates={'enabled': False, 'autoUpdate': {'arcade.find': True}})
         path.write_text(json.dumps(preferences))
         archive = first.root / 'preferences.zip'
@@ -924,12 +1000,12 @@ def tools_preferences_restore_without_any_app_binary(s):
         destination = second.root / 'preferences.zip'
         shutil.copy2(archive, destination)
         restored = driver(second, 'restore', path=str(destination))['restored']
-        assert restored['toolsSettingsRestored'], restored
+        assert restored == [], restored  # no app in the source home, so no app rows
         actual = json.loads((second.root / TOOLS_DATA / 'preferences.json').read_text())
-        saved = document['toolsPreferences']
+        saved = document['tools']
         assert actual['linkEnabled'] == saved['linkEnabled'] and actual['updates']['enabled'] == saved['updates']['enabled'], (preferences, actual)
         assert actual['channels']['arcade.find'] == 'nightly' and actual['updates']['autoUpdate']['arcade.find'], actual
-        return 'actual Tools core: Link/update policy + nondefault channel/auto-update restored across two homes; theme/notification/onboarding are outside the portable subset'
+        return 'actual Tools core: Link/update policy + nondefault channel/auto-update restored across two homes'
     finally:
         first.close()
         second.close()

@@ -955,10 +955,40 @@ static QStringList duplicates(const ArcadeInstall::Environment &e,
     if (!file.open(QIODevice::ReadOnly))
       continue;
     const auto path = desktopExecutable(QString::fromUtf8(file.readAll()));
-    if (!path.isEmpty() && canonical(path) != canonical(exe))
+    // An entry under an older desktop id is a second launcher even when it
+    // runs the same file (e.g. `arcade.shelf` and `dev.arcade.Shelf`).
+    const bool legacy = app.legacyDesktopIds.contains(info.completeBaseName());
+    if (legacy || (!path.isEmpty() && canonical(path) != canonical(exe)))
       result << info.absoluteFilePath();
   }
   return result;
+}
+// Login entries this app wrote under an older desktop id (e.g. `arcade-look`
+// before `dev.arcade.Look`), which would start it a second time at login.
+static QStringList legacyLogins(const ArcadeInstall::Environment &e,
+                                const ArcadeInstall::AppInfo &app,
+                                const QString &current) {
+  QStringList result;
+  for (const auto &id : app.legacyDesktopIds) {
+    const auto path = QDir(e.config).filePath(QStringLiteral("autostart/") + id +
+                                              QStringLiteral(".desktop"));
+    if (path != current && desktopOwned(path, app, false))
+      result << path;
+  }
+  return result;
+}
+// The legacy login entry whose choices (enabled or switched off) carry over.
+static QString carriedLegacyLogin(const QStringList &legacy) {
+  for (const auto &path : legacy)
+    if (ArcadeInstall::autostartEnabled(path))
+      return path;
+  return legacy.isEmpty() ? QString() : legacy.first();
+}
+static bool copyEntry(const QString &from, const QString &to, QString *error) {
+  QFile file(from);
+  if (!file.open(QIODevice::ReadOnly))
+    return fail(error, file.errorString());
+  return atomicWrite(to, file.readAll(), false, error);
 }
 
 
@@ -1405,13 +1435,22 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
     prepared << qMakePair(target, file.readAll());
     icons << target;
   }
+  // Icons this install didn't supply stay, unless they carry another desktop
+  // ID (a legacy name): those go once this install's icons are written.
+  QStringList retiredIcons;
   for (const auto &icon :
        oldIntegration.value(QStringLiteral("icons")).toArray()) {
     bool blocked = false;
     for (const auto &item : skipped)
       blocked |= item.toObject().value(QStringLiteral("path")) == icon;
-    if (!blocked && !icons.contains(icon))
+    if (blocked || icons.contains(icon))
+      continue;
+    const bool currentId =
+        QFileInfo(icon.toString()).completeBaseName() == opts.app.desktopId;
+    if (currentId || prepared.isEmpty())
       icons << icon;
+    else
+      retiredIcons << icon.toString();
   }
   integration.insert(QStringLiteral("icons"), icons);
   const auto autoPath = QDir(e.config).filePath(QStringLiteral("autostart/") +
@@ -1420,8 +1459,10 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
   if (!withinRoot(autoPath,
                   QDir(e.config).filePath(QStringLiteral("autostart")), error))
     return false;
+  const auto legacyLogin = legacyLogins(e, opts.app, autoPath);
+  const auto carriedLogin = carriedLegacyLogin(legacyLogin);
   if (QFileInfo::exists(autoPath) || QFileInfo(autoPath).isSymLink() ||
-      opts.startAtLogin) {
+      opts.startAtLogin || !carriedLogin.isEmpty()) {
     if (availableEntry(
             autoPath,
             oldIntegration.value(QStringLiteral("autostart")).toString() == autoPath
@@ -1454,6 +1495,10 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
   for (const auto &path : stale)
     if (!rollback.save(path, error))
       return false;
+  if (integration.value(QStringLiteral("autostart")).isString())
+    for (const auto &path : legacyLogin)
+      if (!rollback.save(path, error))
+        return false;
   auto previous = old.value(QStringLiteral("previous"));
   if (!same) {
     if (!QDir().mkpath(e.applications))
@@ -1525,6 +1570,9 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
   for (const auto &icon : prepared)
     if (!atomicWrite(icon.first, icon.second, false, error))
       return false;
+  for (const auto &icon : retiredIcons)
+    if (!removeFile(icon, error))
+      return false;
   const auto entryPath =
       integration.value(QStringLiteral("desktopEntry")).toString();
   if (!entryPath.isEmpty() &&
@@ -1533,10 +1581,19 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
   if (integration.value(QStringLiteral("cli")).isString() &&
       !symlink(cli, dest, error))
     return false;
-  if (integration.value(QStringLiteral("autostart")).isString() &&
-      !autostart(autoPath, opts.app, dest, opts.startAtLogin, opts.startAtLogin,
-                 nullptr, error))
-    return false;
+  if (integration.value(QStringLiteral("autostart")).isString()) {
+    if (!carriedLogin.isEmpty() && !QFileInfo::exists(autoPath) &&
+        !QFileInfo(autoPath).isSymLink() &&
+        !copyEntry(carriedLogin, autoPath, error))
+      return false;
+    if (!autostart(autoPath, opts.app, dest,
+                   opts.startAtLogin || !carriedLogin.isEmpty(),
+                   opts.startAtLogin, nullptr, error))
+      return false;
+    for (const auto &path : legacyLogin)
+      if (!removeFile(path, error))
+        return false;
+  }
   for (const auto &path : stale)
     if (!removeFile(path, error))
       return false;
@@ -1649,6 +1706,22 @@ bool ArcadeInstall::repair(const AppInfo &app, const QString &movedTo,
   if (!autoPath.isEmpty() &&
       !autostart(autoPath, app, exe, true, false, nullptr, error))
     return false;
+  const auto standardLogin = QDir(m_environment.config).filePath(
+      QStringLiteral("autostart/") + app.autostartId + QStringLiteral(".desktop"));
+  const auto legacyLogin = legacyLogins(m_environment, app, standardLogin);
+  const auto carriedLogin = carriedLegacyLogin(legacyLogin);
+  if (autoPath.isEmpty() && !carriedLogin.isEmpty() &&
+      !QFileInfo::exists(standardLogin) && !QFileInfo(standardLogin).isSymLink()) {
+    if (!copyEntry(carriedLogin, standardLogin, error) ||
+        !autostart(standardLogin, app, exe, true, false, nullptr, error))
+      return false;
+    integration.insert(QStringLiteral("autostart"), standardLogin);
+    receipt.insert(QStringLiteral("integration"), integration);
+  }
+  if (integration.value(QStringLiteral("autostart")).isString())
+    for (const auto &path : legacyLogin)
+      if (!removeFile(path, error))
+        return false;
   receipt.insert(QStringLiteral("updatedAt"), nowRfc3339());
   if (!m_environment.receipts().write(receipt, error))
     return false;

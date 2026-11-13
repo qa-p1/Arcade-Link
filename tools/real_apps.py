@@ -7,9 +7,11 @@ import http.server
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -236,14 +238,24 @@ def index(s, **extra):
                   catalog=str(Path(os.environ.get('ARCADE_CATALOG_REPO', str(e2e.CODING / 'Rust/Arcade-catalog'))) / 'shortcuts'), **extra)
 
 
+def test_signing_key():
+    """The secret half of the update key debug builds of Tools trust for loopback sources (Tools src/trust.rs).
+    Tools keeps it in tests/support/mod.rs; it is read from the checkout under test, never copied here."""
+    source = e2e.TOOLS['dir'] / 'tests/support/mod.rs'
+    match = re.search(r'TEST_SIGNING_KEY: &str = "([^"]+)"', source.read_text(encoding='utf-8'))
+    assert match, f'no TEST_SIGNING_KEY in {source}: the loopback releases cannot be signed'
+    return match.group(1)
+
+
 class Releases:
-    """Fixture HTTP metadata and real packaged executables, SHA/size verified by Tools."""
+    """Fixture GitHub releases of real packaged executables, signed as real releases are, verified by Tools."""
     def __init__(self, s, apps=None):
         if not (e2e.TOOLS['dir'] / 'resources/catalog-snapshot/catalog.json').is_file():
             raise e2e.SkipCheck(f'Tools catalog snapshot missing at {e2e.TOOLS["dir"]}; set ARCADE_TOOLS_REPO')
         apps = list(e2e.APP_IDS if apps is None else apps)
         self.routes = {}
         self.requests = []
+        self.listings = {}  # repo -> GitHub release objects, newest first
         owner = self
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
@@ -285,13 +297,34 @@ class Releases:
                  'installArgs': ['--install', '--silent']}
         release = {'schema': 1, 'id': app, 'version': version, 'channel': 'stable', 'linkProtocol': protocol or [1],
                    'notes': f'https://github.com/{entry["repo"]}/releases', 'assets': [asset]}
+        tag = 'v' + version
         assets = {name: body, 'arcade-release.json': json.dumps(release).encode(), 'SHA256SUMS.txt': f'{asset["sha256"]}  {name}\n'.encode()}
+        # Link's CLI writes and signs manifest.json for these files, as the release workflow does, with the key
+        # Tools trusts for this loopback source.
+        with tempfile.TemporaryDirectory() as staging:
+            files = []
+            for filename, content in assets.items():
+                Path(staging, filename).write_bytes(content)
+                files.append(str(Path(staging, filename)))
+            signed = Path(staging, 'signed')
+            subprocess.run([str(e2e.CLI), 'release-manifest', '--app', app, '--version', version, '--tag', tag,
+                            '--channel', 'stable', '--out', str(signed), '--sign', *files],
+                           env=dict(os.environ, ARCADE_UPDATE_SIGNING_KEY=test_signing_key()),
+                           check=True, capture_output=True, text=True, timeout=300)
+            for filename in ('manifest.json', 'manifest.json.sig'):
+                assets[filename] = (signed / filename).read_bytes()
         api_assets = []
         for filename, content in assets.items():
             route = prefix + filename
             self.routes['/' + route] = content
             api_assets.append({'name': filename, 'browser_download_url': self.url + urllib.parse.quote(route)})
-        self.routes[f'/repos/{entry["repo"]}/releases/latest'] = json.dumps({'tag_name': 'v' + version, 'draft': False, 'prerelease': False, 'assets': api_assets}).encode()
+        github = {'tag_name': tag, 'draft': False, 'prerelease': False, 'assets': api_assets}
+        # Tools reads the release list (newest first); publishing a tag again replaces that release.
+        listing = [github] + [r for r in self.listings.get(entry['repo'], []) if r['tag_name'] != tag]
+        self.listings[entry['repo']] = listing
+        for per_page in (20, 30):
+            self.routes[f'/repos/{entry["repo"]}/releases?per_page={per_page}'] = json.dumps(listing).encode()
+        self.routes[f'/repos/{entry["repo"]}/releases/latest'] = json.dumps(github).encode()
         return release
 
     def close(self):

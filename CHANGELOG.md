@@ -8,6 +8,25 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [1.0.7] — 2026-11-10
 
 ### Fixed
+- Updates retire the app's icons installed under an older desktop id (`arcade-find.png` beside the new
+  `dev.arcade.Find.png`) once this install has written its own icons, in both the Rust and the Qt installer. Icons
+  this install did not supply were all carried over in the receipt, so Box kept its `dev.arcadebox.app` icons after
+  moving ids (Box audit BP-4). Icons under the current id are still kept when the new build ships none. Tested in
+  `tests/install.rs` and `qt/tests/tst_Install.cpp`.
+- Updates and repairs retire an app's launcher and login entries under its older desktop ids
+  (`AppInfo::legacy_desktop_ids` / `legacyDesktopIds`) even when they run the very file that is installed now, in
+  both the Rust and the Qt installer. Only entries for another copy were removed, so on a real desktop updated from
+  the 0.4 releases Box, Look, Shelf, Clipboard and Wheel each showed two menu entries (e.g. `arcade.shelf` and
+  `dev.arcade.Shelf`) and Look started twice at login. Start at login carries over to the new id, with the entry's
+  own on/off choice. Tested in `tests/install.rs` and `qt/tests/tst_Install.cpp` (both failed before the fix); the
+  real-fleet e2e plants the old entries before an update (`*_update_retires_old_desktop_ids`, XFAIL per app until
+  it vendors 1.0.7: `LEGACY_PENDING` in `tools/e2e_checks/real_hub.py`).
+- `tools/fleet/wmclose.c` (the fleet harness's window close, a title bar's WM_DELETE_WINDOW) waits for the X server
+  with `XSync` before it exits. It only flushed, and an X server that polls a client after it has exited sees its
+  request and the hang-up together and drops the client unread, so on a busy runner the close never reached the app:
+  a window "would not close" in the memory gate about half the time under load (7 of 13 local runs; 0 of 10 with the
+  fix; an X protocol trace showed the event never delivered, to the app or to any other listener). Not a Tools bug.
+  `fleet_budget.py` rebuilds the helper when its source is newer than the (untracked) binary.
 - `tools/fleet/fleet_budget.py` measures the open window once the app is idle: 6 s after the open as before, but on a
   loaded machine whose app still uses 5 % of a CPU or more then, after its first quiet 2 s; an app not quiet within
   30 s fails. A saturated runner's 6 s sample read the page still loading (file-backed code in WebKit), 263–290 MB
@@ -23,6 +42,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - `runtime::relaunch_unpacked` no longer passes the arena cap to the unpacked copy. The copy took the inherited
   `MALLOC_ARENA_MAX=2` for the user's own setting, so `childenv::sanitize` kept it and every app or installer it
   started ran with two arenas, contrary to Tools D18. The copy now sets the cap itself (test fails without the fix).
+- The real-fleet e2e adapter (`tools/real_app_driver.rs`) uses the backup Tools ships (`backup::export`,
+  `plan_restore`, `restore`). It called `portable_backup`, a second implementation Tools removed as unused
+  (Tools 1953dbf), so every real-fleet group stopped compiling. The backup checks now read that module's report.
+- The real-fleet loopback releases are signed and listed as GitHub releases are: Link's CLI signs each fixture's
+  `manifest.json` with the test-only key debug builds of Tools trust for loopback sources, and the server answers
+  Tools' release list. Tools refused the unsigned fixtures ("That release isn't published on GitHub."), so every
+  install, update and self-update check failed.
+- The real-fleet artifact picker skips Dependabot's update jobs, which report as successful runs on main without
+  artifacts; five of them hid Box's packaging run, so every Box check failed as "missing artifact".
 
 ## [1.0.6] — 2026-11-09
 
