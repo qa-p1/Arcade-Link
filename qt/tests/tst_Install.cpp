@@ -756,6 +756,39 @@ private slots:
       QVERIFY(QFileInfo::exists(foreign));
     }
   }
+  // An icon a previous install wrote under an older desktop id goes when the
+  // next install writes its own (Box listed dev.arcadebox.app icons, BP-4).
+  void iconsUnderAnOldDesktopIdAreRetired() {
+    QTemporaryDir root;
+    auto e = ArcadeInstall::Environment::under(root.path());
+    ArcadeInstall installer(e);
+    const auto png = root.filePath(QStringLiteral("icon.png"));
+    put(png, "png");
+    const auto source = root.filePath(QStringLiteral("download.AppImage"));
+    put(source, "v1");
+    auto oldApp = appInfo();
+    oldApp.desktopId = QStringLiteral("arcade-find");
+    auto first = options(source, QStringLiteral("1"));
+    first.app = oldApp;
+    first.icons = {{png, 256}};
+    QJsonObject receipt;
+    QString error;
+    QVERIFY2(installer.install(first, &receipt, &error), qPrintable(error));
+    const auto oldIcon = receipt.value(QStringLiteral("integration")).toObject().value(QStringLiteral("icons")).toArray().at(0).toString();
+    QVERIFY2(oldIcon.endsWith(u"256x256/apps/arcade-find.png") && QFileInfo::exists(oldIcon), qPrintable(oldIcon));
+    auto app = appInfo();
+    app.desktopId = QStringLiteral("dev.arcade.Find");
+    app.legacyDesktopIds = {QStringLiteral("arcade-find")};
+    put(source, "v2");
+    auto second = options(source, QStringLiteral("2"));
+    second.app = app;
+    second.icons = {{png, 256}};
+    QVERIFY2(installer.install(second, &receipt, &error), qPrintable(error));
+    QVERIFY2(!QFileInfo::exists(oldIcon), "the old-id icon is left behind");
+    const auto icons = receipt.value(QStringLiteral("integration")).toObject().value(QStringLiteral("icons")).toArray();
+    QCOMPARE(icons.size(), 1);
+    QVERIFY(icons.at(0).toString().endsWith(u"256x256/apps/dev.arcade.Find.png"));
+  }
   void onlyDownloadsAreRemovedAndStaleStagesCleaned() {
     QTemporaryDir root;
     auto e = ArcadeInstall::Environment::under(root.path());

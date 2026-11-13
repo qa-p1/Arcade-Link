@@ -1435,13 +1435,22 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
     prepared << qMakePair(target, file.readAll());
     icons << target;
   }
+  // Icons this install didn't supply stay, unless they carry another desktop
+  // ID (a legacy name): those go once this install's icons are written.
+  QStringList retiredIcons;
   for (const auto &icon :
        oldIntegration.value(QStringLiteral("icons")).toArray()) {
     bool blocked = false;
     for (const auto &item : skipped)
       blocked |= item.toObject().value(QStringLiteral("path")) == icon;
-    if (!blocked && !icons.contains(icon))
+    if (blocked || icons.contains(icon))
+      continue;
+    const bool currentId =
+        QFileInfo(icon.toString()).completeBaseName() == opts.app.desktopId;
+    if (currentId || prepared.isEmpty())
       icons << icon;
+    else
+      retiredIcons << icon.toString();
   }
   integration.insert(QStringLiteral("icons"), icons);
   const auto autoPath = QDir(e.config).filePath(QStringLiteral("autostart/") +
@@ -1560,6 +1569,9 @@ bool ArcadeInstall::install(const InstallOptions &opts, QJsonObject *out,
     return fail(error, QStringLiteral("cannot chmod AppImage"));
   for (const auto &icon : prepared)
     if (!atomicWrite(icon.first, icon.second, false, error))
+      return false;
+  for (const auto &icon : retiredIcons)
+    if (!removeFile(icon, error))
       return false;
   const auto entryPath =
       integration.value(QStringLiteral("desktopEntry")).toString();

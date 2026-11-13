@@ -912,6 +912,34 @@ fn a_changed_desktop_id_keeps_an_old_entry_someone_else_now_owns() {
 /// updates: two menu entries for Box, Look, Shelf, Clipboard and Wheel.
 #[cfg(target_os = "linux")]
 #[test]
+fn icons_under_an_old_desktop_id_are_retired_by_the_next_install() {
+    // Box's receipt still listed `dev.arcadebox.app` icons next to `dev.arcade.Box` ones (BP-4).
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let old_app = AppInfo { desktop_id: "arcade-find".into(), ..find_info() };
+    let app = AppInfo { desktop_id: "dev.arcade.Find".into(), legacy_desktop_ids: vec!["arcade-find".into()], ..find_info() };
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"v1").unwrap();
+    let r = runtime(source.clone());
+    let png = root.0.join("icon.png");
+    fs::write(&png, b"png").unwrap();
+    let icon = [Icon { source: png, size: IconSize::Pixels(256) }];
+    let first = install(&e, InstallOptions { icons: &icon, ..find_options(&old_app, &r, "1") }).unwrap();
+    let old_icon = first.integration.icons[0].clone();
+    assert!(old_icon.is_file() && old_icon.ends_with("256x256/apps/arcade-find.png"));
+    fs::write(&source, b"v2").unwrap();
+    let second = install(&e, InstallOptions { icons: &icon, ..find_options(&app, &r, "2") }).unwrap();
+    assert!(!old_icon.exists(), "the old-id icon is left behind");
+    assert_eq!(second.integration.icons.len(), 1, "{:?}", second.integration.icons);
+    assert!(second.integration.icons[0].ends_with("256x256/apps/dev.arcade.Find.png"));
+    // An install that supplies no icons keeps the ones it has.
+    fs::write(&source, b"v3").unwrap();
+    let third = install(&e, find_options(&app, &r, "3")).unwrap();
+    assert_eq!(third.integration.icons, second.integration.icons);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn legacy_id_entries_running_the_installed_file_are_retired() {
     for via_repair in [false, true] {
         let root = Root::new();

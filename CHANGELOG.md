@@ -8,6 +8,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [1.0.7] — 2026-11-10
 
 ### Fixed
+- Updates retire the app's icons installed under an older desktop id (`arcade-find.png` beside the new
+  `dev.arcade.Find.png`) once this install has written its own icons, in both the Rust and the Qt installer. Icons
+  this install did not supply were all carried over in the receipt, so Box kept its `dev.arcadebox.app` icons after
+  moving ids (Box audit BP-4). Icons under the current id are still kept when the new build ships none. Tested in
+  `tests/install.rs` and `qt/tests/tst_Install.cpp`.
 - Updates and repairs retire an app's launcher and login entries under its older desktop ids
   (`AppInfo::legacy_desktop_ids` / `legacyDesktopIds`) even when they run the very file that is installed now, in
   both the Rust and the Qt installer. Only entries for another copy were removed, so on a real desktop updated from

@@ -965,10 +965,20 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
         prepared_icons.push((target.clone(), bytes));
         integration.icons.push(target);
     }
+    // Icons from the last install that this one didn't supply stay, unless they
+    // carry another desktop ID (a legacy name such as `dev.arcadebox.app`): those
+    // go once this install has written its own icons, like legacy launchers.
+    let mut retired_icons = Vec::new();
     if let Some(old) = &old {
         for icon in &old.integration.icons {
-            if !integration.icons.contains(icon) && !integration.skipped.iter().any(|s| &s.path == icon) {
+            if integration.icons.contains(icon) || integration.skipped.iter().any(|s| &s.path == icon) {
+                continue;
+            }
+            let current_id = icon.file_stem().is_some_and(|stem| stem == opts.app.desktop_id.as_str());
+            if current_id || prepared_icons.is_empty() {
                 integration.icons.push(icon.clone());
+            } else {
+                retired_icons.push(icon.clone());
             }
         }
     }
@@ -1081,6 +1091,9 @@ pub fn install(environment: &Environment, opts: InstallOptions<'_>) -> io::Resul
     fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
     for (path, bytes) in prepared_icons {
         write(&path, &bytes)?;
+    }
+    for path in &retired_icons {
+        remove_file(path)?;
     }
     if let Some(path) = &integration.desktop_entry {
         write(path, desktop(opts.app, &dest).as_bytes())?;
