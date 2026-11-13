@@ -51,6 +51,6 @@ jobs:
           # Outside the checkout: a file inside a git work tree counts as a dev build, which refuses to install.
           app=$(realpath "$(find "$RUNNER_TEMP/app" -name '*.AppImage' | head -1)"); chmod +x "$app"
           .arcade-link/tools/desktop/tier2.sh ${{ matrix.desktop }} python3 .arcade-link/tools/desktop/tests/smoke.py "$app" --show "${{ inputs.show }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: "tier2-${{ matrix.desktop }}", path: desktop-artifacts, if-no-files-found: ignore }
