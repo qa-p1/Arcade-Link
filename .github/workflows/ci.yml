@@ -151,7 +151,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Rust kit (palette, icons, format, egui)
         run: cargo test -p arcade-link --features design,design-egui --locked
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: TypeScript kit (format helpers, icon map) and QML Format.js
