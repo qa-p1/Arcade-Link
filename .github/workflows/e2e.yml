@@ -93,7 +93,7 @@ jobs:
         app: [arcade.box, arcade.lens, arcade.look, arcade.wheel, arcade.shelf, arcade.find, arcade.clipboard]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: fleet-pick
           path: target/fleet-pick
@@ -167,7 +167,7 @@ jobs:
           "$GITHUB_WORKSPACE/tools/ci/apt-install.sh" dbus-x11 xvfb xdotool gnome-keyring python3-dbus python3-gi libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libfuse2 libssl-dev pkg-config libwayland-dev libxkbcommon-dev \
             libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libegl1 libgl1
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: fleet-pick
           path: target/fleet-pick
@@ -178,7 +178,7 @@ jobs:
         run: |
           rm -rf target/fleet
           python3 tools/e2e_artifacts.py --pinned target/fleet-pick/fleet.json --sources --output target/fleet
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: matrix.group == 'install'
         with:
           pattern: dev-build-*

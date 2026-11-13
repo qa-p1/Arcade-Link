@@ -42,7 +42,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/app"; file="$RUNNER_TEMP/app/$(basename "$URL")"
           [ -s "$file" ] || curl -fsSL --retry 5 --retry-delay 10 --max-time 600 -o "$file" "$URL"
       - if: inputs.artifact != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with: { name: "${{ inputs.artifact }}", path: "${{ runner.temp }}/app" }
       - name: Smoke on ${{ matrix.desktop }}
         env:

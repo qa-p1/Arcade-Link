@@ -156,7 +156,7 @@ jobs:
           file="$RUNNER_TEMP/app/$(basename "$URL")"
           if [ -n "$URL" ] && [ ! -s "$file" ]; then curl -fsSL --retry 5 --retry-delay 10 --max-time 600 -o "$file" "$URL"; fi
       - if: inputs.artifact != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with: { name: "${{ inputs.artifact }}", path: "${{ runner.temp }}/app" }
       - name: Run ${{ inputs.test }} in headless Hyprland
         env:
