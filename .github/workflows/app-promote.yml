@@ -20,7 +20,7 @@ jobs:
         env:
           KEY: ${{ secrets.ARCADE_UPDATE_SIGNING_KEY }}
         run: '[ -n "$KEY" ] || { echo "::error::ARCADE_UPDATE_SIGNING_KEY is missing; nothing is published unsigned (see Arcade Link docs/SIGNING.md)"; exit 1; }'
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
       - uses: ./.arcade-link/.github/actions/setup-arcade-link
       - name: Promote
