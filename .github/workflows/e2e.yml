@@ -33,6 +33,9 @@ jobs:
         with:
           toolchain: 1.88.0
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Saved only on main (Link spec §4): caches from pull requests crowded main's out of the 10 GB.
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - name: Isolation tools
         run: |
           "$GITHUB_WORKSPACE/tools/ci/apt-install.sh" dbus-x11 xvfb xdotool
@@ -158,6 +161,8 @@ jobs:
           toolchain: 1.88.0
       - uses: Swatinem/rust-cache@v2
         with:
+          # Saved only on main (Link spec §4): caches from pull requests crowded main's out of the 10 GB.
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
           workspaces: |
             . -> target
             target/real-driver-project -> ../real-driver
