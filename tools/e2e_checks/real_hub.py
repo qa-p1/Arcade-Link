@@ -211,9 +211,6 @@ def _legacy_entries_case(app):
             config = Path(home) / '.config' if home else Path(child.env['XDG_CONFIG_HOME'])
             applications, autostart = launcher.parent, config / 'autostart'
             autostart.mkdir(parents=True, exist_ok=True)
-            # An app may keep a login-item name that is also an old launcher name (Tools: `arcade-tools`). That file
-            # is its current login item, not an old one, so it is not planted over and not expected to go.
-            login = first['integration'].get('autostart')
             planted = []
             for old in LEGACY_DESKTOP_IDS[app]:
                 if old == launcher.stem:
@@ -221,14 +218,16 @@ def _legacy_entries_case(app):
                 entry = f'[Desktop Entry]\nType=Application\nName=Old\nExec="{installed}" --background\n'
                 for folder in (applications, autostart):
                     path = folder / f'{old}.desktop'
-                    if login and path.resolve() == Path(login).resolve():
-                        continue
                     path.write_text(entry, encoding='utf-8')
                     planted.append(path)
             assert planted, f'{app}: no old desktop id differs from {launcher.stem}'
             shutil.copy2(artifact, source)
             run_app(child, source, '--install', '--silent', '--no-launch')
-            left = [p for p in planted if p.exists()]
+            # An old name can also be the app's login-item name (Tools: `arcade-tools`). Link's installer then keeps
+            # that entry as the app's login item (start at login carries over) and records it; it is not left behind.
+            login = receipt(child, app)['integration'].get('autostart')
+            kept = Path(login).resolve() if login else None
+            left = [p for p in planted if p.exists() and p.resolve() != kept]
             assert not left, f'{app}: update {LEGACY_ENTRIES_LEFT} launcher or login item: {left}'
             runs = lambda folder: [p for p in folder.glob('*.desktop') if str(installed) in p.read_text(encoding='utf-8')]
             assert len(runs(applications)) == 1, runs(applications)
