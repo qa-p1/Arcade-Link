@@ -5,6 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Dart kit: `ArcadeKeyChip` stays the size of its key in a stretched row. The Container's `alignment` made it fill
+  the offered width, so Clipboard's shortcut recorder showed three full-width bars (RD-CLIPBOARD-2). Tested in
+  `tools/check_dart_kit.sh` (failed before: a 900 px chip).
+- QML kit: `HintBar`'s trailing text is elided before it reaches the hints instead of being drawn over them
+  (Shelf SH-3).
+
 ## [1.0.7] — 2026-11-10
 
 ### Fixed
