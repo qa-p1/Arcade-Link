@@ -17,6 +17,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Tests
 - The real-fleet e2e expects `*_update_retires_old_desktop_ids` to pass for Tools, Box, Find, Lens, Look and Wheel,
   whose main builds now vendor Link 1.0.7; only Clipboard and Shelf stay in `LEGACY_PENDING`.
+- `*_update_retires_old_desktop_ids` plants the old login items where Link's installer looks for them:
+  `$ARCADE_HOME/.config/autostart` when `ARCADE_HOME` is set, as in every e2e session (it used `$XDG_CONFIG_HOME`,
+  which the installer ignores then, so the 1.0.7 apps "left" entries they could never see). The fleet's development
+  builds get `libdav1d-dev` (Look's image decoder).
 
 ## [1.0.7] — 2026-11-10
 

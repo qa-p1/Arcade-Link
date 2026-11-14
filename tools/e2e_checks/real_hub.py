@@ -205,7 +205,11 @@ def _legacy_entries_case(app):
             first = receipt(child, app)
             installed = Path(first['path'])
             launcher = Path(first['integration']['desktopEntry'])
-            applications, autostart = launcher.parent, child.root / 'config/autostart'
+            # Link's installer roots everything at ARCADE_HOME when it is set, XDG_CONFIG_HOME included
+            # (`Environment::discover`), so the login items it retires are under ARCADE_HOME/.config.
+            home = child.env.get('ARCADE_HOME')
+            config = Path(home) / '.config' if home else Path(child.env['XDG_CONFIG_HOME'])
+            applications, autostart = launcher.parent, config / 'autostart'
             autostart.mkdir(parents=True, exist_ok=True)
             planted = []
             for old in LEGACY_DESKTOP_IDS[app]:
