@@ -205,7 +205,11 @@ def _legacy_entries_case(app):
             first = receipt(child, app)
             installed = Path(first['path'])
             launcher = Path(first['integration']['desktopEntry'])
-            applications, autostart = launcher.parent, child.root / 'config/autostart'
+            # Link's installer roots everything at ARCADE_HOME when it is set, XDG_CONFIG_HOME included
+            # (`Environment::discover`), so the login items it retires are under ARCADE_HOME/.config.
+            home = child.env.get('ARCADE_HOME')
+            config = Path(home) / '.config' if home else Path(child.env['XDG_CONFIG_HOME'])
+            applications, autostart = launcher.parent, config / 'autostart'
             autostart.mkdir(parents=True, exist_ok=True)
             planted = []
             for old in LEGACY_DESKTOP_IDS[app]:
@@ -213,12 +217,17 @@ def _legacy_entries_case(app):
                     continue
                 entry = f'[Desktop Entry]\nType=Application\nName=Old\nExec="{installed}" --background\n'
                 for folder in (applications, autostart):
-                    (folder / f'{old}.desktop').write_text(entry, encoding='utf-8')
-                    planted.append(folder / f'{old}.desktop')
+                    path = folder / f'{old}.desktop'
+                    path.write_text(entry, encoding='utf-8')
+                    planted.append(path)
             assert planted, f'{app}: no old desktop id differs from {launcher.stem}'
             shutil.copy2(artifact, source)
             run_app(child, source, '--install', '--silent', '--no-launch')
-            left = [p for p in planted if p.exists()]
+            # An old name can also be the app's login-item name (Tools: `arcade-tools`). Link's installer then keeps
+            # that entry as the app's login item (start at login carries over) and records it; it is not left behind.
+            login = receipt(child, app)['integration'].get('autostart')
+            kept = Path(login).resolve() if login else None
+            left = [p for p in planted if p.exists() and p.resolve() != kept]
             assert not left, f'{app}: update {LEGACY_ENTRIES_LEFT} launcher or login item: {left}'
             runs = lambda folder: [p for p in folder.glob('*.desktop') if str(installed) in p.read_text(encoding='utf-8')]
             assert len(runs(applications)) == 1, runs(applications)

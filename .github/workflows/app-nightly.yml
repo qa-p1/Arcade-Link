@@ -9,6 +9,7 @@ on:
       version: { type: string, required: true }
       ci-workflow: { type: string, default: ci.yml }
       artifacts: { type: string, default: "release-*" }
+      windows-installer: { type: string, default: nsis, description: "Technology of the *.exe installer: nsis or inno" }
       link-ref: { type: string, default: v1.0.3 }
     secrets:
       ARCADE_UPDATE_SIGNING_KEY: { required: false }
@@ -51,6 +52,9 @@ jobs:
         run: |
           [ -n "$ARCADE_UPDATE_SIGNING_KEY" ] || { echo "::error::ARCADE_UPDATE_SIGNING_KEY is missing"; exit 1; }
           gh run download "${{ steps.pick.outputs.run }}" --repo "$GITHUB_REPOSITORY" --pattern "${{ inputs.artifacts }}" --dir raw
-          mkdir dist && find raw -type f -exec mv -t dist {} +
+          # Per-platform artifacts may each carry release metadata; publish writes it again for the whole set.
+          mkdir dist && find raw -type f ! -name arcade-release.json ! -name SHA256SUMS.txt ! -name manifest.json \
+            ! -name manifest.json.sig -exec mv -t dist {} +
           python3 "$ARCADE_LINK_TOOLS/release_flow.py" publish --repo "$GITHUB_REPOSITORY" --app "${{ inputs.app }}" \
-            --version "${{ inputs.version }}" --tag "${{ steps.pick.outputs.tag }}" --sha "${{ steps.pick.outputs.sha }}" --channel nightly dist
+            --version "${{ inputs.version }}" --tag "${{ steps.pick.outputs.tag }}" --sha "${{ steps.pick.outputs.sha }}" --channel nightly \
+            --windows-installer "${{ inputs.windows-installer }}" dist

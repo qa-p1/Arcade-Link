@@ -7,6 +7,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [1.0.8] — 2026-11-14
 
+### Added
+- `app-publish.yml` and `app-nightly.yml` take `windows-installer` (`nsis`, the default, or `inno`), passed to
+  `arcade-release.py` through `release_flow.py publish --windows-installer`. Promotion reads it from the rc's own
+  `arcade-release.json`, so a stable release tells Tools the same silent switches the rc was tested with. Before,
+  every reusable publish described a Windows `.exe` as NSIS, which would have run Clipboard's, Find's and Lens's
+  Inno installers with `/S`. Tested in `tools/test_release_flow.py` and `release-flow-e2e.yml` (an Inno rc
+  promoted to a draft stable).
+- `app-nightly.yml` leaves out the release metadata (`arcade-release.json`, `SHA256SUMS.txt`, `manifest.json`)
+  that per-platform CI artifacts carry, which made the `mv` into one folder fail on duplicate names (Wheel's
+  bundles each carry their own). Publishing writes it again for the whole set.
+
 ### Fixed
 - Dart kit: `ArcadeKeyChip` stays the size of its key in a stretched row. The Container's `alignment` made it fill
   the offered width, so Clipboard's shortcut recorder showed three full-width bars (RD-CLIPBOARD-2). Tested in
@@ -17,6 +28,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Tests
 - The real-fleet e2e expects `*_update_retires_old_desktop_ids` to pass for Tools, Box, Find, Lens, Look and Wheel,
   whose main builds now vendor Link 1.0.7; only Clipboard and Shelf stay in `LEGACY_PENDING`.
+- `*_update_retires_old_desktop_ids` plants the old login items where Link's installer looks for them:
+  `$ARCADE_HOME/.config/autostart` when `ARCADE_HOME` is set, as in every e2e session (it used `$XDG_CONFIG_HOME`,
+  which the installer ignores then, so the 1.0.7 apps "left" entries they could never see). The fleet's development
+  builds get `libdav1d-dev` (Look's image decoder).
+- An old entry that the update keeps as the app's recorded login item no longer counts as left behind: Tools'
+  login-item name `arcade-tools` is also its old launcher name, and Link's installer rightly keeps that login entry
+  (start at login carries over) while it retires the old launcher. The real-fleet job installs `libdav1d7`, which
+  Look's development build needs at run time.
 
 ## [1.0.7] — 2026-11-10
 

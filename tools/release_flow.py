@@ -6,6 +6,7 @@ app-nightly.yml); `gh` must be logged in (GITHUB_TOKEN in Actions) and
 `arcade-link` must be on PATH.
 
     release_flow.py publish  --repo O/R --app ID --version V --tag T --sha SHA DIR [--channel test|nightly] [--draft]
+                             [--windows-installer nsis|inno]
     release_flow.py promote  --repo O/R --rc-tag T [--tag T2] [--draft]
     release_flow.py changed  --repo O/R --sha SHA      # exit 0 if SHA differs from the newest nightly's commit
 
@@ -64,12 +65,13 @@ def notes_url(repo: str, tag: str) -> str:
     return f"https://github.com/{repo}/releases/tag/{tag}"
 
 
-def write_metadata(d: Path, app: str, version: str, tag: str, channel: str, repo: str, sign: bool) -> None:
+def write_metadata(d: Path, app: str, version: str, tag: str, channel: str, repo: str, sign: bool,
+                   windows_installer: str) -> None:
     files = payload(d)
     if not files:
         raise SystemExit(f"{d} has no release files")
     sh(sys.executable, str(HERE / "arcade-release.py"), "--id", app, "--version", version, "--channel", channel,
-       "--notes", notes_url(repo, tag), str(d))
+       "--windows-installer", windows_installer, "--notes", notes_url(repo, tag), str(d))
     cmd = ["arcade-link", "release-manifest", "--app", app, "--version", version, "--tag", tag, "--channel", channel,
            "--out", str(d)] + [str(p) for p in files]
     if sign:
@@ -88,7 +90,8 @@ def create(repo: str, tag: str, sha: str, d: Path, prerelease: bool, draft: bool
 
 def publish(a: argparse.Namespace) -> None:
     d = Path(a.dir)
-    write_metadata(d, a.app, a.version, a.tag, a.channel, a.repo, sign=a.channel == "nightly")
+    write_metadata(d, a.app, a.version, a.tag, a.channel, a.repo, sign=a.channel == "nightly",
+                   windows_installer=a.windows_installer)
     create(a.repo, a.tag, a.sha, d, prerelease=True, draft=a.draft, title=f"{a.app} {a.tag[1:]} ({a.channel})")
     print(f"published {a.tag} ({a.channel}{', draft' if a.draft else ''})")
 
@@ -108,6 +111,15 @@ def release_commit(repo: str, tag: str) -> str:
     return out
 
 
+def windows_installer_of(release: dict) -> str:
+    """The installer technology an rc's arcade-release.json declares for its Windows .exe, so the stable copy tells
+    Tools the same silent switches the rc was tested with (an Inno installer ignores NSIS's /S)."""
+    kinds = {asset["kind"] for asset in release.get("assets", []) if asset.get("os") == "windows"} & {"nsis", "inno"}
+    if len(kinds) > 1:
+        raise SystemExit(f"arcade-release.json mixes Windows installer kinds: {sorted(kinds)}")
+    return kinds.pop() if kinds else "nsis"
+
+
 def promote(a: argparse.Namespace) -> None:
     m = RC.match(a.rc_tag)
     if not m:
@@ -125,8 +137,9 @@ def promote(a: argparse.Namespace) -> None:
     for f in rc_manifest["files"]:
         shutil.copy2(rc_dir / f["name"], out / f["name"])
     sh("arcade-link", "verify-manifest", str(rc_dir / "manifest.json"), "--unsigned", "--files", str(out))
+    windows_installer = windows_installer_of(json.loads((rc_dir / "arcade-release.json").read_text()))
     sh(sys.executable, str(HERE / "arcade-release.py"), "--id", rc_manifest["app"], "--version", rc_manifest["version"],
-       "--channel", "stable", "--notes", notes_url(a.repo, tag), str(out))
+       "--channel", "stable", "--windows-installer", windows_installer, "--notes", notes_url(a.repo, tag), str(out))
     sh("arcade-link", "promote-manifest", str(rc_dir / "manifest.json"), "--tag", tag, "--channel", "stable",
        "--files", str(out), "--out", str(out))
     create(a.repo, tag, release_commit(a.repo, a.rc_tag), out, prerelease=False, draft=a.draft,
@@ -161,6 +174,7 @@ def main() -> None:
         pub.add_argument(opt, required=True)
     pub.add_argument("--channel", default="test", choices=["test", "nightly"])
     pub.add_argument("--draft", action="store_true")
+    pub.add_argument("--windows-installer", default="nsis", choices=["nsis", "inno"], help="technology of *.exe assets")
     pub.add_argument("dir")
     pro = sub.add_parser("promote")
     pro.add_argument("--repo", required=True)
