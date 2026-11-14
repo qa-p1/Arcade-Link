@@ -14,6 +14,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - QML kit: `HintBar`'s trailing text is elided before it reaches the hints instead of being drawn over them
   (Shelf SH-3).
 
+### Tests
+- The real-fleet e2e expects `*_update_retires_old_desktop_ids` to pass for Tools, Box, Find, Lens, Look and Wheel,
+  whose main builds now vendor Link 1.0.7; only Clipboard and Shelf stay in `LEGACY_PENDING`.
+
 ## [1.0.7] — 2026-11-10
 
 ### Fixed

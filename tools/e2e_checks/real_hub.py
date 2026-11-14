@@ -190,7 +190,7 @@ LEGACY_DESKTOP_IDS = {
 # Apps whose main build still vendors Link < 1.0.7, which kept such entries. XFAIL only on this exact failure;
 # remove an app here in the same change that moves it to Link 1.0.7 (a pass while listed fails the run).
 LEGACY_ENTRIES_LEFT = 'left a second'
-LEGACY_PENDING = set(LEGACY_DESKTOP_IDS)
+LEGACY_PENDING = {'arcade.clipboard', 'arcade.shelf'}
 
 
 def _legacy_entries_case(app):
