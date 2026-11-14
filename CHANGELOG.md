@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.8] — 2026-11-14
+
 ### Fixed
 - Dart kit: `ArcadeKeyChip` stays the size of its key in a stretched row. The Container's `alignment` made it fill
   the offered width, so Clipboard's shortcut recorder showed three full-width bars (RD-CLIPBOARD-2). Tested in

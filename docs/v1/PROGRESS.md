@@ -2,6 +2,12 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-14 (1.0.8)
+
+**v1.0.7 tagged** on 40ec027. **1.0.8 prepared**: the Dart kit's key chips stay the size of their key (Clipboard
+RD-CLIPBOARD-2) and the QML HintBar elides its trailing text (Shelf SH-3) (PR #62); caches are saved only on main
+(PR #63). Tag after CI, Ecosystem e2e (`real_apps=true`) and the desktop harness pass on the merge.
+
 ## 2026-11-10 (1.0.7)
 
 **v1.0.6 tagged** on cd380d6. **1.0.7 prepared**: the portal stand-in forgets a client that left the bus (PR #57),
