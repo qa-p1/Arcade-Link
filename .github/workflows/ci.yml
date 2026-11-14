@@ -28,6 +28,9 @@ jobs:
           toolchain: 1.88.0
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Saved only on main (Link spec §4): caches from pull requests crowded main's out of the 10 GB.
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - name: Format
         if: runner.os == 'Linux'
         run: cargo fmt --all --check
@@ -72,6 +75,8 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
+          # Saved only on main (Link spec §4): caches from pull requests crowded main's out of the 10 GB.
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
           workspaces: |
             . -> target
             template -> target
@@ -128,6 +133,9 @@ jobs:
         with:
           toolchain: 1.88.0
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Saved only on main (Link spec §4): caches from pull requests crowded main's out of the 10 GB.
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - name: Build this CLI and the previous release's
         run: |
           prev=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "v$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)" | head -1)
@@ -149,6 +157,9 @@ jobs:
         with:
           toolchain: 1.88.0
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Saved only on main (Link spec §4): caches from pull requests crowded main's out of the 10 GB.
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - name: Rust kit (palette, icons, format, egui)
         run: cargo test -p arcade-link --features design,design-egui --locked
       - uses: actions/setup-node@v4
@@ -188,6 +199,9 @@ jobs:
         with:
           toolchain: 1.88.0
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Saved only on main (Link spec §4): caches from pull requests crowded main's out of the 10 GB.
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - name: Build the debug CLI (for interop tests)
         run: cargo build -p arcade-link-cli --locked
       - name: OpenGL headers for Qt Quick (design kit test)
