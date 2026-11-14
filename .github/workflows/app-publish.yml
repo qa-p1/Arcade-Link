@@ -11,6 +11,7 @@ on:
       channel: { type: string, default: test }
       artifacts: { type: string, default: "release-*" }
       draft: { type: boolean, default: false }
+      windows-installer: { type: string, default: nsis, description: "Technology of the *.exe installer: nsis or inno" }
       link-ref: { type: string, default: v1.0.3 }
     secrets:
       ARCADE_UPDATE_SIGNING_KEY: { required: false }
@@ -34,4 +35,5 @@ jobs:
         run: >
           python3 "$ARCADE_LINK_TOOLS/release_flow.py" publish --repo "$GITHUB_REPOSITORY"
           --app "${{ inputs.app }}" --version "${{ inputs.version }}" --tag "${{ inputs.tag }}"
-          --sha "$GITHUB_SHA" --channel "${{ inputs.channel }}" ${{ inputs.draft && '--draft' || '' }} dist
+          --sha "$GITHUB_SHA" --channel "${{ inputs.channel }}" --windows-installer "${{ inputs.windows-installer }}"
+          ${{ inputs.draft && '--draft' || '' }} dist
