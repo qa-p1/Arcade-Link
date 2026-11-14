@@ -32,6 +32,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   `$ARCADE_HOME/.config/autostart` when `ARCADE_HOME` is set, as in every e2e session (it used `$XDG_CONFIG_HOME`,
   which the installer ignores then, so the 1.0.7 apps "left" entries they could never see). The fleet's development
   builds get `libdav1d-dev` (Look's image decoder).
+- It no longer plants an "old" entry over an app's current login item: Tools keeps `arcade-tools` as its login-item
+  name while `arcade-tools` is also its old launcher name, and the check overwrote that login item and then expected
+  it gone. The real-fleet job installs `libdav1d7`, which Look's development build needs at run time.
 
 ## [1.0.7] — 2026-11-10
 

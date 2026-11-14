@@ -211,14 +211,20 @@ def _legacy_entries_case(app):
             config = Path(home) / '.config' if home else Path(child.env['XDG_CONFIG_HOME'])
             applications, autostart = launcher.parent, config / 'autostart'
             autostart.mkdir(parents=True, exist_ok=True)
+            # An app may keep a login-item name that is also an old launcher name (Tools: `arcade-tools`). That file
+            # is its current login item, not an old one, so it is not planted over and not expected to go.
+            login = first['integration'].get('autostart')
             planted = []
             for old in LEGACY_DESKTOP_IDS[app]:
                 if old == launcher.stem:
                     continue
                 entry = f'[Desktop Entry]\nType=Application\nName=Old\nExec="{installed}" --background\n'
                 for folder in (applications, autostart):
-                    (folder / f'{old}.desktop').write_text(entry, encoding='utf-8')
-                    planted.append(folder / f'{old}.desktop')
+                    path = folder / f'{old}.desktop'
+                    if login and path.resolve() == Path(login).resolve():
+                        continue
+                    path.write_text(entry, encoding='utf-8')
+                    planted.append(path)
             assert planted, f'{app}: no old desktop id differs from {launcher.stem}'
             shutil.copy2(artifact, source)
             run_app(child, source, '--install', '--silent', '--no-launch')
