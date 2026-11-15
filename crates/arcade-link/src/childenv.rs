@@ -32,6 +32,8 @@ const APPIMAGE_ONLY: &[&str] = &[
     "PYTHONHOME",
     "PYTHONDONTWRITEBYTECODE",
     "QT_QPA_PLATFORM_PLUGIN_PATH",
+    // Marks the unpacked copy (runtime::UNPACKED_ENV); a program it starts is not that copy.
+    "ARCADE_UNPACKED",
 ];
 
 /// A change to apply to a child's environment: `None` removes the variable.

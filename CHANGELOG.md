@@ -5,6 +5,16 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.11] — 2026-11-15
+
+### Fixed
+- An app started from another app's unpacked copy, or a Restart's successor, inherited `ARCADE_UNPACKED` and kept
+  running from its FUSE mount (RT-7). The copy now runs with `ARCADE_UNPACKED` set to its own folder; a value that
+  does not name the folder the executable runs from is inherited, so it is dropped and the process still relaunches
+  (`"1"` still means never relaunch, for test harnesses). `childenv::sanitize` and Qt's `childEnvironment` also drop
+  it. `runtime::is_unpacked_copy()` and C `arcade_is_unpacked_copy()` answer "is this process the copy" for apps
+  that skip work there (first-run prompts, stale-copy cleanup).
+
 ## [1.0.10] — 2026-11-15
 
 ### Added

@@ -490,8 +490,26 @@ fn children_named(comm: &str) -> Vec<u32> {
 // ---------------------------------------------------------------------------
 // Unpacked runtime (RT-7; AUDIT/memory.md U1)
 
-/// Set in a process started from the unpacked copy.
+/// Set in a process started from the unpacked copy, to the copy's folder. `1` (a test harness, or by hand) means
+/// "never relaunch". Any other value names another copy: it was inherited (a Restart's successor, or an app started by
+/// one), so it does not stop this process from relaunching; [`crate::childenv::sanitize`] removes it for children.
 pub const UNPACKED_ENV: &str = "ARCADE_UNPACKED";
+
+/// Whether this process runs from its unpacked copy (or was told never to relaunch): [`UNPACKED_ENV`] is `1` or names
+/// the folder this executable runs from. Apps use it for "I am the copy" decisions instead of testing the variable.
+pub fn is_unpacked_copy() -> bool {
+    std::env::var_os(UNPACKED_ENV).is_some_and(|value| marks(&value, std::env::current_exe().ok().as_deref()))
+}
+
+/// Whether the [`UNPACKED_ENV`] value `value` marks a process running `exe`: `1`, or the folder `exe` is inside (both
+/// compared canonical, so a symlinked data folder still matches and the copy never relaunches itself).
+fn marks(value: &std::ffi::OsStr, exe: Option<&Path>) -> bool {
+    if value == "1" {
+        return true;
+    }
+    let (Ok(folder), Some(exe)) = (std::fs::canonicalize(value), exe) else { return false };
+    exe.starts_with(&folder) || std::fs::canonicalize(exe).is_ok_and(|exe| exe.starts_with(&folder))
+}
 
 /// Where this app's unpacked copies live: `<data>/arcade/runtime/`.
 pub fn unpacked_root() -> PathBuf {
@@ -514,7 +532,12 @@ pub fn relaunch_unpacked(app_id: &str, version: &str, wait: bool) -> Option<i32>
     #[cfg(target_os = "linux")]
     {
         if std::env::var_os(UNPACKED_ENV).is_some() {
-            return None;
+            if is_unpacked_copy() {
+                return None;
+            }
+            // Inherited from another app's or an older process's copy: not this process's. It runs first thing in
+            // main, before any thread starts.
+            std::env::remove_var(UNPACKED_ENV);
         }
         let appimage = PathBuf::from(std::env::var_os("APPIMAGE").filter(|v| !v.is_empty())?);
         let appdir = PathBuf::from(std::env::var_os("APPDIR").filter(|v| !v.is_empty())?);
@@ -527,7 +550,7 @@ pub fn relaunch_unpacked(app_id: &str, version: &str, wait: bool) -> Option<i32>
             return None;
         }
         let mut cmd = Command::new(dir.join("AppRun"));
-        cmd.args(std::env::args_os().skip(1)).env("APPDIR", &dir).env(UNPACKED_ENV, "1");
+        cmd.args(std::env::args_os().skip(1)).env("APPDIR", &dir).env(UNPACKED_ENV, &dir);
         crate::childenv::detach_from_image(&mut cmd);
         // The copy sets the arena cap itself and so owns it: inherited, it took the cap for the user's and passed it
         // on to every program it started.
@@ -638,4 +661,37 @@ pub fn remove_unpacked_except(keep: &[&str]) -> Vec<PathBuf> {
         }
     }
     removed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_unpacked_marker_is_ours_only_for_our_own_copy() {
+        let root = std::env::temp_dir().join(format!("arcade-marker-{}", std::process::id()));
+        let ours = root.join("box-1.0.0-0123456789abcdef");
+        let other = root.join("look-1.0.0-0123456789abcdef");
+        std::fs::create_dir_all(ours.join("usr/bin")).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let exe = ours.join("usr/bin/arcade-desktop");
+        std::fs::write(&exe, b"").unwrap();
+        // The copy itself, and "never relaunch".
+        assert!(marks(ours.as_os_str(), Some(&exe)));
+        assert!(marks(std::ffi::OsStr::new("1"), None));
+        // Inherited from another app's copy, a folder that is gone, or nothing to compare with: not ours.
+        assert!(!marks(other.as_os_str(), Some(&exe)));
+        assert!(!marks(root.join("gone").as_os_str(), Some(&exe)));
+        assert!(!marks(ours.as_os_str(), None));
+        assert!(!marks(std::ffi::OsStr::new(""), Some(&exe)));
+        // A data folder reached through a symlink still matches.
+        #[cfg(unix)]
+        {
+            let link = root.join("link");
+            std::os::unix::fs::symlink(&root, &link).unwrap();
+            assert!(marks(link.join("box-1.0.0-0123456789abcdef").as_os_str(), Some(&exe)));
+            assert!(marks(ours.as_os_str(), Some(&link.join("box-1.0.0-0123456789abcdef/usr/bin/arcade-desktop"))));
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
