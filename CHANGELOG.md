@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.9] — 2026-11-15
+
 ### Added
 - Dart kit: the app marks. `design/generate.py` writes them into `arcade_icons.dart` as `arcadeGlyphOps` (16 grid,
   from `design/glyphs`, the same source as QML's `GlyphData.js`), with `arcadeGlyphPath`, `ArcadeGlyphPainter` and an

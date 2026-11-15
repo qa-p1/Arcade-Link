@@ -2,6 +2,14 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-15 (1.0.9)
+
+**v1.0.8 tagged** on 34f8030. **1.0.9 prepared** (PR #67): `app-gates.yml`, the reusable release gates every app runs
+on its published rc, with `tools/gates/n1_app.py` for N-1; the Dart kit's app marks; the real-fleet e2e expects every
+app's update to retire its old entries (LEGACY_PENDING empty); the harness keeps a real AppImage as the process it
+started (`ARCADE_UNPACKED=1`), which Box's unpacked relaunch broke. Real-fleet run on PR #67: 13/13 jobs green. Tag
+after CI, Ecosystem e2e (`real_apps=true`) and the desktop harness pass on the merge.
+
 ## 2026-11-14 (1.0.8)
 
 **v1.0.7 tagged** on 40ec027. **1.0.8 prepared**: the Dart kit's key chips stay the size of their key (Clipboard
