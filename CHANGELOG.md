@@ -14,6 +14,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   (`"1"` still means never relaunch, for test harnesses). `childenv::sanitize` and Qt's `childEnvironment` also drop
   it. `runtime::is_unpacked_copy()` and C `arcade_is_unpacked_copy()` answer "is this process the copy" for apps
   that skip work there (first-run prompts, stale-copy cleanup).
+- `app-publish.yml` (`release_flow.py publish`) published files whose names have spaces (Tauri names them after the
+  product name, "Arcade Box_1.0.0_amd64.AppImage") under GitHub's changed name ("Arcade.Box_..."), while
+  `SHA256SUMS.txt`, `arcade-release.json` and `manifest.json` named the original, so the rc's own gates (and Tools)
+  could not find them. Spaces now become "-" before the metadata is written (the names 0.x releases had), other
+  characters GitHub would change are refused, and the published release must hold exactly the files the metadata
+  names.
 
 ## [1.0.10] — 2026-11-15
 
