@@ -5,6 +5,19 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `qt/arcade_unpacked.h`, the header-only C twin of `runtime::relaunch_unpacked` (RT-7; AUDIT/memory.md U1) for the
+  Qt apps (Shelf, Wheel) and the Flutter Linux runner (Clipboard): `arcade_relaunch_unpacked(app_id, version, wait,
+  argv)` copies the AppImage's contents once to `<data>/arcade/runtime/<app>-<version>-<key>/` and runs the same
+  command line from there, returning -1 when nothing was done and otherwise the code to exit with. Folder names are
+  the ones Tools' `runtime_gc` recognises. Tested in `tst_Unpacked` with a helper executable run from a fake AppDir.
+- `runtime::remove_unpacked_of(root, app_id)`: one app's unpacked copies, other apps' kept.
+
+### Changed
+- Uninstall (Rust `install::uninstall`, Qt `ArcadeInstall::uninstall`) also removes the app's own unpacked runtime
+  copies, so an uninstalled app leaves none behind; other apps' copies stay. Best effort: a copy that cannot be removed
+  is reported, not an error (Tools also collects them).
+
 ## [1.0.9] — 2026-11-15
 
 ### Added

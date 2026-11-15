@@ -1306,6 +1306,9 @@ pub fn uninstall(environment: &Environment, id: &str, opts: UninstallOptions<'_>
             remove_installation(p)?;
         }
     }
+    // The app's unpacked runtime copies (RT-7) go with it; other apps' stay.
+    #[cfg(target_os = "linux")]
+    crate::runtime::remove_unpacked_of(&environment.data.join("arcade").join("runtime"), id);
     manifest::remove_manifest(&environment.locations, id)?;
     environment.receipts().remove(id)?;
     #[cfg(windows)]
