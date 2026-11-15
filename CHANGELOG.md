@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.10] — 2026-11-15
+
 ### Added
 - `qt/arcade_unpacked.h`, the header-only C twin of `runtime::relaunch_unpacked` (RT-7; AUDIT/memory.md U1) for the
   Qt apps (Shelf, Wheel) and the Flutter Linux runner (Clipboard): `arcade_relaunch_unpacked(app_id, version, wait,
