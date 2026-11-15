@@ -20,6 +20,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   the app up and failing when it never starts.
 
 ### Changed
+- The e2e harness starts a real AppImage with `ARCADE_UNPACKED=1` as well as extract-and-run, so an app built on
+  `runtime::relaunch_unpacked` (Box from step 5) keeps running as the process the harness started rather than
+  handing over to a copy and exiting 0; the stop, kill and crash checks act on that process.
 - Dependabot groups minor and patch updates into one weekly pull request per ecosystem and no longer rebases
   them on every push to main, which queued a full CI run per open pull request ahead of release work.
 - The real-fleet install check expects every app's update to retire its old launcher and login item: Clipboard
