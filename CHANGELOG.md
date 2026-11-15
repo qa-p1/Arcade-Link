@@ -22,6 +22,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Changed
 - Dependabot groups minor and patch updates into one weekly pull request per ecosystem and no longer rebases
   them on every push to main, which queued a full CI run per open pull request ahead of release work.
+- The real-fleet install check expects every app's update to retire its old launcher and login item: Clipboard
+  and Shelf are on Link 1.0.8 (their main builds are green), so nothing is an expected failure any more.
 
 ## [1.0.8] — 2026-11-14
 
