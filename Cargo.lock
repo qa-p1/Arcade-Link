@@ -32,7 +32,7 @@ dependencies = [
 
 [[package]]
 name = "arcade-link"
-version = "1.0.10"
+version = "1.0.11"
 dependencies = [
  "base64",
  "blake2",
@@ -53,7 +53,7 @@ dependencies = [
 
 [[package]]
 name = "arcade-link-cli"
-version = "1.0.10"
+version = "1.0.11"
 dependencies = [
  "arcade-link",
  "libc",

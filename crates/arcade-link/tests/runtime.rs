@@ -68,6 +68,12 @@ fn child() {
                 let own = std::env::var("MALLOC_ARENA_MAX").unwrap_or_default();
                 std::fs::write(dir.join("arenas"), format!("{own} {started}")).unwrap();
             }
+            // A program the copy starts is not the copy: the marker does not reach it.
+            let mut other_app = Command::new("sh");
+            other_app.args(["-c", "printf %s \"${ARCADE_UNPACKED-unset}\""]);
+            arcade_link::childenv::sanitize(&mut other_app);
+            let started = String::from_utf8_lossy(&other_app.output().unwrap().stdout).into_owned();
+            std::fs::write(dir.join("marker"), format!("{} {started}", runtime::is_unpacked_copy())).unwrap();
             let exe = std::env::current_exe().unwrap();
             std::fs::write(dir.join("ran-from"), format!("{}\n{}", exe.display(), std::env::var("APPDIR").unwrap_or_default())).unwrap();
             std::process::exit(7);
@@ -342,7 +348,7 @@ fn an_appimage_app_relaunches_from_its_unpacked_copy_once() {
     std::fs::write(&appimage, "image").unwrap();
     let data = dir.join("data");
 
-    let run = || {
+    let run_with = |marker: Option<&std::ffi::OsStr>| {
         // A test on another thread that forks while `copy` above still has the file open for writing makes exec
         // fail with ETXTBSY until that child execs; wait it out.
         for _ in 0..100 {
@@ -354,6 +360,7 @@ fn an_appimage_app_relaunches_from_its_unpacked_copy_once() {
                 .env("APPDIR", &appdir)
                 .env("XDG_DATA_HOME", &data)
                 .env_remove(runtime::UNPACKED_ENV)
+                .envs(marker.map(|m| (runtime::UNPACKED_ENV, m)))
                 .env_remove("MALLOC_ARENA_MAX")
                 .output()
             {
@@ -363,6 +370,7 @@ fn an_appimage_app_relaunches_from_its_unpacked_copy_once() {
         }
         panic!("the copied test binary stayed busy");
     };
+    let run = || run_with(None);
     let out = run();
     assert_eq!(out.status.code(), Some(7), "the unpacked copy's exit code comes back: {}", String::from_utf8_lossy(&out.stderr));
     let ran = std::fs::read_to_string(dir.join("ran-from")).unwrap();
@@ -377,6 +385,20 @@ fn an_appimage_app_relaunches_from_its_unpacked_copy_once() {
     // The unpacked copy owns its arena cap: it keeps it, and an app it starts does not inherit it (Tools D18).
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     assert_eq!(std::fs::read_to_string(dir.join("arenas")).unwrap(), "2 unset");
+    // The copy knows it is the copy; a program it starts does not see the marker.
+    assert_eq!(std::fs::read_to_string(dir.join("marker")).unwrap(), "true unset");
+
+    // A marker inherited from another copy (a Restart's successor, an app started by one) does not stop the relaunch;
+    // "1" (a test harness) does.
+    let other = data.join("arcade/runtime/other-1.0.0-0123456789abcdef");
+    std::fs::create_dir_all(&other).unwrap();
+    assert_eq!(run_with(Some(other.as_os_str())).status.code(), Some(7));
+    let ran = std::fs::read_to_string(dir.join("ran-from")).unwrap();
+    assert!(Path::new(ran.split_once('\n').unwrap().0).starts_with(copy), "with an inherited marker it ran from {ran}");
+    assert_eq!(run_with(Some(std::ffi::OsStr::new("1"))).status.code(), Some(7));
+    let ran = std::fs::read_to_string(dir.join("ran-from")).unwrap();
+    assert!(Path::new(ran.split_once('\n').unwrap().0).starts_with(&appdir), "with ARCADE_UNPACKED=1 it ran from {ran}");
+    std::fs::remove_dir_all(&other).unwrap();
 
     // A second start reuses the copy; a changed AppImage gets a new one.
     std::fs::write(copy.join("usr/marker"), "kept").unwrap();

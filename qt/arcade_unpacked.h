@@ -9,8 +9,14 @@
  * come from the real disk. $APPIMAGE is kept, so everything that advertises or
  * restarts the app still uses the installed AppImage.
  *
+ * The copy runs with ARCADE_UNPACKED set to its folder. "1" (a test harness,
+ * or by hand) means never relaunch; any other folder was inherited from
+ * another copy (a Restart's successor, an app one started) and is dropped, so
+ * this process still relaunches. arcade_is_unpacked_copy() answers "am I the
+ * copy" for the app.
+ *
  * Returns -1 when nothing is to be done and the app keeps running (not in an
- * AppImage, ARCADE_UNPACKED already set, the executable is outside $APPDIR,
+ * AppImage, already the copy or ARCADE_UNPACKED=1, the executable is outside $APPDIR,
  * copying or starting the copy failed). Otherwise the copy has been started
  * and the return value is the code the caller must exit with: with wait
  * (one-shot CLI calls) the copy's own exit status, without it (resident
@@ -365,11 +371,13 @@ static inline pid_t arcade_unpacked_spawn(const char *dir, char *const argv[])
     char **args = (char **)malloc((nargs + 2) * sizeof *args);
     char **env = (char **)malloc((nenv + 3) * sizeof *env);
     char *appdir_var = (char *)malloc(strlen(dir) + 8);
+    char *marker_var = (char *)malloc(strlen(dir) + sizeof ARCADE_UNPACKED_ENV + 1);
     pid_t pid = -1;
     int errpipe[2] = {-1, -1};
-    if (!args || !env || !appdir_var)
+    if (!args || !env || !appdir_var || !marker_var)
         goto done;
     sprintf(appdir_var, "APPDIR=%s", dir);
+    sprintf(marker_var, ARCADE_UNPACKED_ENV "=%s", dir);
     args[0] = apprun;
     for (size_t i = 1; i < nargs; ++i)
         args[i] = argv[i];
@@ -383,7 +391,7 @@ static inline pid_t arcade_unpacked_spawn(const char *dir, char *const argv[])
             env[k++] = environ[i];
         }
         env[k++] = appdir_var;
-        env[k++] = (char *)(ARCADE_UNPACKED_ENV "=1");
+        env[k++] = marker_var;
         env[k] = 0;
     }
     if (pipe2(errpipe, O_CLOEXEC) != 0)
@@ -427,9 +435,35 @@ done:
     free(args);
     free(env);
     free(appdir_var);
+    free(marker_var);
     return pid > 0 ? pid : -1;
 }
 #endif /* __linux__ */
+
+/* Whether this process runs from its unpacked copy (or was told never to
+ * relaunch): ARCADE_UNPACKED is "1" or names the folder this executable runs
+ * from, compared canonical. The C twin of runtime::is_unpacked_copy. */
+static inline int arcade_is_unpacked_copy(void)
+{
+#if defined(__linux__)
+    char exe[PATH_MAX], folder[PATH_MAX];
+    const char *value = getenv(ARCADE_UNPACKED_ENV);
+    ssize_t n;
+    if (!value)
+        return 0;
+    if (strcmp(value, "1") == 0)
+        return 1;
+    if (!*value || !realpath(value, folder))
+        return 0;
+    n = readlink("/proc/self/exe", exe, sizeof exe - 1);
+    if (n <= 0)
+        return 0;
+    exe[n] = '\0';
+    return arcade_unpacked_inside(exe, folder);
+#else
+    return 0;
+#endif
+}
 
 static inline int arcade_relaunch_unpacked(const char *app_id, const char *version, int wait, char *const argv[])
 {
@@ -439,8 +473,12 @@ static inline int arcade_relaunch_unpacked(const char *app_id, const char *versi
     const char *appdir = getenv("APPDIR");
     ssize_t n;
     pid_t pid;
-    if (getenv(ARCADE_UNPACKED_ENV))
-        return -1;
+    if (getenv(ARCADE_UNPACKED_ENV)) {
+        if (arcade_is_unpacked_copy())
+            return -1;
+        /* Inherited from another copy: not this process's (first thing in main, no threads yet). */
+        unsetenv(ARCADE_UNPACKED_ENV);
+    }
     if (!appimage || !*appimage || !appdir || !*appdir)
         return -1;
     n = readlink("/proc/self/exe", exe, sizeof exe - 1);

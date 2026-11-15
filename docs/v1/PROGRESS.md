@@ -2,6 +2,13 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-15 (1.0.11)
+
+**1.0.11 prepared**: `ARCADE_UNPACKED` names the copy's folder, so a marker inherited by a Restart's successor or by
+an app started from a copy no longer keeps that process on its FUSE mount (found in Clipboard's and Wheel's step 5
+packaged checks); `childenv::sanitize` and Qt's `childEnvironment` drop it; `runtime::is_unpacked_copy()` and
+`arcade_is_unpacked_copy()`. Tag after CI, Ecosystem e2e (`real_apps=true`) and the desktop harness pass on the merge.
+
 ## 2026-11-15 (1.0.10)
 
 **v1.0.9 tagged** on 65cb57e. **1.0.10 prepared** (PR #70): `qt/arcade_unpacked.h`, the C twin of
