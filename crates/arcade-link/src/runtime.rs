@@ -606,6 +606,27 @@ fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Removes one app's unpacked copies under `root` (`<app>-<version>-<key>` and an interrupted `.<app>-…tmp-<pid>`),
+/// leaving other apps' copies alone. Uninstall runs this, so an app leaves no runtime copy behind. Best effort: a
+/// copy that cannot be removed is reported and skipped (it is a cache Tools also collects). Returns the folders
+/// removed.
+pub fn remove_unpacked_of(root: &Path, app_id: &str) -> Vec<PathBuf> {
+    let short = app_id.trim_start_matches("arcade.");
+    let (own, interrupted) = (format!("{short}-"), format!(".{short}-"));
+    let mut removed = Vec::new();
+    for entry in std::fs::read_dir(root).into_iter().flatten().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !(name.starts_with(&own) || name.starts_with(&interrupted)) || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        match std::fs::remove_dir_all(entry.path()) {
+            Ok(()) => removed.push(entry.path()),
+            Err(e) => eprintln!("arcade-link: could not remove the unpacked copy {}: {e}", entry.path().display()),
+        }
+    }
+    removed
+}
+
 /// Removes unpacked copies except those named in `keep` (Tools runs this after
 /// an update or uninstall). Returns the folders removed.
 pub fn remove_unpacked_except(keep: &[&str]) -> Vec<PathBuf> {

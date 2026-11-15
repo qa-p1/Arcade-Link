@@ -768,6 +768,33 @@ fn uninstall_leaves_no_lock_and_no_cache_that_describes_nothing() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn uninstall_removes_the_apps_unpacked_copies_and_keeps_the_others() {
+    let root = Root::new();
+    let e = Environment::under(&root.0);
+    let app = find_info();
+    let source = root.0.join("download.AppImage");
+    fs::write(&source, b"fixture").unwrap();
+    let r = runtime(source);
+    install(&e, find_options(&app, &r, "1")).unwrap();
+    let copies = e.data.join("arcade/runtime");
+    let short = app.id.trim_start_matches("arcade.");
+    let own = [format!("{short}-1.0.0-0123456789abcdef"), format!(".{short}-1.0.1-0123456789abcdef.tmp-42")];
+    let others = ["box-1.0.0-0123456789abcdef".to_string(), format!("{short}x-1.0.0-0123456789abcdef")];
+    for name in own.iter().chain(&others) {
+        fs::create_dir_all(copies.join(name).join("usr/bin")).unwrap();
+        fs::write(copies.join(name).join("AppRun"), b"#!/bin/sh\n").unwrap();
+    }
+    assert!(uninstall(&e, &app.id, UninstallOptions { remove_data: false, data_folders: &[] }).unwrap());
+    for name in &own {
+        assert!(!copies.join(name).exists(), "uninstall left {name}");
+    }
+    for name in &others {
+        assert!(copies.join(name).join("AppRun").is_file(), "uninstall removed another app's copy {name}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn install_errors_name_the_folder() {
     let root = Root::new();
     let e = Environment::under(&root.0);
