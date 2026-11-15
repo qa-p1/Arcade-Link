@@ -84,6 +84,17 @@ void main() {
       expect(bounds.width + bounds.height, greaterThan(4), reason: name);
     }
   });
+  testWidgets('app marks paint inside their 16 grid, one per app accent', (tester) async {
+    await tester.pumpWidget(MaterialApp(theme: arcadeTheme(Brightness.light, 'arcade.clipboard'), home: const Center(child: ArcadeGlyph('arcade.tools', size: 24))));
+    expect(find.byType(ArcadeGlyph), findsOneWidget);
+    expect(arcadeGlyphOps.keys.toSet(), arcadeAccents.keys.toSet());
+    for (final id in arcadeGlyphOps.keys) {
+      final bounds = arcadeGlyphPath(id, 16).getBounds();
+      expect(bounds.width, greaterThan(4), reason: id);
+      expect(bounds.left >= 0 && bounds.top >= 0 && bounds.right <= 16 && bounds.bottom <= 16, isTrue, reason: '$id $bounds');
+    }
+    expect(arcadeGlyphPath('arcade.unknown', 16).getBounds().isEmpty, isTrue);
+  });
   for (final brightness in Brightness.values) {
     testWidgets('every component renders without overflow ($brightness)', (tester) async {
       tester.view.physicalSize = const Size(1100, 1600);

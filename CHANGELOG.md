@@ -5,6 +5,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Dart kit: the app marks. `design/generate.py` writes them into `arcade_icons.dart` as `arcadeGlyphOps` (16 grid,
+  from `design/glyphs`, the same source as QML's `GlyphData.js`), with `arcadeGlyphPath`, `ArcadeGlyphPainter` and an
+  `ArcadeGlyph` widget (stroke 1.5, round caps and joins, like the QML `Glyph`). Clipboard drew the marks from
+  hand-copied paths, and its Tools and Look marks no longer matched the kit. Tested in `tools/check_dart_kit.sh`
+  (every app has a mark inside the 16 grid; an unknown id draws nothing).
+
+### Changed
+- Dependabot groups minor and patch updates into one weekly pull request per ecosystem and no longer rebases
+  them on every push to main, which queued a full CI run per open pull request ahead of release work.
+
 ## [1.0.8] — 2026-11-14
 
 ### Added

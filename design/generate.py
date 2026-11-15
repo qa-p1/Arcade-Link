@@ -897,8 +897,8 @@ ThemeData arcadeTheme(Brightness brightness, String appId) {
 ArcadeColors arcadeColors(BuildContext context) => Theme.of(context).extension<ArcadeColors>()!;'''
 
 
-def emit_dart_icons(icons: dict) -> str:
-    L = [f"// {HEADER}", "import 'package:flutter/widgets.dart';", "",
+def emit_dart_icons(icons: dict, glyphs: dict) -> str:
+    L = [f"// {HEADER} (and design/glyphs)", "import 'package:flutter/widgets.dart';", "",
          "/// Arcade outline icons as flat path operations on the 24×24 grid:", "/// 0 x y = move, 1 x y = line, 2 x1 y1 x2 y2 x y = cubic, 3 = close.",
          "const Map<String, List<double>> arcadeIconOps = <String, List<double>>{"]
     filled = []
@@ -910,14 +910,24 @@ def emit_dart_icons(icons: dict) -> str:
     L.append("")
     L.append("const Set<String> arcadeFilledIcons = <String>{" + ", ".join(f"'{n}'" for n in filled) + "};")
     L.append("")
+    L.append("/// The app marks (design/glyphs) as flat path operations on the 16×16 grid, by app id.")
+    L.append("const Map<String, List<double>> arcadeGlyphOps = <String, List<double>>{")
+    for app, d in sorted(glyphs.items()):
+        L.append(f"  '{app}': <double>[{', '.join(flat_ops(normalise(d)))}],")
+    L.append("};")
+    L.append("")
     L.append(DART_ICON_WIDGET)
     return "\n".join(L) + "\n"
 
 
 DART_ICON_WIDGET = '''/// The icon's path scaled from the 24×24 grid to [size].
-Path arcadeIconPath(String name, double size) {
-  final ops = arcadeIconOps[name] ?? const <double>[];
-  final s = size / 24;
+Path arcadeIconPath(String name, double size) => arcadeOpsPath(arcadeIconOps[name] ?? const <double>[], size / 24);
+
+/// An app mark's path scaled from the 16×16 grid to [size]; empty for an unknown app id.
+Path arcadeGlyphPath(String appId, double size) => arcadeOpsPath(arcadeGlyphOps[appId] ?? const <double>[], size / 16);
+
+/// A path from flat operations (see [arcadeIconOps]), every coordinate multiplied by [s].
+Path arcadeOpsPath(List<double> ops, double s) {
   final path = Path();
   var i = 0;
   while (i < ops.length) {
@@ -975,6 +985,44 @@ class ArcadeIcon extends StatelessWidget {
     final colour = color ?? IconTheme.of(context).color ?? const Color(0xff000000);
     final icon = CustomPaint(size: Size.square(size), painter: ArcadeIconPainter(name, colour));
     return semanticLabel == null ? ExcludeSemantics(child: icon) : Semantics(label: semanticLabel, child: icon);
+  }
+}
+
+/// Paints one app mark (stroke 1.5 on the 16 grid, round caps and joins, like the QML Glyph).
+class ArcadeGlyphPainter extends CustomPainter {
+  ArcadeGlyphPainter(this.appId, this.color);
+  final String appId;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5 * size.width / 16
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(arcadeGlyphPath(appId, size.width), paint);
+  }
+
+  @override
+  bool shouldRepaint(ArcadeGlyphPainter oldDelegate) => oldDelegate.appId != appId || oldDelegate.color != color;
+}
+
+/// An Arcade app mark (`arcade.<app>`) in any colour and size; the colour defaults to the ambient icon colour.
+class ArcadeGlyph extends StatelessWidget {
+  const ArcadeGlyph(this.appId, {super.key, this.size = 16, this.color, this.semanticLabel});
+  final String appId;
+  final double size;
+  final Color? color;
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colour = color ?? IconTheme.of(context).color ?? const Color(0xff000000);
+    final glyph = CustomPaint(size: Size.square(size), painter: ArcadeGlyphPainter(appId, colour));
+    return semanticLabel == null ? ExcludeSemantics(child: glyph) : Semantics(label: semanticLabel, child: glyph);
   }
 }'''
 
@@ -1152,6 +1200,7 @@ def outputs() -> dict[Path, str]:
                     raise TokenError(f"spec/app-dirs.json {app} {platform}: {entry} is not [kind, base, path] or [kind, base, path, into]")
                 if len(entry) == 4 and (not entry[3] or entry[3].startswith("/") or ".." in entry[3].split("/")):
                     raise TokenError(f"spec/app-dirs.json {app} {platform}: 'into' must be a plain relative subfolder, not {entry[3]!r}")
+    glyphs = {g.stem: glyph_path(g.read_text(encoding="utf-8")) for g in (DESIGN / "glyphs").glob("arcade.*.svg")}
     files = {
         DESIGN / "css/arcade.css": emit_css(tokens, components),
         DESIGN / "css/icons.ts": emit_icons_ts(icons),
@@ -1161,10 +1210,10 @@ def outputs() -> dict[Path, str]:
         DESIGN / "qml/Arcade/Fonts.qml": emit_qml_fonts(),
         DESIGN / "qml/Arcade/qmldir": emit_qmldir(),
         DESIGN / "qml/Arcade/Glyph.qml": emit_qml_glyph(),
-        DESIGN / "qml/Arcade/GlyphData.js": emit_qml_glyph_data({g.stem: glyph_path(g.read_text(encoding="utf-8")) for g in (DESIGN / "glyphs").glob("arcade.*.svg")}),
+        DESIGN / "qml/Arcade/GlyphData.js": emit_qml_glyph_data(glyphs),
         DESIGN / "qml/Arcade/Format.js": emit_qml_format((DESIGN / "css/format.ts").read_text(encoding="utf-8")),
         DESIGN / "dart/arcade_theme.dart": emit_dart_theme(tokens),
-        DESIGN / "dart/arcade_icons.dart": emit_dart_icons(icons),
+        DESIGN / "dart/arcade_icons.dart": emit_dart_icons(icons, glyphs),
         ROOT / "crates/arcade-link/src/design/tokens.rs": emit_rust_tokens(tokens, icons),
         ROOT / "crates/arcade-link/src/paths/legacy_dirs.rs": emit_legacy_rust(dirs),
         ROOT / "qt/ArcadeAppDirsTable.inc": emit_legacy_qt(dirs),
