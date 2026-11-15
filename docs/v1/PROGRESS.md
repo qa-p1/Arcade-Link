@@ -2,6 +2,12 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-15 (1.0.10)
+
+**v1.0.9 tagged** on 65cb57e. **1.0.10 prepared** (PR #70): `qt/arcade_unpacked.h`, the C twin of
+`runtime::relaunch_unpacked` (RT-7, U1) for Shelf, Wheel and Clipboard, and uninstall (Rust and Qt) removes the app's
+own unpacked copies. Tag after CI, Ecosystem e2e (`real_apps=true`) and the desktop harness pass on the merge.
+
 ## 2026-11-15 (1.0.9)
 
 **v1.0.8 tagged** on 34f8030. **1.0.9 prepared** (PR #67): `app-gates.yml`, the reusable release gates every app runs
