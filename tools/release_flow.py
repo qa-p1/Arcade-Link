@@ -61,6 +61,31 @@ def payload(d: Path) -> list[Path]:
     return sorted(p for p in d.iterdir() if p.is_file() and p.name not in METADATA)
 
 
+# GitHub stores an asset under a changed name when it has other characters (a space becomes "."), and the
+# metadata would then name files that are not there; Tauri names files after the product name ("Arcade Box_...").
+ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+
+
+def asset_names(d: Path) -> None:
+    """Renames payload files so GitHub keeps their names: spaces become "-" (the names 0.x releases had)."""
+    for p in payload(d):
+        name = re.sub(r"\s+", "-", p.name)
+        if not ASSET_NAME.match(name):
+            raise SystemExit(f"{p.name}: a release file name may only use letters, digits and . _ + -")
+        if name != p.name:
+            if (d / name).exists():
+                raise SystemExit(f"{p.name} and {name} would both be published as {name}")
+            p.rename(d / name)
+
+
+def check_published(repo: str, tag: str, d: Path) -> None:
+    """The release holds exactly the files the metadata names, under the same names."""
+    published = set(sh("gh", "api", f"repos/{repo}/releases/tags/{tag}", "--jq", ".assets[].name").split("\n")) - {""}
+    local = {p.name for p in d.iterdir() if p.is_file()}
+    if published != local:
+        raise SystemExit(f"{tag} holds {sorted(published)}, expected {sorted(local)}")
+
+
 def notes_url(repo: str, tag: str) -> str:
     return f"https://github.com/{repo}/releases/tag/{tag}"
 
@@ -90,9 +115,11 @@ def create(repo: str, tag: str, sha: str, d: Path, prerelease: bool, draft: bool
 
 def publish(a: argparse.Namespace) -> None:
     d = Path(a.dir)
+    asset_names(d)
     write_metadata(d, a.app, a.version, a.tag, a.channel, a.repo, sign=a.channel == "nightly",
                    windows_installer=a.windows_installer)
     create(a.repo, a.tag, a.sha, d, prerelease=True, draft=a.draft, title=f"{a.app} {a.tag[1:]} ({a.channel})")
+    check_published(a.repo, a.tag, d)
     print(f"published {a.tag} ({a.channel}{', draft' if a.draft else ''})")
 
 
