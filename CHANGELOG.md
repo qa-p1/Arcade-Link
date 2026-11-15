@@ -5,6 +5,29 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Dart kit: the app marks. `design/generate.py` writes them into `arcade_icons.dart` as `arcadeGlyphOps` (16 grid,
+  from `design/glyphs`, the same source as QML's `GlyphData.js`), with `arcadeGlyphPath`, `ArcadeGlyphPainter` and an
+  `ArcadeGlyph` widget (stroke 1.5, round caps and joins, like the QML `Glyph`). Clipboard drew the marks from
+  hand-copied paths, and its Tools and Look marks no longer matched the kit. Tested in `tools/check_dart_kit.sh`
+  (every app has a mark inside the 16 grid; an unknown id draws nothing).
+- `app-gates.yml`, a reusable workflow for an app's release gates on its published rc (PLAN "Release" step 2), with
+  Tools' Gates as the model: the rc's and the previous release's files against SHA256SUMS and the rc's manifest,
+  `arcade-link conformance` on the published AppImage, the app's own Linux checks, N-1 (`tools/gates/n1_app.py`:
+  the Link CLIs the previous released peers ship see the rc running, read its status and describe it), the memory
+  and performance budgets, the delta gate through Tools' updater (`ARCADE_TOOLS_GATE_APP`), and the app's Windows
+  and macOS smoke commands. `n1_app.py` was checked against Link's mock app in the isolated session, passing with
+  the app up and failing when it never starts.
+
+### Changed
+- The e2e harness starts a real AppImage with `ARCADE_UNPACKED=1` as well as extract-and-run, so an app built on
+  `runtime::relaunch_unpacked` (Box from step 5) keeps running as the process the harness started rather than
+  handing over to a copy and exiting 0; the stop, kill and crash checks act on that process.
+- Dependabot groups minor and patch updates into one weekly pull request per ecosystem and no longer rebases
+  them on every push to main, which queued a full CI run per open pull request ahead of release work.
+- The real-fleet install check expects every app's update to retire its old launcher and login item: Clipboard
+  and Shelf are on Link 1.0.8 (their main builds are green), so nothing is an expected failure any more.
+
 ## [1.0.8] — 2026-11-14
 
 ### Added

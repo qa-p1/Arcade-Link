@@ -289,7 +289,10 @@ class Session:
             exe = require_current_build(spec)
         args = ["mock", "--as", app.removeprefix("arcade."), "--actions", str(LINK / "fixtures" / (app.removeprefix("arcade.") + ".json"))] if self.mock_peers else spec["args"]
         log = open(self.root / f"{app}.log", "ab")
-        env = dict(self.env, APPIMAGE_EXTRACT_AND_RUN="1") if exe.suffix == ".AppImage" else self.env
+        # Extract-and-run already leaves nothing on a FUSE mount, so ARCADE_UNPACKED stops Link's
+        # `runtime::relaunch_unpacked` handing a resident over to a copy: the process started here
+        # stays the app, so stop/kill/crash checks act on it (Box D14 U1; its package gate covers the copy).
+        env = dict(self.env, APPIMAGE_EXTRACT_AND_RUN="1", ARCADE_UNPACKED="1") if exe.suffix == ".AppImage" else self.env
         p = subprocess.Popen([str(exe), *args], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                              start_new_session=True)
         log.close()

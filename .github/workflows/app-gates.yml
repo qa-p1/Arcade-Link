@@ -1,0 +1,275 @@
+name: App gates (reusable)
+
+# PLAN "Release" step 2 for an app: the exit gates Link runs the same way for every app, always against the published
+# files of a release candidate, never a local build (Tools' own Gates workflow is the model). An app's gates.yml calls
+# this on its rc tag ("Use workflow from: vX.Y.Z-rc.N") once Release has published the rc:
+#   - published: the rc (and the previous stable release) download, match SHA256SUMS.txt and, for the rc, its
+#     unsigned test-channel manifest; the rc must be a prerelease, the previous release must not be;
+#   - linux: `arcade-link conformance` on the repository and the published AppImage, then the app's own checks
+#     (`linux-checks`: package smoke, upgrade from the previous release with data, notices, ...);
+#   - n1: the Link CLIs the previous released peers ship see the rc running, read its status and describe it;
+#   - budgets: background memory and the performance budgets from budgets.json (perf budgets missing for the app
+#     are measured and printed, not enforced);
+#   - delta: Tools' updater (tests/releases.rs) builds the delta from the previous AppImage to the rc's, verifies the
+#     signed manifest and rejects a tampered chunk;
+#   - windows, macos: the app's smoke command on the published installer, when given.
+# The desktop suites (desktop-e2e.yml, desktop-tier2.yml) are called by the app's gates.yml next to this one, on the
+# `gate-appimage` artifact uploaded here. Promote only after a green run on the rc it promotes.
+on:
+  workflow_call:
+    inputs:
+      app: { type: string, required: true, description: "App id, e.g. arcade.box" }
+      name: { type: string, required: true, description: "The app's short name in budgets.json, e.g. box" }
+      previous: { type: string, required: true, description: "The previous stable release tag (upgrade and delta source)" }
+      link-ref: { type: string, required: true, description: "Arcade Link tag for the CLI, the budget tools and the gate scripts" }
+      tools-ref: { type: string, default: main, description: "Arcade Tools ref whose updater runs the delta gate" }
+      linux-packages: { type: string, default: "", description: "Extra apt packages the app's Linux checks need" }
+      linux-checks: { type: string, default: "", description: "Bash run in the app's checkout with $RC and $PREVIOUS (absolute AppImage paths) and arcade-link on PATH" }
+      window: { type: string, default: "", description: "xdotool --name regex of the window for the perf budget (default 'Arcade <Name>')" }
+      open-args: { type: string, default: "", description: "Arguments that open the window for the perf budget (default: none)" }
+      n1-links: { type: string, default: "v0.4.4 v0.4.15", description: "Link tags whose CLIs the previous released peers ship" }
+      windows-check: { type: string, default: "", description: "Bash run on Windows in the app's checkout, the rc's files in rc/; empty skips" }
+      macos-check: { type: string, default: "", description: "Bash run on macOS in the app's checkout, the rc's files in rc/; empty skips" }
+
+permissions:
+  contents: read
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  PYTHONUTF8: '1'
+
+jobs:
+  published:
+    name: Published files (SHA256SUMS, manifest, prerelease)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: '${{ inputs.link-ref }}', path: .arcade-link }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { toolchain: '1.88.0' }
+      - uses: ./.arcade-link/.github/actions/setup-arcade-link
+      - name: Download and check the rc's files
+        env:
+          APP: ${{ inputs.app }}
+          PREVIOUS: ${{ inputs.previous }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          [[ "$GITHUB_REF" == refs/tags/* && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ ]] \
+            || { echo "::error::run the gates on an rc tag (got $GITHUB_REF)"; exit 1; }
+          check() {  # check TAG DIR CHANNEL: download, sums, manifest (the rc's only), not a draft
+            gh release view "$1" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease > "$2.json"
+            python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert not r["isDraft"], r; assert r["isPrerelease"] == (sys.argv[2] == "test"), r' "$2.json" "$3"
+            for i in 1 2 3; do
+              timeout 600 gh release download "$1" --repo "$GITHUB_REPOSITORY" --dir "$2" --clobber && break
+              sleep $((i * 10))
+            done
+            (cd "$2" && sha256sum --strict -c SHA256SUMS.txt)
+            if [ "$3" = test ]; then
+              arcade-link verify-manifest "$2/manifest.json" --unsigned --files "$2"
+              python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); assert (m["app"], m["tag"], m["channel"]) == (sys.argv[2], sys.argv[3], "test"), m' "$2/manifest.json" "$APP" "$1"
+            fi
+            [ "$(ls "$2"/*.AppImage | wc -l)" = 1 ] || { echo "::error::$1 has not exactly one AppImage"; exit 1; }
+            ls -l "$2"
+          }
+          check "$tag" rc test
+          check "$PREVIOUS" previous stable
+          {
+            echo "### $tag: published files"
+            echo '```'
+            cat rc/SHA256SUMS.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: { name: gate-rc, path: rc/*, if-no-files-found: error }
+      - uses: actions/upload-artifact@v4
+        with: { name: gate-previous, path: previous/*, if-no-files-found: error }
+      # The desktop suites take one AppImage artifact: the published, checked file.
+      - uses: actions/upload-artifact@v4
+        with: { name: gate-appimage, path: rc/*.AppImage, if-no-files-found: error }
+
+  linux:
+    name: Linux (conformance, the app's own checks)
+    needs: published
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: app }
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: '${{ inputs.link-ref }}', path: Arcade-Link }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { toolchain: '1.88.0' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Linux packages
+        timeout-minutes: 20
+        env: { EXTRA: '${{ inputs.linux-packages }}' }
+        run: ../Arcade-Link/tools/ci/apt-install.sh xvfb dbus-x11 xdotool desktop-file-utils libfuse2 python3-gi gir1.2-glib-2.0 $EXTRA
+      - uses: ./Arcade-Link/.github/actions/setup-arcade-link
+      - uses: actions/download-artifact@v4
+        with: { name: gate-rc, path: app/rc }
+      - uses: actions/download-artifact@v4
+        with: { name: gate-previous, path: app/previous }
+      - name: The AppImages
+        run: |
+          chmod +x rc/*.AppImage previous/*.AppImage
+          echo "RC=$PWD/$(ls rc/*.AppImage)" >> "$GITHUB_ENV"
+          echo "PREVIOUS=$PWD/$(ls previous/*.AppImage)" >> "$GITHUB_ENV"
+      - name: Conformance (repository and published package)
+        run: arcade-link conformance . --binary "$RC" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: The app's own checks
+        if: inputs.linux-checks != ''
+        env: { CHECKS: '${{ inputs.linux-checks }}' }
+        run: bash -euo pipefail -c "$CHECKS"
+
+  n1:
+    name: N-1 (the previous peers' Link reaches the rc)
+    needs: published
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: '${{ inputs.link-ref }}', path: Arcade-Link }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { toolchain: '1.88.0' }
+      - name: Isolation tools
+        timeout-minutes: 20
+        env: { EXTRA: '${{ inputs.linux-packages }}' }
+        run: Arcade-Link/tools/ci/apt-install.sh xvfb dbus-x11 xdotool libfuse2 $EXTRA
+      - uses: actions/download-artifact@v4
+        with: { name: gate-appimage, path: rc }
+      - name: Restore the previous releases' Link CLIs
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.arcade-link-n1
+          key: arcade-link-n1-${{ runner.os }}-${{ inputs.n1-links }}
+      - name: The previous releases' Link CLIs
+        if: steps.cache.outputs.cache-hit != 'true'
+        timeout-minutes: 20
+        env: { TAGS: '${{ inputs.n1-links }}' }
+        run: |
+          for tag in $TAGS; do
+            for i in 1 2 3; do
+              timeout 900 cargo install --locked --git https://github.com/qa-p1/Arcade-Link --tag "$tag" arcade-link-cli --root ~/.arcade-link-n1/"$tag" && break
+              sleep $((i * 5))
+            done
+            test -x ~/.arcade-link-n1/"$tag"/bin/arcade-link
+          done
+      - name: The rc answers the previous releases' Link
+        timeout-minutes: 10
+        env: { TAGS: '${{ inputs.n1-links }}', APP: '${{ inputs.app }}' }
+        run: |
+          chmod +x rc/*.AppImage
+          clis=()
+          for tag in $TAGS; do clis+=(--cli ~/.arcade-link-n1/"$tag"/bin/arcade-link); done
+          python3 Arcade-Link/tools/e2e.py run -- /usr/bin/python3 Arcade-Link/tools/gates/n1_app.py \
+            --app "$PWD/$(ls rc/*.AppImage)" --id "$APP" "${clis[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  budgets:
+    name: Memory and performance budgets of the published AppImage
+    needs: published
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: '${{ inputs.link-ref }}', path: Arcade-Link }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Linux packages
+        timeout-minutes: 20
+        env: { EXTRA: '${{ inputs.linux-packages }}' }
+        run: Arcade-Link/tools/ci/apt-install.sh xvfb dbus-x11 xdotool libfuse2 $EXTRA
+      - uses: actions/download-artifact@v4
+        with: { name: gate-appimage, path: published }
+      # The budget tools take a directory of AppImages named after the app; the bytes are the published file's.
+      - name: Memory budget (background)
+        timeout-minutes: 6
+        env: { NAME: '${{ inputs.name }}' }
+        run: |
+          mkdir -p budget
+          file="budget/Arcade-${NAME^}.AppImage"
+          cp published/*.AppImage "$file" && chmod +x "$file" && cmp published/*.AppImage "$file"
+          python3 Arcade-Link/tools/fleet/fleet_budget.py --apps budget --only "$NAME" --section xvfb \
+            --budgets Arcade-Link/tools/fleet/budgets.json --settle 30 --json budget/memory.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Performance budgets (cold start, show, idle CPU and wakeups, disk)
+        timeout-minutes: 12
+        env: { NAME: '${{ inputs.name }}', WINDOW: '${{ inputs.window }}', OPEN_ARGS: '${{ inputs.open-args }}' }
+        run: |
+          python3 Arcade-Link/tools/fleet/perf_budget.py --app "budget/Arcade-${NAME^}.AppImage" --name "$NAME" \
+            ${WINDOW:+--window "$WINDOW"} --open-args "$OPEN_ARGS" --budgets Arcade-Link/tools/fleet/budgets.json \
+            --section xvfb --json budget/perf.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: gate-budgets, path: budget/*.json, if-no-files-found: ignore }
+
+  delta:
+    name: Delta from the previous release, signature and tampered chunk (Tools' updater)
+    needs: published
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: Arcade-tools
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-tools, ref: '${{ inputs.tools-ref }}', path: Arcade-tools }
+      - uses: actions/checkout@v4
+        with: { repository: qa-p1/Arcade-Link, ref: '${{ inputs.link-ref }}', path: Arcade-Link }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { toolchain: '1.88.0' }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: Arcade-tools, save-if: false }
+      - name: Tools' build dependencies and isolation tools
+        timeout-minutes: 20
+        run: ../Arcade-Link/tools/ci/apt-install.sh libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libwayland-dev libxkbcommon-dev xvfb dbus-x11 xdotool
+      - uses: actions/download-artifact@v4
+        with: { name: gate-rc, path: Arcade-tools/rc }
+      - uses: actions/download-artifact@v4
+        with: { name: gate-previous, path: Arcade-tools/previous }
+      - name: Delta, signed manifest and tampered chunk on the published AppImages
+        env: { ARCADE_TOOLS_GATE_APP: '${{ inputs.app }}' }
+        run: |
+          export ARCADE_TOOLS_GATE_DELTA="$PWD/$(ls previous/*.AppImage):$PWD/$(ls rc/*.AppImage)"
+          python3 ../Arcade-Link/tools/e2e.py run -- cargo test --locked --test releases \
+            gate_published_files -- --nocapture 2>&1 | tee "$RUNNER_TEMP/delta.log"
+          grep -E '^delta: ' "$RUNNER_TEMP/delta.log" >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Windows installer smoke (published file)
+    needs: published
+    if: inputs.windows-check != ''
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/download-artifact@v4
+        with: { name: gate-rc, path: rc }
+      - env: { CHECK: '${{ inputs.windows-check }}' }
+        run: bash -euo pipefail -c "$CHECK"
+
+  macos:
+    name: macOS dmg smoke (published file)
+    needs: published
+    if: inputs.macos-check != ''
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/download-artifact@v4
+        with: { name: gate-rc, path: rc }
+      - env: { CHECK: '${{ inputs.macos-check }}' }
+        run: bash -euo pipefail -c "$CHECK"
