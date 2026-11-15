@@ -11,6 +11,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
   `ArcadeGlyph` widget (stroke 1.5, round caps and joins, like the QML `Glyph`). Clipboard drew the marks from
   hand-copied paths, and its Tools and Look marks no longer matched the kit. Tested in `tools/check_dart_kit.sh`
   (every app has a mark inside the 16 grid; an unknown id draws nothing).
+- `app-gates.yml`, a reusable workflow for an app's release gates on its published rc (PLAN "Release" step 2), with
+  Tools' Gates as the model: the rc's and the previous release's files against SHA256SUMS and the rc's manifest,
+  `arcade-link conformance` on the published AppImage, the app's own Linux checks, N-1 (`tools/gates/n1_app.py`:
+  the Link CLIs the previous released peers ship see the rc running, read its status and describe it), the memory
+  and performance budgets, the delta gate through Tools' updater (`ARCADE_TOOLS_GATE_APP`), and the app's Windows
+  and macOS smoke commands. `n1_app.py` was checked against Link's mock app in the isolated session, passing with
+  the app up and failing when it never starts.
 
 ### Changed
 - Dependabot groups minor and patch updates into one weekly pull request per ecosystem and no longer rebases
