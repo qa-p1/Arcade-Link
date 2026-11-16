@@ -5,6 +5,16 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.12] — 2026-11-16
+
+### Fixed
+- The `setup-arcade-link` action cached the built CLI under `runner.os` and Link's commit only, so a job on
+  ubuntu-22.04 restored a CLI built on ubuntu-24.04 and failed with "GLIBC_2.39 not found" (Box's rc.2 gates, Linux
+  conformance). The key now names the runner image (`tools/ci/runner-image.sh`).
+- The desktop harness's `pointer_move` stopped the run when the cursor read back one pixel short: the virtual pointer's
+  absolute move is x/width of the layout and Hyprland reports the cursor truncated, so (505, 286) read (504, 286)
+  (Lens's Tier 1 drag). A one-pixel difference is accepted; the harness self-test covers that point.
+
 ## [1.0.11] — 2026-11-15
 
 ### Fixed

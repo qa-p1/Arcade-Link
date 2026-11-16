@@ -137,9 +137,12 @@ class Desktop:
             time.sleep(0.004)
         self._pointer(f"move {x} {y}")
         time.sleep(0.03)
-        if self.cursor() != (x, y):
+        # The absolute move is x/width of the layout, and hyprctl reports the cursor truncated, so a fraction that is
+        # not exact in binary (505/3840) reads back one pixel short. Further off is a pointer that did not arrive.
+        cx, cy = self.cursor()
+        if abs(cx - x) > 1 or abs(cy - y) > 1:
             self.screenshot("pointer-did-not-arrive")
-            raise DesktopError(f"pointer at {self.cursor()} after moving to {(x, y)}")
+            raise DesktopError(f"pointer at {(cx, cy)} after moving to {(x, y)}")
 
     def cursor(self) -> tuple[int, int]:
         x, y = self.hyprctl("cursorpos").strip().split(",")
