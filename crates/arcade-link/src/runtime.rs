@@ -550,7 +550,19 @@ pub fn relaunch_unpacked(app_id: &str, version: &str, wait: bool) -> Option<i32>
             return None;
         }
         let mut cmd = Command::new(dir.join("AppRun"));
-        cmd.args(std::env::args_os().skip(1)).env("APPDIR", &dir).env(UNPACKED_ENV, &dir);
+        cmd.args(std::env::args_os().skip(1));
+        // This process's AppRun pointed GSETTINGS_SCHEMA_DIR, GIO_EXTRA_MODULES, XDG_DATA_DIRS and more into the mount,
+        // which goes away as soon as this process exits. The copy's AppRun sets them again for the copy, but only
+        // after its GTK hook has run `gsettings`, which then read the vanishing mount, crashed, and hung in its core
+        // dump: the copy never started (Look's rc.2 gates, about one start in twelve on CI).
+        let vars = std::env::vars_os().filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)));
+        for (key, value) in copy_changes(vars) {
+            match value {
+                Some(value) => cmd.env(key, value),
+                None => cmd.env_remove(key),
+            };
+        }
+        cmd.env("APPDIR", &dir).env(UNPACKED_ENV, &dir);
         crate::childenv::detach_from_image(&mut cmd);
         // The copy sets the arena cap itself and so owns it: inherited, it took the cap for the user's and passed it
         // on to every program it started.
@@ -568,6 +580,15 @@ pub fn relaunch_unpacked(app_id: &str, version: &str, wait: bool) -> Option<i32>
         let _ = (app_id, version, wait);
         None
     }
+}
+
+/// The changes to this process's environment for its unpacked copy: [`crate::childenv::changes`] (every reference to
+/// the mount goes), except the variables the copy is still meant to see: `APPIMAGE` (what restarts and advertises
+/// the app), `OWD` (where the user started it) and `ARGV0`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn copy_changes<I: IntoIterator<Item = (String, String)>>(vars: I) -> Vec<crate::childenv::Change> {
+    const KEEP: &[&str] = &["APPIMAGE", "OWD", "ARGV0"];
+    crate::childenv::changes(vars).into_iter().filter(|(key, _)| !KEEP.contains(&key.as_str())).collect()
 }
 
 /// Identifies one AppImage file: its size and modification time. A new
@@ -666,6 +687,38 @@ pub fn remove_unpacked_except(keep: &[&str]) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_copy_sees_nothing_of_the_mount_but_keeps_what_names_the_install() {
+        let vars = [
+            ("APPDIR", "/tmp/.mount_ArcadeAB"),
+            ("APPIMAGE", "/home/u/Applications/Arcade/Arcade-Look.AppImage"),
+            ("OWD", "/home/u/Pictures"),
+            ("ARGV0", "arcade-look"),
+            ("GSETTINGS_SCHEMA_DIR", "/tmp/.mount_ArcadeAB//usr/share/glib-2.0/schemas"),
+            ("GIO_EXTRA_MODULES", "/tmp/.mount_ArcadeAB/usr/lib/x86_64-linux-gnu/gio/modules"),
+            ("GTK_DATA_PREFIX", "/tmp/.mount_ArcadeAB"),
+            ("GTK_THEME", "Adwaita:light"),
+            ("XDG_DATA_DIRS", "/tmp/.mount_ArcadeAB/usr/share:/usr/share:/usr/local/share"),
+            ("PATH", "/tmp/.mount_ArcadeAB/usr/bin:/usr/bin:/bin"),
+            ("HOME", "/home/u"),
+        ];
+        let mut changes = copy_changes(vars.iter().map(|(k, v)| (k.to_string(), v.to_string())));
+        changes.sort();
+        let gone = |key: &str| (key.to_string(), None);
+        assert_eq!(
+            changes,
+            vec![
+                gone("APPDIR"),
+                gone("GIO_EXTRA_MODULES"),
+                gone("GSETTINGS_SCHEMA_DIR"),
+                gone("GTK_DATA_PREFIX"),
+                gone("GTK_THEME"),
+                ("PATH".to_string(), Some("/usr/bin:/bin".to_string())),
+                ("XDG_DATA_DIRS".to_string(), Some("/usr/share:/usr/local/share".to_string())),
+            ]
+        );
+    }
 
     #[test]
     fn the_unpacked_marker_is_ours_only_for_our_own_copy() {
