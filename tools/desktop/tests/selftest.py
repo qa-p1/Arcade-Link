@@ -19,11 +19,19 @@ for key in "hi":
 d.send_shortcut(w["address"], "", "Return")
 d.wait(lambda: Path("typed.txt").exists() and Path("typed.txt").read_text() == "hi\n", 5, "keys typed into the terminal")
 
+def near(target):
+    x, y = d.cursor()
+    return abs(x - target[0]) <= 1 and abs(y - target[1]) <= 1
+
+
 cx, cy = d.center_of(w)
 d.pointer_move(cx, cy)
-assert d.cursor() == (cx, cy), d.cursor()
+assert near((cx, cy)), d.cursor()
 d.pointer_move(2500, 500)
-assert d.cursor() == (2500, 500), d.cursor()
+assert near((2500, 500)), d.cursor()
+# 505/3840 is not exact in binary: Hyprland reports (504, 286). pointer_move accepts that (Lens's Tier 1 drag hit it).
+d.pointer_move(505, 286)
+assert near((505, 286)), d.cursor()
 d.click(cx, cy)
 
 d.clipboard_set("arcade harness")

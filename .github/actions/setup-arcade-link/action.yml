@@ -5,12 +5,16 @@ runs:
   steps:
     - id: key
       shell: bash
-      run: echo "sha=$(git -C '${{ github.action_path }}/../../..' rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      # The runner image is part of the key: a CLI built on ubuntu-24.04 needs glibc 2.39 and fails on ubuntu-22.04
+      # ("GLIBC_2.39 not found"), and runner.os is "Linux" on both (Box's rc.2 gates restored main's 24.04 build).
+      run: |
+        echo "sha=$(git -C '${{ github.action_path }}/../../..' rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "image=$("${{ github.action_path }}/../../../tools/ci/runner-image.sh")" >> "$GITHUB_OUTPUT"
     - uses: actions/cache@v4
       id: cache
       with:
         path: ~/.arcade-link
-        key: arcade-link-cli-${{ runner.os }}-${{ steps.key.outputs.sha }}
+        key: arcade-link-cli-${{ steps.key.outputs.image }}-${{ steps.key.outputs.sha }}
     - if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ github.action_path }}/../../..

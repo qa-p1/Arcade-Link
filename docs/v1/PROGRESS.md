@@ -2,6 +2,13 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-16 (1.0.12)
+
+**v1.0.11 tagged** on b00a1ca. **1.0.12 prepared**: the CLI cache in `setup-arcade-link` is keyed by the runner image
+(Box's rc.2 gates restored a ubuntu-24.04 CLI on ubuntu-22.04: "GLIBC_2.39 not found"), and the desktop harness
+accepts a one-pixel cursor difference after an absolute move (Lens's Tier 1). Tag after CI, Ecosystem e2e
+(`real_apps=true`) and the desktop harness pass on the merge.
+
 ## 2026-11-15 (1.0.11)
 
 **1.0.11 prepared**: `ARCADE_UNPACKED` names the copy's folder, so a marker inherited by a Restart's successor or by
