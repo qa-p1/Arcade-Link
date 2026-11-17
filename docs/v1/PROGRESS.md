@@ -7,7 +7,9 @@ Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 **v1.0.13 tagged** on a24146f. **1.0.14 prepared**: Tier 2 starts an unlocked gnome-keyring in each session, as
 Tier 1 does. Clipboard's 1.0.0 PR failed Tier 2 on sway, KWin, Mutter and X11: with no Secret Service its profile
 does not open (by design: no plaintext key), so it never joined the Link and `--status` said not running. The same
-AppImage passes `smoke.py` under `tier2.sh x11` with this change. Tag after CI, Ecosystem e2e (`real_apps=true`) and
+AppImage passes `smoke.py` under `tier2.sh x11` with this change. Also: Tier 2's install step timed out on a slow
+Ubuntu mirror three times on 2026-11-17 (Shelf rc.3 gates: Mutter; Wheel #26: KWin, Mutter), each before any test
+ran; the downloaded packages are now cached (`actions/cache`, keyed by runner image and package list). Tag after CI, Ecosystem e2e (`real_apps=true`) and
 the desktop harness pass on the merge.
 
 ## 2026-11-16 (1.0.13)
