@@ -12,7 +12,7 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -20,16 +20,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
-      - name: Compositors
-        timeout-minutes: 8
+      # Every job installs all four desktops (~170 packages; the apps' system libraries come with them). On a slow
+      # Ubuntu mirror that took over 8 minutes (Nov 2026), so the downloaded packages are cached: per runner image and
+      # package list, saved once from any ref (a cache saved on main also serves the gates on a release tag).
+      - name: Package cache key
+        id: debs-key
+        env:
+          PKGS: dbus dbus-x11 python3-dbus python3-gi sway kwin-wayland kwin-wayland-backend-virtual mutter xvfb x11-utils openbox libfuse2t64 gnome-keyring
         run: |
+          echo "pkgs=$PKGS" >> "$GITHUB_OUTPUT"
+          echo "key=tier2-debs-$ImageOS-$ImageVersion-$(printf %s "$PKGS" | sha256sum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: debs
+        with: { path: "${{ runner.temp }}/apt-archives", key: "${{ steps.debs-key.outputs.key }}" }
+      - name: Compositors
+        timeout-minutes: 12
+        env: { PKGS: "${{ steps.debs-key.outputs.pkgs }}", DEBS: "${{ runner.temp }}/apt-archives" }
+        run: |
+          mkdir -p "$DEBS"
+          # apt fetches one package at a time, and on 2026-11-17 the mirror took ~3 s per request whatever the size
+          # (246 packages did not finish in 12 minutes). So what is not cached yet is fetched 16 at a time first, into
+          # apt's archive under apt's own file names. Best effort: apt checks every file's hash and fetches what is
+          # missing or wrong itself.
+          prefetch() {
+            local mirror; mirror=$(grep -m1 -v '^#' /etc/apt/apt-mirrors.txt 2>/dev/null | awk '{print $1}' || true)
+            apt-get install -y --no-install-recommends --print-uris -o Dir::Cache::Archives="$DEBS" $PKGS \
+              | sed -n "s/^'\([^']*\)' \([^ ]*\) .*/\1 \2/p" | sed "s|^mirror+file:/etc/apt/apt-mirrors.txt/*|${mirror%/}/|" \
+              | xargs -r -P 16 -n 2 sh -c 'curl -fsS --retry 3 --max-time 120 -o "$DEBS/$1" "$0" || rm -f "$DEBS/$1"' || true
+            echo "$(ls "$DEBS" | grep -c '\.deb$') packages in the archive"
+          }
           for i in 1 2 3; do
-            sudo apt-get update -o Acquire::Retries=3 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              dbus dbus-x11 python3-dbus python3-gi sway kwin-wayland kwin-wayland-backend-virtual mutter xvfb x11-utils openbox \
-              libfuse2t64 && break
+            sudo apt-get update -o Acquire::Retries=3 && prefetch && sudo mkdir -p "$DEBS/partial" \
+              && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                -o Dir::Cache::Archives="$DEBS" -o APT::Keep-Downloaded-Packages=true $PKGS && break
             sleep $((i * 10))
           done
           command -v sway kwin_wayland mutter Xvfb openbox
+          # apt leaves its own lock and partial/ (readable only by root); the cache step runs as the runner user.
+          sudo rm -rf "$DEBS/partial" "$DEBS/lock"; sudo chown -R "$(id -u):$(id -g)" "$DEBS"
+      - if: steps.debs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true  # the four desktops race to save the same key; one wins
+        with: { path: "${{ runner.temp }}/apt-archives", key: "${{ steps.debs-key.outputs.key }}" }
       # A released AppImage never changes under its URL: cached, so a GitHub download outage cannot fail the gate.
       - if: inputs.appimage-url != ''
         uses: actions/cache@v4
