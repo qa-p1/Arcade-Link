@@ -37,10 +37,22 @@ jobs:
         timeout-minutes: 12
         env: { PKGS: "${{ steps.debs-key.outputs.pkgs }}", DEBS: "${{ runner.temp }}/apt-archives" }
         run: |
-          sudo mkdir -p "$DEBS/partial"
+          mkdir -p "$DEBS"
+          # apt fetches one package at a time, and on 2026-11-17 the mirror took ~3 s per request whatever the size
+          # (246 packages did not finish in 12 minutes). So what is not cached yet is fetched 16 at a time first, into
+          # apt's archive under apt's own file names. Best effort: apt checks every file's hash and fetches what is
+          # missing or wrong itself.
+          prefetch() {
+            local mirror; mirror=$(grep -m1 -v '^#' /etc/apt/apt-mirrors.txt 2>/dev/null | awk '{print $1}' || true)
+            apt-get install -y --no-install-recommends --print-uris -o Dir::Cache::Archives="$DEBS" $PKGS \
+              | sed -n "s/^'\([^']*\)' \([^ ]*\) .*/\1 \2/p" | sed "s|^mirror+file:/etc/apt/apt-mirrors.txt/*|${mirror%/}/|" \
+              | xargs -r -P 16 -n 2 sh -c 'curl -fsS --retry 3 --max-time 120 -o "$DEBS/$1" "$0" || rm -f "$DEBS/$1"' || true
+            echo "$(ls "$DEBS" | grep -c '\.deb$') packages in the archive"
+          }
           for i in 1 2 3; do
-            sudo apt-get update -o Acquire::Retries=3 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              -o Dir::Cache::Archives="$DEBS" -o APT::Keep-Downloaded-Packages=true $PKGS && break
+            sudo apt-get update -o Acquire::Retries=3 && prefetch && sudo mkdir -p "$DEBS/partial" \
+              && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                -o Dir::Cache::Archives="$DEBS" -o APT::Keep-Downloaded-Packages=true $PKGS && break
             sleep $((i * 10))
           done
           command -v sway kwin_wayland mutter Xvfb openbox
