@@ -5,6 +5,18 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.13] — 2026-11-16
+
+### Fixed
+- `runtime::relaunch_unpacked` (and its C twin `arcade_relaunch_unpacked`) started the unpacked copy with the
+  launcher's environment, in which the AppImage's `AppRun` had pointed `GSETTINGS_SCHEMA_DIR`, `GIO_EXTRA_MODULES`,
+  `XDG_DATA_DIRS`, `GTK_*` and more into the FUSE mount. The launcher exits at once and the mount goes away, but the
+  copy's own `AppRun` runs linuxdeploy's GTK hook, and that hook calls `gsettings` before it sets those variables
+  again: `gsettings` read the vanishing mount, crashed, and hung in its core dump, so the copy never started. This
+  happens when the desktop portal does not answer the hook's colour-scheme query (headless CI, some desktops);
+  Look's rc.2 gates hit it on Restart, about one start in twelve on ubuntu-22.04. The copy now gets
+  `childenv::changes` (every reference to the mount removed) except `APPIMAGE`, `OWD` and `ARGV0`.
+
 ## [1.0.12] — 2026-11-16
 
 ### Fixed

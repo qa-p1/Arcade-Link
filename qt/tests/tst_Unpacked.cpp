@@ -38,6 +38,7 @@ class UnpackedTest : public QObject {
     writeFile(dir + "/AppRun",
               "#!/bin/sh\n"
               "{ echo \"APPDIR=$APPDIR\"; echo \"UNPACKED=$ARCADE_UNPACKED\"; echo \"APPIMAGE=$APPIMAGE\"; echo \"ARENAS=$MALLOC_ARENA_MAX\";\n"
+              "  echo \"SCHEMAS=$GSETTINGS_SCHEMA_DIR\"; echo \"DATA=$XDG_DATA_DIRS\"; echo \"OWD=$OWD\"; echo \"PREFIX=$GTK_DATA_PREFIX\";\n"
               "  for a in \"$@\"; do echo \"ARG=$a\"; done; } > \"$MARKER\"\n"
               "exit 7\n",
               Exec);
@@ -157,6 +158,23 @@ private slots:
     QFile::remove(m_marker);
     QCOMPARE(runProbe(m_mount + "/usr/bin/probe", env), 7);
     QVERIFY(QFile::exists(m_marker));
+  }
+
+  // The launcher's AppRun pointed variables into the mount, which goes away when it exits: the copy sees none of
+  // them (a hook that ran gsettings on the vanishing mount crashed and hung), but keeps APPIMAGE and OWD.
+  void theCopySeesNothingOfTheMount() {
+    auto env = baseEnv();
+    env.insert("GSETTINGS_SCHEMA_DIR", m_mount + "//usr/share/glib-2.0/schemas");
+    env.insert("XDG_DATA_DIRS", m_mount + "/usr/share:/usr/share:/tmp/.mount_Other/usr/share:/usr/share");
+    env.insert("GTK_DATA_PREFIX", m_mount);
+    env.insert("OWD", "/home/u/Pictures");
+    QCOMPARE(runProbe(m_mount + "/usr/bin/probe", env), 7);
+    const QStringList m = marker();
+    QVERIFY2(m.contains("SCHEMAS="), qPrintable(m.join('|')));
+    QVERIFY2(m.contains("DATA=/usr/share"), qPrintable(m.join('|')));
+    QVERIFY2(m.contains("PREFIX="), qPrintable(m.join('|')));
+    QVERIFY2(m.contains("OWD=/home/u/Pictures"), qPrintable(m.join('|')));
+    QVERIFY(m.contains("APPIMAGE=" + m_image));
   }
 
   void aUserArenaCapIsPassedOn() {

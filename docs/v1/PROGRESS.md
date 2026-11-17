@@ -2,6 +2,16 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-16 (1.0.13)
+
+**1.0.13 prepared**: the unpacked copy (U1) no longer inherits the launcher's references to its FUSE mount
+(`runtime::relaunch_unpacked`, `qt/arcade_unpacked.h`). Look's rc.2 gates failed "explicit Restart replaces the
+process": the copy's `AppRun` ran `gsettings` (linuxdeploy's GTK hook, when the portal does not answer) with
+`GSETTINGS_SCHEMA_DIR` and `GIO_EXTRA_MODULES` in the mount the launcher had just released; `gsettings` crashed and
+hung in `systemd-coredump`. Reproduced 1 in 12 on ubuntu-22.04 (Look's `claude/sharp-cori-29w5eg-wip-restart`
+diagnostic run). Tag after CI, Ecosystem e2e (`real_apps=true`) and the desktop harness pass on the merge; then the
+apps move to it.
+
 ## 2026-11-16 (1.0.12)
 
 **v1.0.11 tagged** on b00a1ca. **1.0.12 prepared**: the CLI cache in `setup-arcade-link` is keyed by the runner image
