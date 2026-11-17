@@ -26,7 +26,7 @@ jobs:
           for i in 1 2 3; do
             sudo apt-get update -o Acquire::Retries=3 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
               dbus dbus-x11 python3-dbus python3-gi sway kwin-wayland kwin-wayland-backend-virtual mutter xvfb x11-utils openbox \
-              libfuse2t64 && break
+              libfuse2t64 gnome-keyring && break
             sleep $((i * 10))
           done
           command -v sway kwin_wayland mutter Xvfb openbox

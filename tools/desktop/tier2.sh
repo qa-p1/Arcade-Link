@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tier 2 session: tier2.sh sway|kwin|mutter|x11 COMMAND...
-# Starts a private D-Bus and the StatusNotifierWatcher, then the compositor
+# Starts a private D-Bus, the StatusNotifierWatcher and an unlocked keyring, then the compositor
 # headless (or Xvfb + openbox for x11), and runs COMMAND with
 # ARCADE_DESKTOP=<name> and WAYLAND_DISPLAY or DISPLAY set.
 set -euo pipefail
@@ -15,6 +15,11 @@ exec dbus-run-session -- bash -c '
   here=$1; shift
   log="$ARCADE_DESKTOP_ARTIFACTS/$ARCADE_DESKTOP.log"
   python3 "$here/sni_watcher_service.py" > "$ARCADE_DESKTOP_ARTIFACTS/sni-watcher.log" 2>&1 &
+  # A real desktop has a Secret Service (KWallet, GNOME Keyring); apps keep their keys there. As in session.sh: a
+  # non-empty password creates and unlocks the "login" collection.
+  if command -v gnome-keyring-daemon >/dev/null; then
+    printf "arcade-ci\n" | gnome-keyring-daemon --unlock --components=secrets --daemonize > "$ARCADE_DESKTOP_ARTIFACTS/keyring.log" 2>&1 || true
+  fi
   case "$ARCADE_DESKTOP" in
     sway)   export XDG_CURRENT_DESKTOP=sway; WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 sway -c /dev/null > "$log" 2>&1 & ;;
     kwin)   export XDG_CURRENT_DESKTOP=KDE; kwin_wayland --virtual --no-lockscreen --width 1920 --height 1080 > "$log" 2>&1 & ;;

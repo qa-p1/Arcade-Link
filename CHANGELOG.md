@@ -5,6 +5,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.14] — 2026-11-17
+
+### Fixed
+- Tier 2 (`desktop-tier2.yml`, `tools/desktop/tier2.sh`) started no Secret Service, unlike Tier 1's `session.sh` and
+  every real KWin or Mutter desktop (KWallet, GNOME Keyring). An app that keeps its keys there (Clipboard's history
+  key) could not open its profile, so `smoke.py` reported it "not running" on all four desktops. Tier 2 now installs
+  `gnome-keyring` and starts an unlocked one in each session, as Tier 1 does.
+
 ## [1.0.13] — 2026-11-16
 
 ### Fixed
