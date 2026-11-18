@@ -17,6 +17,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   ~3 s per request; the step now fetches what is not cached 16 at a time first, falling back to two other Ubuntu
   mirrors for a file that stalls (apt still checks every hash and fetches anything missing itself), caches the
   packages per runner image and package list, and has 15 minutes (the job 25).
+- `tier2.sh` waited 20 s for the compositor's display and then went on without one (`DISPLAY: unbound variable`).
+  Mutter took 19 s on a runner once; it now waits up to 60 s and otherwise fails with the compositor's log.
 
 ## [1.0.13] — 2026-11-16
 
