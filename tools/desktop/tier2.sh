@@ -28,12 +28,16 @@ exec dbus-run-session -- bash -c '
     *) echo "unknown desktop $ARCADE_DESKTOP"; exit 2 ;;
   esac
   comp=$!
-  for _ in $(seq 1 200); do
-    if [ "$ARCADE_DESKTOP" = x11 ]; then xdpyinfo -display :77 >/dev/null 2>&1 && break
-    else ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v lock | grep -q . && break; fi
+  # Up to 60 s: Mutter usually opens its socket in 3 to 6 s, but once took 19 s on a CI runner (2026-11-18), past
+  # the 20 s this waited before. A compositor that never comes up fails here with its log, not later with no display.
+  up=no
+  for _ in $(seq 1 600); do
+    if [ "$ARCADE_DESKTOP" = x11 ]; then xdpyinfo -display :77 >/dev/null 2>&1 && { up=yes; break; }
+    else ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v lock | grep -q . && { up=yes; break; }; fi
     kill -0 $comp 2>/dev/null || { echo "$ARCADE_DESKTOP exited during start"; tail -40 "$log"; exit 1; }
     sleep 0.1
   done
+  [ $up = yes ] || { echo "$ARCADE_DESKTOP did not open its display in 60 s"; tail -40 "$log"; exit 1; }
   if [ "$ARCADE_DESKTOP" = x11 ]; then openbox > "$ARCADE_DESKTOP_ARTIFACTS/openbox.log" 2>&1 & sleep 0.5
   else export WAYLAND_DISPLAY=$(cd "$XDG_RUNTIME_DIR" && ls wayland-* | grep -v lock | head -1); fi
   [ "$ARCADE_DESKTOP" = sway ] && export SWAYSOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.* | head -1)
