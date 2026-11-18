@@ -11,7 +11,12 @@ AppImage passes `smoke.py` under `tier2.sh x11` with this change. Also: Tier 2's
 Ubuntu mirror three times on 2026-11-17 (Shelf rc.3 gates: Mutter; Wheel #26: KWin, Mutter), each before any test
 ran. apt fetches one package at a time and the mirror took ~3 s per request: with only the cache, the first (cold)
 run still timed out at 12 minutes with 203 of 246 packages. The step now fetches the uncached packages 16 at a time
-first (7 s locally for all 196) and caches them (`actions/cache`, keyed by runner image and package list). Tag after CI, Ecosystem e2e (`real_apps=true`) and
+first (7 s locally for all 196) and caches them (`actions/cache`, keyed by runner image and package list). After the
+merge (40c74f4) the desktop harness on main, cold again (a PR's cache is not visible to main), passed on sway, Mutter
+and X11 but KWin timed out: on runners of one image the `us-east-2.ec2` mirror served ~10 kB/s, the prefetch took
+8.5 minutes and two large files fell back to apt. A file that stalls on that mirror is now fetched from
+`azure.archive.ubuntu.com` or `archive.ubuntu.com` instead (runners of the other image got all 250 in 7 s), with 15
+minutes for the step. Each app repository's cache starts cold, so this path matters. Tag after CI, Ecosystem e2e (`real_apps=true`) and
 the desktop harness pass on the merge.
 
 ## 2026-11-16 (1.0.13)

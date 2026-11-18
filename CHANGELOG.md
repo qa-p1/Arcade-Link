@@ -14,9 +14,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   `gnome-keyring` and starts an unlocked one in each session, as Tier 1 does.
 - Tier 2's package install timed out on a slow Ubuntu mirror (8 minutes for ~170 packages; Shelf rc.3's gates and
   Wheel's CI, all on the install step, before any test ran). apt fetches one package at a time and the mirror took
-  ~3 s per request; the step now fetches what is not cached 16 at a time first (apt still checks every hash and
-  fetches anything missing itself), caches the packages per runner image and package list, and has 12 minutes (the
-  job 20).
+  ~3 s per request; the step now fetches what is not cached 16 at a time first, falling back to two other Ubuntu
+  mirrors for a file that stalls (apt still checks every hash and fetches anything missing itself), caches the
+  packages per runner image and package list, and has 15 minutes (the job 25).
 
 ## [1.0.13] — 2026-11-16
 
