@@ -18,7 +18,7 @@ jobs:
       matrix:
         desktop: [sway, kwin, mutter, x11]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
       # Every job installs all four desktops (~170 packages; the apps' system libraries come with them). On a slow
       # Ubuntu mirror that took over 8 minutes (Nov 2026), so the downloaded packages are cached: per runner image and
