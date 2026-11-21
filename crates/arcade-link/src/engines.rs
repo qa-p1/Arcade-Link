@@ -119,7 +119,7 @@ pub fn download_tesseract() -> Result<Download, String> {
     if cfg!(target_os = "macos") {
         let brew = first_executable(&["/opt/homebrew/bin".into(), "/usr/local/bin".into()], "brew")
             .ok_or("Install Tesseract with Homebrew (`brew install tesseract`), then try again.")?;
-        let status = Command::new(brew).args(["install", "tesseract"]).status().map_err(|e| format!("Homebrew: {e}"))?;
+        let status = crate::childenv::sanitize(&mut Command::new(brew)).args(["install", "tesseract"]).status().map_err(|e| format!("Homebrew: {e}"))?;
         if !status.success() {
             return Err("Homebrew could not install Tesseract".into());
         }
@@ -143,7 +143,7 @@ fn install_from(source: &Source, engines: &Path, work: &Path) -> Result<Download
         // The installer stays put until the user has finished with it.
         let setup = engines.join("tesseract-setup.exe");
         fs::rename(&file, &setup).map_err(|e| e.to_string())?;
-        Command::new(&setup).spawn().map_err(|e| format!("Cannot open the Tesseract installer: {e}"))?;
+        crate::childenv::sanitize(&mut Command::new(&setup)).spawn().map_err(|e| format!("Cannot open the Tesseract installer: {e}"))?;
         return Ok(Download::InstallerOpened);
     }
     #[cfg(unix)]
@@ -151,7 +151,11 @@ fn install_from(source: &Source, engines: &Path, work: &Path) -> Result<Download
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
         // Extracted once, so no FUSE is needed and nothing unpacks per run.
-        let out = Command::new(&file).arg("--appimage-extract").current_dir(work).output().map_err(|e| format!("Cannot unpack Tesseract: {e}"))?;
+        let out = crate::childenv::sanitize(&mut Command::new(&file))
+            .arg("--appimage-extract")
+            .current_dir(work)
+            .output()
+            .map_err(|e| format!("Cannot unpack Tesseract: {e}"))?;
         let unpacked = work.join("squashfs-root");
         if !out.status.success() || !unpacked.join("AppRun").is_file() {
             return Err("Cannot unpack Tesseract".into());
@@ -164,7 +168,7 @@ fn install_from(source: &Source, engines: &Path, work: &Path) -> Result<Download
         let launcher = bin.join("tesseract");
         let _ = fs::remove_file(&launcher);
         std::os::unix::fs::symlink("../tesseract/AppRun", &launcher).map_err(|e| e.to_string())?;
-        let ok = Command::new(&launcher).arg("--version").output().is_ok_and(|o| o.status.success());
+        let ok = crate::childenv::sanitize(&mut Command::new(&launcher)).arg("--version").output().is_ok_and(|o| o.status.success());
         if !ok {
             return Err("The downloaded Tesseract does not run on this system".into());
         }
@@ -176,6 +180,9 @@ fn install_from(source: &Source, engines: &Path, work: &Path) -> Result<Download
 
 fn fetch(url: &str, to: &Path) -> Result<(), String> {
     let mut cmd = Command::new("curl");
+    // The user's environment, not the calling app's AppImage libraries: from Arcade Tools' image the system curl
+    // loaded Tools' older libnghttp2 and failed with "symbol lookup error" (Tools D37).
+    crate::childenv::sanitize(&mut cmd);
     cmd.args(["-fsSL", "--proto", "=https", "--tlsv1.2", "--retry", "2", "--max-time", "900", "-o"]).arg(to).arg(url);
     #[cfg(windows)]
     {

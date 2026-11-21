@@ -5,6 +5,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- `engines::download_tesseract` runs curl, the downloaded AppImage's unpacking and its version check with the user's
+  environment (`childenv::sanitize`). From Arcade Tools' AppImage the system curl loaded Tools' bundled, older
+  libnghttp2 and failed with "symbol lookup error", so "Download with Arcade" never worked on a current distribution
+  (Tools D37; Tools 1.0.1 works around it until it moves to this Link).
+
 ## [1.0.14] — 2026-11-17
 
 ### Fixed
