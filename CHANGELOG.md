@@ -5,6 +5,21 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- The app template locks `url` 2.5.9 (RUSTSEC-2026-0592: stack overflow in `Url::origin` on nested `blob:` URLs).
+  Link's own crates don't use `url`.
+
+### Changed
+- Release signing moves to `ed25519-dalek` 3, `sha2` 0.11, `blake2` 0.11 and `base64` 0.23. Signatures and keys are
+  unchanged: the published Arcade Tools 1.0.2 `manifest.json.sig` still verifies with the release key and a tampered
+  copy is still refused, and the secret key's BLAKE2b-256 checksum is byte-identical to the former variable-output
+  hasher (so `ARCADE_UPDATE_SIGNING_KEY` keeps working).
+- `serde_json` 1.0.154, `interprocess` 2.4.9, `notify` 8.2.2, `libc` 0.2.191.
+- Workflows (including the reusable app workflows): `actions/checkout` v7, `actions/download-artifact` v8,
+  `actions/upload-artifact` v7, `actions/setup-node` v7, `nix-community/cache-nix-action` v7.
+- egui stays at 0.33: Find and Lens draw with Link's egui design kit, so the three move to a newer egui together
+  when those apps adopt Link 1.1.
+
 ## [1.0.15] — 2026-11-22
 
 ### Added

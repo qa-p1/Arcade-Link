@@ -18,7 +18,7 @@ jobs:
       matrix:
         desktop: [sway, kwin, mutter, x11]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
       # Every job installs all four desktops (~170 packages; the apps' system libraries come with them). On a slow
       # Ubuntu mirror that took over 8 minutes (Nov 2026), so the downloaded packages are cached: per runner image and
@@ -80,7 +80,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/app"; file="$RUNNER_TEMP/app/$(basename "$URL")"
           [ -s "$file" ] || curl -fsSL --retry 5 --retry-delay 10 --max-time 600 -o "$file" "$URL"
       - if: inputs.artifact != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with: { name: "${{ inputs.artifact }}", path: "${{ runner.temp }}/app" }
       - name: Smoke on ${{ matrix.desktop }}
         env:
@@ -89,6 +89,6 @@ jobs:
           # Outside the checkout: a file inside a git work tree counts as a dev build, which refuses to install.
           app=$(realpath "$(find "$RUNNER_TEMP/app" -name '*.AppImage' | head -1)"); chmod +x "$app"
           .arcade-link/tools/desktop/tier2.sh ${{ matrix.desktop }} python3 .arcade-link/tools/desktop/tests/smoke.py "$app" --show "${{ inputs.show }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: "tier2-${{ matrix.desktop }}", path: desktop-artifacts, if-no-files-found: ignore }

@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { repository: qa-p1/Arcade-Link, ref: "${{ github.sha }}" }
       - name: Session tools
         timeout-minutes: 8
@@ -38,6 +38,6 @@ jobs:
         run: tools/fleet/fetch_fleet.sh apps "${{ inputs.kind || 'stable' }}"
       - name: Measure against the budgets
         run: python3 tools/fleet/fleet_budget.py --apps apps --budgets tools/fleet/budgets.json --open tools --json fleet.json | tee -a "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: fleet-memory, path: fleet.json, if-no-files-found: ignore }

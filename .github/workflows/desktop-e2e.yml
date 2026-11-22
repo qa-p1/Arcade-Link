@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with: { repository: qa-p1/Arcade-Link, ref: "${{ inputs.link-ref }}", path: .arcade-link }
       - name: System packages
         timeout-minutes: 8
@@ -90,7 +90,7 @@ jobs:
             extra-substituters = https://hyprland.cachix.org
             extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
       - id: nix-cache
-        uses: nix-community/cache-nix-action/restore@v6
+        uses: nix-community/cache-nix-action/restore@v7
         with:
           primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
           restore-prefixes-first-match: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
@@ -135,7 +135,7 @@ jobs:
           echo "HYPRLAND_PROTOCOLS=$(nix eval --raw nixpkgs#hyprland-protocols)/share/hyprland-protocols" >> "$GITHUB_ENV"
       # Saved right after the install, so a failing test still keeps the build.
       - if: steps.nix-cache.outputs.hit-primary-key != 'true'
-        uses: nix-community/cache-nix-action/save@v6
+        uses: nix-community/cache-nix-action/save@v7
         with:
           primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
           gc-max-store-size-linux: 6G
@@ -156,7 +156,7 @@ jobs:
           file="$RUNNER_TEMP/app/$(basename "$URL")"
           if [ -n "$URL" ] && [ ! -s "$file" ]; then curl -fsSL --retry 5 --retry-delay 10 --max-time 600 -o "$file" "$URL"; fi
       - if: inputs.artifact != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with: { name: "${{ inputs.artifact }}", path: "${{ runner.temp }}/app" }
       - name: Run ${{ inputs.test }} in headless Hyprland
         env:
@@ -177,7 +177,7 @@ jobs:
       - name: Compositor log
         if: failure()
         run: tail -100 desktop-artifacts/hyprland.log || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: desktop-${{ inputs.name }}

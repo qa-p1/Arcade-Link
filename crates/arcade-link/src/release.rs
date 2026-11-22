@@ -161,7 +161,16 @@ impl FileEntry {
     pub fn verify_file(&self, path: &Path) -> Result<(), ReleaseError> {
         let mut f = File::open(path)?;
         let mut h = sha2::Sha256::new();
-        let n = io::copy(&mut f, &mut h)?;
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut n = 0u64;
+        loop {
+            let read = f.read(&mut buf)?;
+            if read == 0 {
+                break;
+            }
+            h.update(&buf[..read]);
+            n += read as u64;
+        }
         if n != self.size {
             return Err(ReleaseError::Mismatch(format!("{}: {n} bytes, manifest says {}", self.name, self.size)));
         }
@@ -405,14 +414,14 @@ impl SecretKey {
 }
 
 fn secret_checksum(key_id: &[u8; 8], keypair: &[u8]) -> [u8; 32] {
-    use blake2::digest::{Update, VariableOutput};
-    let mut h = blake2::Blake2bVar::new(32).expect("32-byte BLAKE2b");
+    // Minisign's key checksum: unkeyed BLAKE2b with a 32-byte output (the output length is part of BLAKE2's
+    // parameters, so this equals the former variable-output hasher at 32 bytes).
+    use blake2::digest::Digest as _;
+    let mut h = blake2::Blake2b256::new();
     h.update(SIG_ALG);
     h.update(key_id);
     h.update(keypair);
-    let mut out = [0u8; 32];
-    h.finalize_variable(&mut out).expect("output size");
-    out
+    h.finalize().into()
 }
 
 fn blake2b512(message: &[u8]) -> [u8; 64] {
