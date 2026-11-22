@@ -7,7 +7,10 @@ Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 **v1.0.14 tagged** on a5a3783. **1.0.15 prepared**: #79 (5bcc6b8), `engines::download_tesseract` runs curl, the
 AppImage's unpacking and its version check through `childenv::sanitize`. Tools' real-user run on Linux: "Download with
 Arcade" for Tesseract failed with "curl: symbol lookup error" (the system curl loaded Tools' bundled libnghttp2 from
-`LD_LIBRARY_PATH`). Tools 1.0.2 moves to this Link and drops its own copy of the download. Considered and left: an
+`LD_LIBRARY_PATH`). Tools 1.0.2 moves to this Link and drops its own copy of the download. Also
+`design::linux_prefers_dark_without_portal`: on the real-user run's openbox desktop (no portal, GNOME settings at
+their defaults, Adwaita) Lens and Find were dark and every other app light; Lens and Find use it in their next
+releases. Considered and left: an
 `ARCADE_UNPACKED=1` inherited from Tools 1.0.0 keeps an app's own Restart successor on its mount, but `1` is the
 harnesses' "never relaunch" in every app repository and can't be told apart; Tools 1.0.1 no longer passes it on, and
 such an app is clean at its next start. Tag after CI, Ecosystem e2e (`real_apps=true`) and the desktop harness pass on
