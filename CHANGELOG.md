@@ -6,6 +6,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `arcade-helper` (new crate, SPEC §5.6): Arcade's actions in the file manager menus (Linux and Windows; macOS
+  through Arcade Tools) and, through native messaging, the browser extension. It runs in the background, owns the
+  jobs, shows a picker and a progress window drawn with the design kit, places results without overwriting and
+  keeps its menu entries in step with the installed apps. `client::request_install` asks Arcade Tools to install an
+  app.
 - "What can I do with this?" (SPEC §5.5): `offers::offers` (Qt `offers`) gives every caller the same ranked list of
   actions for a selection on a surface, from the installed cards, the catalog's `rules` (hide, rename, boost, jobs)
   and the user's choices in `offers.json` (`offers::Prefs`, Qt `loadOfferPrefs`/`saveOfferPrefs`): install entries

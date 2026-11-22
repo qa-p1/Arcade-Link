@@ -383,6 +383,41 @@ impl Resident {
     }
 }
 
+/// Keeps the menu entries current: rewrites them when an app's card changes, or the catalog or the user's choices
+/// do (both live next to the registry folder). Events are coalesced; nothing is polled.
+pub fn watch(r: Arc<Resident>) {
+    use notify::Watcher as _;
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let on_cards = tx.clone();
+    r.registry.watch(move |_| {
+        on_cards.send(()).ok();
+    });
+    let parent = r.locations.registry.parent().map(Path::to_path_buf);
+    let watcher = parent.and_then(|dir| {
+        let tx = tx.clone();
+        let mut w = notify::recommended_watcher(move |e: notify::Result<notify::Event>| {
+            if let Ok(e) = e {
+                if e.paths.iter().any(|p| p.file_name().is_some_and(|n| n == "catalog.json" || n == "offers.json")) {
+                    tx.send(()).ok();
+                }
+            }
+        })
+        .ok()?;
+        w.watch(&dir, notify::RecursiveMode::NonRecursive).ok()?;
+        Some(w)
+    });
+    std::thread::spawn(move || {
+        let _keep = watcher;
+        while rx.recv().is_ok() {
+            std::thread::sleep(Duration::from_millis(300));
+            while rx.try_recv().is_ok() {}
+            if let Err(e) = r.refresh_integrations() {
+                eprintln!("arcade-helper: menu entries: {e}");
+            }
+        }
+    });
+}
+
 /// The card action a reference names (`box:x#webp` first as written, then without the preset).
 pub fn action_of<'a>(card: &'a Manifest, reference: &str) -> Option<&'a Action> {
     let (_, action) = reference.split_once('/')?;

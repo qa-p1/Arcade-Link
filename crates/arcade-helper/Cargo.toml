@@ -13,10 +13,14 @@ name = "arcade-helper"
 path = "src/main.rs"
 
 [dependencies]
-arcade-link = { path = "../arcade-link", features = ["watch"] }
+arcade-link = { path = "../arcade-link", features = ["watch", "design", "design-egui"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.23"
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
+eframe = { version = "0.33", default-features = false, features = ["glow", "x11", "wayland", "default_fonts", "accesskit"] }
+open = "5"
+notify-rust = "=4.17.0"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }
