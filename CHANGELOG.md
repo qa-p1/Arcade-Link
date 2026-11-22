@@ -5,6 +5,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.15] — 2026-11-22
+
+### Added
+- `design::linux_prefers_dark_without_portal` (and `design::prefers_dark_from`): whether a Linux desktop prefers dark
+  when the XDG Settings portal gives no answer, from GNOME's `color-scheme`, the GTK theme name (`GTK_THEME`, GNOME's
+  `gtk-theme`, GTK 3's `settings.ini`) or `gtk-application-prefer-dark-theme`; otherwise light, as GTK and WebKit
+  show. egui apps fell back to dark there, so Lens and Find were dark next to a light Arcade Tools on openbox.
+
 ### Fixed
 - `engines::download_tesseract` runs curl, the downloaded AppImage's unpacking and its version check with the user's
   environment (`childenv::sanitize`). From Arcade Tools' AppImage the system curl loaded Tools' bundled, older

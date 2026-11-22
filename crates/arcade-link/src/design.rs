@@ -243,9 +243,78 @@ pub fn inter_font_bytes() -> &'static [u8] {
     include_bytes!("../../../design/fonts/InterVariable.ttf")
 }
 
+/// Linux: whether the desktop prefers dark when the XDG Settings portal gives no answer (openbox, i3 and other X11
+/// sessions without one). Asks the portal first in the app; call this only when that fails. GNOME's `color-scheme`
+/// decides; at `default` (or without GNOME's settings) a theme whose name says dark (`GTK_THEME`, GNOME's `gtk-theme`,
+/// GTK 3's `settings.ini`) or `gtk-application-prefer-dark-theme` means dark; otherwise light, which is what GTK and
+/// WebKit (Arcade Tools) show on the same desktop. Before this, egui apps fell back to dark there, so Lens and Find were
+/// dark next to a light Tools. Blocking (runs `gsettings`): call it off the UI thread.
+#[cfg(target_os = "linux")]
+pub fn linux_prefers_dark_without_portal() -> bool {
+    let gsettings = |key: &str| {
+        let mut cmd = std::process::Command::new("gsettings");
+        crate::childenv::sanitize(&mut cmd);
+        cmd.args(["get", "org.gnome.desktop.interface", key])
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|out| out.status.success())
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().trim_matches('\'').to_owned())
+    };
+    let ini = crate::paths::UserDirs::discover().config.join("gtk-3.0").join("settings.ini");
+    prefers_dark_from(
+        gsettings("color-scheme").as_deref(),
+        std::env::var("GTK_THEME").ok().as_deref(),
+        gsettings("gtk-theme").as_deref(),
+        std::fs::read_to_string(ini).ok().as_deref(),
+    )
+}
+
+/// [`linux_prefers_dark_without_portal`] on the values it read: GNOME's `color-scheme`, `$GTK_THEME`, GNOME's
+/// `gtk-theme` and GTK 3's `settings.ini`.
+pub fn prefers_dark_from(color_scheme: Option<&str>, gtk_theme_env: Option<&str>, gnome_gtk_theme: Option<&str>, gtk3_settings_ini: Option<&str>) -> bool {
+    match color_scheme {
+        Some("prefer-dark") => return true,
+        Some("prefer-light") => return false,
+        _ => {}
+    }
+    let dark_name = |name: &str| name.to_ascii_lowercase().contains("dark");
+    if let Some(theme) = gtk_theme_env.filter(|t| !t.is_empty()) {
+        return dark_name(theme);
+    }
+    if gnome_gtk_theme.is_some_and(dark_name) {
+        return true;
+    }
+    gtk3_settings_ini.is_some_and(|ini| {
+        ini.lines().filter_map(|line| line.split_once('=')).any(|(key, value)| {
+            let value = value.trim();
+            match key.trim() {
+                "gtk-application-prefer-dark-theme" => value == "1" || value.eq_ignore_ascii_case("true"),
+                "gtk-theme-name" => dark_name(value),
+                _ => false,
+            }
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn without_a_portal_the_desktop_decides_and_light_is_the_default() {
+        // The real-user run's openbox desktop: GNOME settings at their defaults, no GTK_THEME, no settings.ini.
+        assert!(!prefers_dark_from(Some("default"), None, Some("Adwaita"), None));
+        assert!(!prefers_dark_from(None, None, None, None));
+        assert!(prefers_dark_from(Some("prefer-dark"), None, Some("Adwaita"), None));
+        assert!(!prefers_dark_from(Some("prefer-light"), Some("Adwaita:dark"), Some("Adwaita-dark"), None));
+        assert!(prefers_dark_from(Some("default"), None, Some("Adwaita-dark"), None));
+        assert!(prefers_dark_from(None, Some("Adwaita:dark"), None, None));
+        assert!(!prefers_dark_from(None, Some("Adwaita"), Some("Adwaita-dark"), None), "GTK_THEME wins, as in GTK");
+        assert!(prefers_dark_from(None, None, None, Some("[Settings]\ngtk-application-prefer-dark-theme=1\n")));
+        assert!(prefers_dark_from(None, None, None, Some("[Settings]\ngtk-theme-name = Arc-Dark\n")));
+        assert!(!prefers_dark_from(None, None, None, Some("[Settings]\ngtk-theme-name=Arc\n")));
+    }
 
     fn luminance(colour: u32) -> f64 {
         let channel = |v: u8| {
