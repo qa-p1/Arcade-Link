@@ -195,7 +195,7 @@ def require_current_build(spec: dict) -> Path:
 
 def isolated_env(root: Path) -> dict:
     env = {k: v for k, v in os.environ.items() if k not in STRIP}
-    for d in ("home", "config", "data", "cache", "runtime", "lens", "clipdata", "arcade", "wheel", "shelf", "find"):
+    for d in ("home", "config", "data", "cache", "runtime", "tmp", "lens", "clipdata", "arcade", "wheel", "shelf", "find"):
         (root / d).mkdir(parents=True, exist_ok=True)
     os.chmod(root / "runtime", 0o700)
     env.update({
@@ -204,6 +204,11 @@ def isolated_env(root: Path) -> dict:
         "XDG_DATA_HOME": str(root / "data"),
         "XDG_CACHE_HOME": str(root / "cache"),
         "XDG_RUNTIME_DIR": str(root / "runtime"),
+        # AppImages run with APPIMAGE_EXTRACT_AND_RUN unpack into $TMPDIR/appimage_extracted_<content hash> and
+        # rewrite that folder on every start, so two sessions starting the same package in one shared /tmp catch
+        # each other's half-written files (exit 126 "Text file busy" or 127; also against the desktop's own copy).
+        # Each session unpacks into its own folder; close() removes it.
+        "TMPDIR": str(root / "tmp"),
         "XDG_SESSION_TYPE": "x11",
         "ARCADE_HOME": str(root / "arcade"),
         "ARCADE_LENS_HOME": str(root / "lens"),
@@ -430,6 +435,9 @@ class Session:
             self.keyring.terminate()
         if self.xvfb:
             self.xvfb.terminate()
+        # Stopped apps leave their unpacked copies (a killed runtime cannot clean up); they are 100 MB and more each.
+        for unpacked in (self.root / "tmp").glob("appimage_extracted_*"):
+            shutil.rmtree(unpacked, ignore_errors=True)
 
 
 def wait_gone(probe, timeout: float) -> bool:

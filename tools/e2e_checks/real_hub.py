@@ -422,10 +422,10 @@ def disabling_link_in_find_keeps_its_own_icon(s):
     executable = binary('arcade.find')
     process = s.procs['arcade.find']
     def started():
-        # The harness runs AppImages with APPIMAGE_EXTRACT_AND_RUN, which unpacks into one folder per AppImage. A
-        # `--status` run while the starting Find is still unpacking unpacks into the same folder and breaks it: on a
-        # cold runner, where this was Find's first start in the job, Find exited 126 (2026-11-22). Ask only once
-        # Find runs from the unpacked folder.
+        # The harness runs AppImages with APPIMAGE_EXTRACT_AND_RUN, which unpacks into one folder per AppImage (under
+        # the session's TMPDIR). A `--status` run while the starting Find is still unpacking unpacks into the same
+        # folder and breaks it: on a cold runner, where this was Find's first start in the job, Find exited 126
+        # (2026-11-22). Ask only once Find runs from the unpacked folder.
         assert process.poll() is None, f'Find exited ({process.returncode}); log:\n{s.log("arcade.find")}'
         return any('/appimage_extracted_' in exe and exe.endswith('/usr/bin/arcade-find') for exe in executables())
     def own():

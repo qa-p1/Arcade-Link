@@ -25,6 +25,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   just started was still unpacking itself (the harness runs AppImages with `APPIMAGE_EXTRACT_AND_RUN`, one folder per
   AppImage). On a cold runner the second unpack broke the first and Find exited 126, so the check failed whenever it
   was Find's first start in the job. It now waits, with a start's 20 s, until Find runs from the unpacked folder.
+- The e2e harness gives each session its own `TMPDIR`. AppImages run with `APPIMAGE_EXTRACT_AND_RUN` unpack into
+  `$TMPDIR/appimage_extracted_<hash>` and rewrite it on every start, so two sessions starting the same app in one
+  shared `/tmp` broke each other's start (`portable_backup_restores_real_app_settings_in_a_second_arcade_home`: Find
+  exited 127). A session's unpacked copies are removed when it closes.
 
 ## [1.0.14] — 2026-11-17
 
