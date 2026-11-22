@@ -28,12 +28,19 @@ fn the_resident_quits_at_once_and_leaves_no_endpoint() {
         assert!(start.elapsed() < Duration::from_secs(20), "the helper didn't start");
         std::thread::sleep(Duration::from_millis(50));
     }
-    // `status`: the running version and where its menus went (Linux: the Open With entry at least).
-    let out = helper("status").output().unwrap();
-    let status: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(status["running"], status["version"], "{status}");
-    if cfg!(target_os = "linux") {
-        assert!(status["fileManagers"].as_array().unwrap().iter().any(|n| n == "Open With (every file manager)"), "{status}");
+    // `status`: the running version and where its menus went (Linux: the Open With entry at least). The helper
+    // answers as soon as its endpoint is up and writes its menus just after, so the menus may take a moment.
+    let start = Instant::now();
+    loop {
+        let out = helper("status").output().unwrap();
+        let status: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(status["running"], status["version"], "{status}");
+        let open_with = status["fileManagers"].as_array().unwrap().iter().any(|n| n == "Open With (every file manager)");
+        if open_with || !cfg!(target_os = "linux") {
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(20), "no menus written: {status}");
+        std::thread::sleep(Duration::from_millis(100));
     }
     // `quit` (what Arcade Tools' Windows installer runs), then the Link quit Tools uses: both stop it at once.
     let out = helper("quit").output().unwrap();
