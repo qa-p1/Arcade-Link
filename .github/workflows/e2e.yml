@@ -228,7 +228,7 @@ jobs:
         env:
           ARCADE_E2E_ARTIFACTS: ${{ github.workspace }}/target/fleet/fleet.json
         run: |
-          cargo build -p arcade-link-cli --locked
+          cargo build -p arcade-link-cli -p arcade-helper --locked
           python3 tools/real_apps.py
       - name: Isolated real-app checks (unavailable artifacts explicitly skipped)
         env:

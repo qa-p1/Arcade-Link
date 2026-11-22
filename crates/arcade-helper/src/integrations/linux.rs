@@ -7,21 +7,29 @@ use std::path::{Path, PathBuf};
 use super::{Entry, File, Home, Plan};
 use crate::mime;
 
-/// Quotes one argument for a desktop entry's `Exec` (Desktop Entry spec, "The Exec key").
+/// Quotes one argument for a desktop entry's `Exec` (Desktop Entry spec, "The Exec key"). The file's string
+/// escapes are undone before the Exec quoting, so each backslash of the Exec quoting is itself written as `\\`:
+/// a `$` becomes `\\$`, a backslash four of them. GLib refuses a lone `\$` and drops the whole Exec line.
 pub fn exec_quote(arg: &str) -> String {
     let mut out = String::from("\"");
     for c in arg.chars() {
         match c {
-            '"' | '`' | '$' | '\\' => {
-                out.push('\\');
+            '"' | '`' | '$' => {
+                out.push_str("\\\\");
                 out.push(c);
             }
+            '\\' => out.push_str("\\\\\\\\"),
             '%' => out.push_str("%%"),
             _ => out.push(c),
         }
     }
     out.push('"');
     out
+}
+
+/// A desktop entry string value (`Name=`): one line, backslashes escaped.
+fn desktop_string(s: &str) -> String {
+    one_line(s).replace('\\', "\\\\")
 }
 
 /// Quotes one argument for `/bin/sh` (and Thunar, which splits commands the same way).
@@ -96,7 +104,7 @@ pub fn plan(exe: &Path, entries: &[Entry], home: &Home) -> Plan {
     let mut thunar = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         let id = desktop_id(i, entry);
-        let name = one_line(&entry.title);
+        let name = desktop_string(&entry.title);
         let mimes = mime_list(entry);
         // "Open With" (every file manager). NoDisplay keeps it out of app launchers.
         plan.files.push(File {
@@ -139,7 +147,7 @@ pub fn plan(exe: &Path, entries: &[Entry], home: &Home) -> Plan {
         };
         thunar.push(ThunarAction {
             unique_id: format!("{THUNAR_PREFIX}{i}"),
-            name,
+            name: one_line(&entry.title),
             command: sh_line(exe, entry),
             patterns,
             directories: entry.accepts.iter().any(|a| a == "folder/reference"),
@@ -230,7 +238,8 @@ mod tests {
     #[test]
     fn quoting() {
         assert_eq!(exec_quote("/opt/Arcade Tools/arcade-helper"), "\"/opt/Arcade Tools/arcade-helper\"");
-        assert_eq!(exec_quote("a$b\"c%d"), "\"a\\$b\\\"c%%d\"");
+        assert_eq!(exec_quote("a$b\"c%d"), r#""a\\$b\\"c%%d""#);
+        assert_eq!(exec_quote(r"a\b"), r#""a\\\\b""#);
         assert_eq!(sh_quote("it's"), "'it'\\''s'");
     }
 

@@ -11,6 +11,7 @@ the apps first. Arcade Tools ships it, starts `arcade-helper --background` at lo
 | `arcade-helper run <app/action> <files…>` | a pinned menu entry |
 | `arcade-helper progress` | the progress window (the resident starts it) |
 | `arcade-helper offers [--surface S] <files…>` | the offers for these files, as JSON |
+| `arcade-helper jobs [--wait-ms N]` | the jobs, as JSON (for scripts and tests) |
 | `arcade-helper integrate [--remove]` | write (or remove) the menu entries |
 
 Started by a browser with an extension origin (`chrome-extension://…`) or a manifest path and add-on ID (Firefox),

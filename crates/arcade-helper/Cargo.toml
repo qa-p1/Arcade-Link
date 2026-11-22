@@ -27,3 +27,8 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 
 [dev-dependencies]
 sha2 = "0.11"
+
+# Launches the menu entries as the file managers do; its own main() also records arguments.
+[[test]]
+name = "menus"
+harness = false

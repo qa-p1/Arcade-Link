@@ -10,7 +10,12 @@ oneClick, maxItems, requires, output), refined file types with parents and the a
 #84 offers, the one shared answer to "what can I do with this?"; #85 the `arcade-helper` crate (file manager menus,
 picker, progress window, the browser extension's native messaging bridge) and `client::request_install`. Every new
 card field is optional and a malformed one reads as absent, so 1.0 apps and cards are unaffected (N-1 job). Arcade
-Tools 1.1.0 ships the helper next (stage 2). Tag after CI, Ecosystem e2e (`real_apps=true`) and the desktop harness
+Tools 1.1.0 ships the helper next (stage 2). Before the tag, the plan's helper tests (§5 items 2–4): `tests/menus.rs`
+launches every Linux menu entry the way its file manager does (GLib's `gio launch`, the scripts, Dolphin and Nemo by
+the Exec rules, Thunar through `sh`) and on Windows runs each registry verb; the real fleet's `tools-hub` group runs
+Box, Look and Lens through the helper. The GLib launch found a real bug: the Exec quoting wrote one backslash where a
+desktop file needs two, so an install folder with `$`, `` ` ``, `"` or `\` gave entries GLib rejects ("didn't specify
+Exec"); fixed, and the test fails on the old quoting. Tag after CI, Ecosystem e2e (`real_apps=true`) and the desktop harness
 pass on the merge.
 
 ## 2026-11-22 (1.0.15)

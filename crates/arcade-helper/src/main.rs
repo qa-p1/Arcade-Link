@@ -26,6 +26,7 @@ const HELP: &str = "arcade-helper: Arcade's actions in your file manager and bro
   arcade-helper menu <files…>           choose an action for these files
   arcade-helper run <app/action> <files…>
   arcade-helper offers [--surface S] <files…>
+  arcade-helper jobs [--wait-ms N]      the jobs, as JSON (waits up to N ms for a change)
   arcade-helper integrate [--remove]    write (or remove) the menu entries
   arcade-helper --version";
 
@@ -125,6 +126,19 @@ fn main() {
             std::process::exit(ui::picker(locations, exe(), files));
         }
         Some("progress") => std::process::exit(ui::progress(locations, exe())),
+        Some("jobs") => {
+            let wait = match (args.get(1).map(String::as_str), args.get(2)) {
+                (Some("--wait-ms"), Some(n)) => n.parse().unwrap_or_else(|_| fail("--wait-ms needs a number")),
+                (None, _) => 0,
+                _ => fail("usage: jobs [--wait-ms N]"),
+            };
+            let mut c = HelperClient::connect(&locations, &exe(), "cli").unwrap_or_else(|e| fail(&e.message));
+            // The first call reads the current revision; with a wait, the second waits for the next change.
+            let (revision, jobs) = c.jobs(0, Duration::ZERO, false).unwrap_or_else(|e| fail(&e.message));
+            let (revision, jobs) =
+                if wait > 0 { c.jobs(revision, Duration::from_millis(wait), false).unwrap_or_else(|e| fail(&e.message)) } else { (revision, jobs) };
+            println!("{}", serde_json::json!({"revision": revision, "jobs": jobs}));
+        }
         Some("offers") => {
             let (surface, rest) = match (args.get(1).map(String::as_str), args.get(2)) {
                 (Some("--surface"), Some(s)) => (s.clone(), &args[3..]),
