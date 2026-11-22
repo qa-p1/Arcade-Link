@@ -28,6 +28,8 @@ const HELP: &str = "arcade-helper: Arcade's actions in your file manager and bro
   arcade-helper run <app/action> <files…>
   arcade-helper offers [--surface S] <files…>
   arcade-helper jobs [--wait-ms N]      the jobs, as JSON (waits up to N ms for a change)
+  arcade-helper status                  version, running, and the file managers and browsers reached (JSON)
+  arcade-helper quit [--force]          stop the running helper (refused while a job is unfinished)
   arcade-helper integrate [--remove]    write (or remove) the menu entries
   arcade-helper --version";
 
@@ -102,6 +104,35 @@ fn background(locations: Locations) -> ! {
     }
 }
 
+/// Stops the running helper: 0 stopped (or none was running), 3 busy (a job is unfinished and `force` is off).
+fn quit(locations: &Locations, force: bool) -> i32 {
+    let me = PeerInfo { id: format!("{}.cli", ids::HELPER_ID), version: VERSION.into() };
+    let Ok(mut client) = arcade_link::Client::connect(locations, ids::HELPER_ID, &me) else {
+        println!("not running");
+        return 0;
+    };
+    let busy = client.status().ok().is_some_and(|s| {
+        s.get("busy").and_then(serde_json::Value::as_bool) == Some(true) || s.pointer("/status/busy").and_then(serde_json::Value::as_bool) == Some(true)
+    });
+    if busy && !force {
+        println!("busy");
+        return 3;
+    }
+    if let Err(e) = client.call(arcade_link::wire::method::APP_QUIT, serde_json::json!({"force": force})) {
+        fail(&e.message);
+    }
+    drop(client);
+    let start = std::time::Instant::now();
+    while arcade_link::endpoint::read(locations, ids::HELPER_ID).is_ok() {
+        if start.elapsed() > Duration::from_secs(10) {
+            fail("the helper didn't stop");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    println!("stopped");
+    0
+}
+
 /// Runs the command line with the process's arguments (never returns early on error: it exits).
 pub fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -147,6 +178,13 @@ pub fn main() {
                 if wait > 0 { c.jobs(revision, Duration::from_millis(wait), false).unwrap_or_else(|e| fail(&e.message)) } else { (revision, jobs) };
             println!("{}", serde_json::json!({"revision": revision, "jobs": jobs}));
         }
+        Some("status") => {
+            let me = PeerInfo { id: format!("{}.cli", ids::HELPER_ID), version: VERSION.into() };
+            let running = arcade_link::client::probe(&locations, ids::HELPER_ID, &me).map(|p| p.version);
+            let reach = integrations::State::load(&resident::state_path(&locations)).reach();
+            println!("{}", serde_json::json!({"version": VERSION, "running": running, "fileManagers": reach.file_managers, "browsers": reach.browsers}));
+        }
+        Some("quit") => std::process::exit(quit(&locations, args.get(1).map(String::as_str) == Some("--force"))),
         Some("offers") => {
             let (surface, rest) = match (args.get(1).map(String::as_str), args.get(2)) {
                 (Some("--surface"), Some(s)) => (s.clone(), &args[3..]),

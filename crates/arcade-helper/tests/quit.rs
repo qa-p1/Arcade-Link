@@ -28,6 +28,25 @@ fn the_resident_quits_at_once_and_leaves_no_endpoint() {
         assert!(start.elapsed() < Duration::from_secs(20), "the helper didn't start");
         std::thread::sleep(Duration::from_millis(50));
     }
+    // `status`: the running version and where its menus went (Linux: the Open With entry at least).
+    let out = helper("status").output().unwrap();
+    let status: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(status["running"], status["version"], "{status}");
+    if cfg!(target_os = "linux") {
+        assert!(status["fileManagers"].as_array().unwrap().iter().any(|n| n == "Open With (every file manager)"), "{status}");
+    }
+    // `quit` (what Arcade Tools' Windows installer runs), then the Link quit Tools uses: both stop it at once.
+    let out = helper("quit").output().unwrap();
+    assert_eq!((out.status.code(), String::from_utf8_lossy(&out.stdout).trim().to_string()), (Some(0), "stopped".to_string()));
+    assert!(child.wait().unwrap().success());
+    let out = helper("quit").output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "not running");
+    let mut child = helper("--background").spawn().unwrap();
+    let start = Instant::now();
+    while arcade_link::endpoint::read(&locations, "arcade.helper").is_err() {
+        assert!(start.elapsed() < Duration::from_secs(20), "the helper didn't start again");
+        std::thread::sleep(Duration::from_millis(50));
+    }
     let start = Instant::now();
     let quit = arcade_link::install::quit_running(&locations, "arcade.helper", Duration::from_secs(10)).unwrap();
     assert!(quit && start.elapsed() < Duration::from_secs(3), "quit took {:?}", start.elapsed());

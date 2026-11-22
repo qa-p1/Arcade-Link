@@ -15,6 +15,8 @@ calls it, so Tools' lockfile, licence notices and audits cover everything the he
 | `arcade-helper progress` | the progress window (the resident starts it) |
 | `arcade-helper offers [--surface S] <files…>` | the offers for these files, as JSON |
 | `arcade-helper jobs [--wait-ms N]` | the jobs, as JSON (for scripts and tests) |
+| `arcade-helper status` | version, whether it runs, and the file managers and browsers it reached (JSON) |
+| `arcade-helper quit [--force]` | stop the running helper; `busy` (exit 3) while a job is unfinished |
 | `arcade-helper integrate [--remove]` | write (or remove) the menu entries |
 
 Started by a browser with an extension origin (`chrome-extension://…`) or a manifest path and add-on ID (Firefox),
