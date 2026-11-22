@@ -493,11 +493,9 @@ impl Handler for ResidentHandler {
         json!({"mode": "background", "jobs": unfinished, "busy": unfinished > 0})
     }
 
-    /// Arcade Tools quits the helper before replacing it; never while a job would be lost.
+    /// Arcade Tools reads `busy` in the status before it replaces the helper, and quits it regardless when Tools
+    /// itself is removed (a running program would keep its files from being deleted on Windows).
     fn quit(&self) -> Result<(), LinkError> {
-        if self.0.store.lock().unwrap_or_else(|e| e.into_inner()).jobs.iter().any(|r| !r.view.finished()) {
-            return Err(LinkError::busy());
-        }
         // The endpoint goes first, so whoever asked sees the helper gone at once on every OS.
         let locations = self.0.locations.clone();
         std::thread::spawn(move || {
