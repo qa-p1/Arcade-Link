@@ -35,6 +35,8 @@ pub struct CatalogApp {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Catalog {
     pub apps: Vec<CatalogApp>,
+    /// Corrections to offers (`rules`); empty when absent or malformed.
+    pub rules: crate::offers::Rules,
 }
 
 impl Catalog {
@@ -50,7 +52,8 @@ impl Catalog {
             .filter_map(|v| serde_json::from_value::<CatalogApp>(v.clone()).ok())
             .filter(|a| a.id.starts_with("arcade.") && a.id.len() > 7)
             .collect();
-        Ok(Catalog { apps })
+        let rules = doc.get("rules").and_then(|r| serde_json::from_value(r.clone()).ok()).unwrap_or_default();
+        Ok(Catalog { apps, rules })
     }
 
     /// The shared copy, or an empty catalog. Re-read only when the file changes.

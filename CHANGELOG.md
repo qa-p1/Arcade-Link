@@ -6,6 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- "What can I do with this?" (SPEC §5.5): `offers::offers` (Qt `offers`) gives every caller the same ranked list of
+  actions for a selection on a surface, from the installed cards, the catalog's `rules` (hide, rename, boost, jobs)
+  and the user's choices in `offers.json` (`offers::Prefs`, Qt `loadOfferPrefs`/`saveOfferPrefs`): install entries
+  for actions missing an engine or app, greyed-out entries over `maxItems`/`maxBytes`, and two apps doing one job both
+  shown until the user picks a default. `offers::input_type` (Qt `offerInputType`) names the type of a multi-selection.
+  `Catalog::rules`, `Locations::offer_prefs`. Vectors: `spec/vectors/offers.json`.
+
+### Added
 - Cards can describe much more about each action, so other apps, the file manager menus and the browser extension
   can offer it without code of their own (SPEC §3, all optional, ignored by Link 1.0 apps): `options` (the options
   form, in Arcade Box's catalog format: new `form` module with defaults, visibility and value checks), `surfaces`

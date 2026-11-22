@@ -18,6 +18,7 @@
 #include <QTimer>
 #include <cmath>
 #include <functional>
+#include <tuple>
 
 #ifdef Q_OS_UNIX
 #include <fcntl.h>
@@ -156,11 +157,15 @@ Locations Locations::discover()
 QString Locations::manifestPath(const QString &appId) const { return QDir(registry).filePath(appId + QStringLiteral(".json")); }
 QString Locations::endpointPath(const QString &appId) const { return QDir(runtime).filePath(appId + QStringLiteral(".endpoint")); }
 
-QString Locations::catalogPath() const
+static QString besideRegistry(const QString &registry, const QString &name)
 {
     QDir dir(registry);
-    return dir.cdUp() ? dir.filePath(QStringLiteral("catalog.json")) : QDir(registry).filePath(QStringLiteral("../catalog.json"));
+    return dir.cdUp() ? dir.filePath(name) : QDir(registry).filePath(QStringLiteral("../") + name);
 }
+
+QString Locations::catalogPath() const { return besideRegistry(registry, QStringLiteral("catalog.json")); }
+
+QString Locations::offerPrefsPath() const { return besideRegistry(registry, QStringLiteral("offers.json")); }
 
 // ---- Catalog ----------------------------------------------------------------
 
@@ -192,6 +197,7 @@ Catalog Catalog::parse(const QByteArray &json, bool *ok)
         if (validCatalogApp(v)) c.apps << v.toObject();
     // Arcade Tools has its own entry beside the apps.
     if (validCatalogApp(doc.object().value(QStringLiteral("tools")))) c.apps << doc.object().value(QStringLiteral("tools")).toObject();
+    c.rules = doc.object().value(QStringLiteral("rules")).toObject();
     return c;
 }
 
@@ -915,6 +921,181 @@ int actionRankFor(const QJsonObject &action, const QString &kind)
     for (auto it = rank.begin(); it != rank.end(); ++it)
         if (typeMatches(it.key(), kind)) best = std::max(best, std::min(100, it.value().toInt()));
     return best;
+}
+
+// ---- Offers ------------------------------------------------------------------
+
+QString offerInputType(const QJsonArray &items)
+{
+    if (items.isEmpty()) return {};
+    const QString first = items.first().toObject().value(QStringLiteral("type")).toString();
+    if (items.size() == 1) return first;
+    for (const auto &i : items) {
+        const QString t = i.toObject().value(QStringLiteral("type")).toString();
+        if (!t.startsWith(QStringLiteral("file/")) || t.endsWith(QStringLiteral("[]"))) return {};
+    }
+    QString common = QStringLiteral("file/any");
+    for (const QString &t : QStringList{first} + ancestorTypes(first)) {
+        bool all = true;
+        for (const auto &i : items)
+            all = all && isKind(i.toObject().value(QStringLiteral("type")).toString(), t);
+        if (all) {
+            common = t;
+            break;
+        }
+    }
+    return common + QStringLiteral("[]");
+}
+
+static QString offerRef(const QJsonObject &o)
+{
+    return o.value(QStringLiteral("app")).toString() + QLatin1Char('/') + o.value(QStringLiteral("action")).toString();
+}
+
+static QStringList stringList(const QJsonValue &v)
+{
+    QStringList out;
+    for (const auto &x : v.toArray()) out << x.toString();
+    return out;
+}
+
+QList<QJsonObject> offers(const QJsonArray &items, const QString &surface, const QList<QJsonObject> &cards,
+                          const QJsonObject &rules, const QJsonObject &prefs)
+{
+    const QString offered = offerInputType(items);
+    if (items.size() > 1 && offered.isEmpty()) return {};
+    const QString kind = baseType(offered); // ranks are per kind: three images rank like one
+    const QStringList hidden = stringList(rules.value(QStringLiteral("hide"))) + stringList(prefs.value(QStringLiteral("hidden")));
+    const QStringList pinned = stringList(prefs.value(QStringLiteral("pinned")));
+    const QJsonObject rename = rules.value(QStringLiteral("rename")).toObject();
+    const QJsonObject boost = rules.value(QStringLiteral("boost")).toObject();
+    const QJsonObject jobs = rules.value(QStringLiteral("jobs")).toObject();
+    QList<QJsonObject> out;
+    QStringList refs;
+    for (const QJsonObject &card : cards) {
+        if (!card.value(QStringLiteral("settings")).toObject().value(QStringLiteral("linkEnabled")).toBool(true)) continue;
+        const QString app = card.value(QStringLiteral("id")).toString();
+        for (const auto &av : card.value(QStringLiteral("actions")).toArray()) {
+            const QJsonObject action = av.toObject();
+            if (!onThisPlatform(action)) continue;
+            const QString id = action.value(QStringLiteral("id")).toString();
+            const QString ref = app + QLatin1Char('/') + id;
+            if (hidden.contains(ref) || refs.contains(ref)) continue;
+            if (!surface.isEmpty() && !actionSurfaces(action).contains(surface)) continue;
+            const QJsonArray accepts = action.value(QStringLiteral("accepts")).toArray();
+            bool takes = false;
+            if (items.isEmpty()) {
+                takes = accepts.isEmpty();
+            } else if (items.size() == 1) {
+                const QJsonObject item = items.first().toObject();
+                QJsonObject c{{QStringLiteral("type"), item.value(QStringLiteral("type"))}};
+                if (item.contains(QStringLiteral("hints"))) c.insert(QStringLiteral("hints"), item.value(QStringLiteral("hints")));
+                takes = acceptsContent(accepts, c);
+            } else {
+                takes = acceptsType(accepts, offered);
+            }
+            if (!takes) continue;
+            int rank = actionRankFor(action, kind);
+            bool boosted = false;
+            int best = 0;
+            const QJsonObject b = boost.value(ref).toObject();
+            for (auto it = b.begin(); it != b.end(); ++it) {
+                if (!typeMatches(it.key(), kind)) continue;
+                best = boosted ? std::max(best, it.value().toInt()) : it.value().toInt();
+                boosted = true;
+            }
+            rank += best;
+            QJsonObject o{{QStringLiteral("app"), app},
+                          {QStringLiteral("action"), id},
+                          {QStringLiteral("title"), rename.value(ref).toString(action.value(QStringLiteral("title")).toString())},
+                          {QStringLiteral("rank"), rank},
+                          {QStringLiteral("enabled"), true}};
+            if (action.value(QStringLiteral("group")).isString()) o.insert(QStringLiteral("group"), action.value(QStringLiteral("group")));
+            const QString job = jobs.value(ref).toString(action.value(QStringLiteral("job")).toString());
+            if (!job.isEmpty()) o.insert(QStringLiteral("job"), job);
+            if (pinned.contains(ref)) o.insert(QStringLiteral("pinned"), true);
+            if (actionIsOneClick(action)) o.insert(QStringLiteral("oneClick"), true);
+            const QJsonValue maxItems = action.value(QStringLiteral("maxItems"));
+            const QJsonValue maxBytes = action.value(QStringLiteral("maxBytes"));
+            bool tooBig = false;
+            if (maxBytes.isDouble())
+                for (const auto &i : items) {
+                    const QJsonValue size = i.toObject().value(QStringLiteral("size"));
+                    tooBig = tooBig || (size.isDouble() && size.toInteger() > maxBytes.toInteger());
+                }
+            if (!action.value(QStringLiteral("available")).toBool(true)) {
+                // Never a broken entry (SPEC §1): an unavailable action shows only as "install what it needs".
+                const QJsonArray needs = action.value(QStringLiteral("requires")).toArray();
+                if (needs.isEmpty() || !needs.first().isString()) continue;
+                o.insert(QStringLiteral("enabled"), false);
+                o.insert(QStringLiteral("install"), needs.first());
+                if (action.value(QStringLiteral("reason")).isString()) o.insert(QStringLiteral("reason"), action.value(QStringLiteral("reason")));
+            } else if (maxItems.isDouble() && maxItems.toDouble() >= 0 && items.size() > maxItems.toInteger()) {
+                const qint64 max = maxItems.toInteger();
+                o.insert(QStringLiteral("enabled"), false);
+                o.insert(QStringLiteral("reason"), QStringLiteral("Takes at most %1 %2").arg(max).arg(max == 1 ? QStringLiteral("item") : QStringLiteral("items")));
+            } else if (tooBig) {
+                o.insert(QStringLiteral("enabled"), false);
+                o.insert(QStringLiteral("reason"), QStringLiteral("Takes files up to %1").arg(formatLimit(maxBytes.toInteger())));
+            }
+            out << o;
+            refs << ref;
+        }
+    }
+    // Two apps doing one job: both show until the user picks a default; then the default leads, the rest are "other".
+    const QJsonObject defaults = prefs.value(QStringLiteral("defaults")).toObject();
+    QStringList seenJobs;
+    for (const QJsonObject &o : std::as_const(out)) {
+        const QString job = o.value(QStringLiteral("job")).toString();
+        if (job.isEmpty() || seenJobs.contains(job)) continue;
+        seenJobs << job;
+        QStringList apps, members;
+        for (const QJsonObject &m : std::as_const(out))
+            if (m.value(QStringLiteral("job")).toString() == job) {
+                apps << m.value(QStringLiteral("app")).toString();
+                members << offerRef(m);
+            }
+        apps.removeDuplicates();
+        if (apps.size() < 2) continue;
+        const QString chosen = members.contains(defaults.value(job).toString()) ? defaults.value(job).toString() : QString();
+        for (QJsonObject &m : out) {
+            if (m.value(QStringLiteral("job")).toString() != job) continue;
+            if (chosen.isEmpty()) {
+                m.insert(QStringLiteral("choose"), true);
+            } else if (offerRef(m) == chosen) {
+                m.insert(QStringLiteral("preferred"), true);
+            } else {
+                m.insert(QStringLiteral("other"), true);
+            }
+        }
+    }
+    std::stable_sort(out.begin(), out.end(), [](const QJsonObject &a, const QJsonObject &b) {
+        const auto key = [](const QJsonObject &o) {
+            return std::make_tuple(!o.value(QStringLiteral("pinned")).toBool(), !o.value(QStringLiteral("enabled")).toBool(),
+                                   o.value(QStringLiteral("other")).toBool(), -o.value(QStringLiteral("rank")).toInt(),
+                                   o.value(QStringLiteral("title")).toString().toLower(), o.value(QStringLiteral("app")).toString(),
+                                   o.value(QStringLiteral("action")).toString());
+        };
+        return key(a) < key(b);
+    });
+    return out;
+}
+
+QJsonObject loadOfferPrefs(const Locations &locations)
+{
+    QFile f(locations.offerPrefsPath());
+    if (!f.open(QIODevice::ReadOnly)) return {};
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    return doc.isObject() ? doc.object() : QJsonObject{};
+}
+
+bool saveOfferPrefs(const Locations &locations, const QJsonObject &prefs)
+{
+    const QString path = locations.offerPrefsPath();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QSaveFile f(path);
+    const QByteArray json = QJsonDocument(prefs).toJson(QJsonDocument::Indented);
+    return f.open(QIODevice::WriteOnly) && f.write(json) == json.size() && f.commit();
 }
 
 bool actionOffered(const QJsonObject &manifest, const QJsonObject &action, const QJsonObject &content)
