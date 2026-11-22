@@ -2,6 +2,17 @@
 
 Detail for `qa-p1/Arcade-catalog` › `dev/v1/PROGRESS.md`. Newest first.
 
+## 2026-11-22 (1.1.0)
+
+**v1.0.15 tagged** on 09d52ee. **1.1.0 prepared**: the first release of "Arcade everywhere" (Arcade-catalog
+`dev/everywhere/PLAN.md`, stage 1). #82 dependencies; #83 full action cards (options form, surfaces, rank, job,
+oneClick, maxItems, requires, output), refined file types with parents and the app list read from the catalog copy;
+#84 offers, the one shared answer to "what can I do with this?"; #85 the `arcade-helper` crate (file manager menus,
+picker, progress window, the browser extension's native messaging bridge) and `client::request_install`. Every new
+card field is optional and a malformed one reads as absent, so 1.0 apps and cards are unaffected (N-1 job). Arcade
+Tools 1.1.0 ships the helper next (stage 2). Tag after CI, Ecosystem e2e (`real_apps=true`) and the desktop harness
+pass on the merge.
+
 ## 2026-11-22 (1.0.15)
 
 **v1.0.14 tagged** on a5a3783. **1.0.15 prepared**: #79 (5bcc6b8), `engines::download_tesseract` runs curl, the

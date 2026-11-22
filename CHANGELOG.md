@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-11-22
+
 ### Added
 - `arcade-helper` (new crate, SPEC §5.6): Arcade's actions in the file manager menus (Linux and Windows; macOS
   through Arcade Tools) and, through native messaging, the browser extension. It runs in the background, owns the
@@ -17,8 +19,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
   for actions missing an engine or app, greyed-out entries over `maxItems`/`maxBytes`, and two apps doing one job both
   shown until the user picks a default. `offers::input_type` (Qt `offerInputType`) names the type of a multi-selection.
   `Catalog::rules`, `Locations::offer_prefs`. Vectors: `spec/vectors/offers.json`.
-
-### Added
 - Cards can describe much more about each action, so other apps, the file manager menus and the browser extension
   can offer it without code of their own (SPEC §3, all optional, ignored by Link 1.0 apps): `options` (the options
   form, in Arcade Box's catalog format: new `form` module with defaults, visibility and value checks), `surfaces`
@@ -43,12 +43,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - File kinds by extension: `.svg`, `.csv`/`.tsv`, `.json`, `.html`, `.md` and e-book files now report their refined
   kind, and subtitle files report `file/subtitle`. When an app moves to Link 1.1, any code of its own that compares
   a kind by name (`kind == "spreadsheet"`) should use `content::is_kind` / `isKind` so `.csv` still counts.
-
-### Security
-- The app template locks `url` 2.5.9 (RUSTSEC-2026-0592: stack overflow in `Url::origin` on nested `blob:` URLs).
-  Link's own crates don't use `url`.
-
-### Changed
 - Release signing moves to `ed25519-dalek` 3, `sha2` 0.11, `blake2` 0.11 and `base64` 0.23. Signatures and keys are
   unchanged: the published Arcade Tools 1.0.2 `manifest.json.sig` still verifies with the release key and a tampered
   copy is still refused, and the secret key's BLAKE2b-256 checksum is byte-identical to the former variable-output
@@ -58,6 +52,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   `actions/upload-artifact` v7, `actions/setup-node` v7, `nix-community/cache-nix-action` v7.
 - egui stays at 0.33: Find and Lens draw with Link's egui design kit, so the three move to a newer egui together
   when those apps adopt Link 1.1.
+
+### Security
+- The app template locks `url` 2.5.9 (RUSTSEC-2026-0592: stack overflow in `Url::origin` on nested `blob:` URLs).
+  Link's own crates don't use `url`.
 
 ## [1.0.15] — 2026-11-22
 
