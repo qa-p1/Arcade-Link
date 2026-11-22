@@ -90,7 +90,7 @@ jobs:
             extra-substituters = https://hyprland.cachix.org
             extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
       - id: nix-cache
-        uses: nix-community/cache-nix-action/restore@v6
+        uses: nix-community/cache-nix-action/restore@v7
         with:
           primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
           restore-prefixes-first-match: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
@@ -135,7 +135,7 @@ jobs:
           echo "HYPRLAND_PROTOCOLS=$(nix eval --raw nixpkgs#hyprland-protocols)/share/hyprland-protocols" >> "$GITHUB_ENV"
       # Saved right after the install, so a failing test still keeps the build.
       - if: steps.nix-cache.outputs.hit-primary-key != 'true'
-        uses: nix-community/cache-nix-action/save@v6
+        uses: nix-community/cache-nix-action/save@v7
         with:
           primary-key: nix-hyprland-${{ runner.os }}-${{ inputs.hyprland }}-2
           gc-max-store-size-linux: 6G
