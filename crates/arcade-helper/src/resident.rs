@@ -496,8 +496,15 @@ impl Handler for ResidentHandler {
         if self.0.store.lock().unwrap_or_else(|e| e.into_inner()).jobs.iter().any(|r| !r.view.finished()) {
             return Err(LinkError::busy());
         }
-        std::thread::spawn(|| {
+        // The endpoint goes first, so whoever asked sees the helper gone at once on every OS.
+        let locations = self.0.locations.clone();
+        std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(100));
+            if let Ok(e) = arcade_link::endpoint::read(&locations, ids::HELPER_ID) {
+                if e.pid == std::process::id() {
+                    arcade_link::endpoint::remove_if_ours(&locations, ids::HELPER_ID, &e.token);
+                }
+            }
             std::process::exit(0);
         });
         Ok(())
