@@ -18,6 +18,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   environment (`childenv::sanitize`). From Arcade Tools' AppImage the system curl loaded Tools' bundled, older
   libnghttp2 and failed with "symbol lookup error", so "Download with Arcade" never worked on a current distribution
   (Tools D37; Tools 1.0.1 works around it until it moves to this Link).
+- The real-fleet e2e (`tools/e2e_artifacts.py`) took an app's package from its five newest successful main runs,
+  and the apps' daily scheduled Nightly runs filled them: Box's and Look's CI packages were never found and every
+  check that needs them failed ("no unexpired … artifact"). Scheduled runs are skipped, like Dependabot's.
 
 ## [1.0.14] — 2026-11-17
 
