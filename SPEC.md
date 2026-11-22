@@ -448,6 +448,38 @@ registry folder: `{defaults:{job:ref}, hidden:[ref], pinned:[ref],
 outputFolder?, askWhere?}`; a malformed file reads as no choices. Vectors:
 `spec/vectors/offers.json`.
 
+### 5.6 The helper
+
+The file manager menus and the browser extension reach apps through one
+small program, `arcade-helper` (crate `crates/arcade-helper`), which Arcade
+Tools installs and starts at login. It is a Link app like any other
+(`arcade.helper`, a card with only internal actions, so it never appears in
+offers): `helper.run`, `helper.jobs`, `helper.cancel`, `helper.answer`,
+`helper.dismiss` and `helper.integrate`, all accepting
+`structured/arcade-helper` on surface `internal`. The running helper owns
+every job, so closing the progress window or the browser never cancels work.
+
+- **Menus:** the helper writes per-user file manager entries (Linux: Open
+  With, Nautilus/Caja scripts, Dolphin, Nemo, Thunar; Windows: a cascading
+  "Arcade" entry under HKCU) for "Arcade…" (the picker) and the user's pins,
+  and rewrites them when cards, the catalog copy or `offers.json` change.
+  macOS gets them from Arcade Tools' bundle (Services). What it wrote is
+  listed in `<registry>/../helper/integrations.json`, so `arcade-helper
+  integrate --remove` takes away exactly that.
+- **Results:** files an action returns are copied, never overwriting
+  (`name (1).ext`), next to the input (file menus) or to the output folder
+  (`outputFolder`, else Downloads; browser), or the user is asked when
+  `askWhere` is set. Clicks on one action within 400 ms run as one job.
+- **Browser:** the extension talks native messaging to host
+  `dev.arcade.helper` (a u32 length in native byte order, then UTF-8 JSON;
+  at most 1 MiB out and 64 MiB in). Only the Arcade extension's ID is let in:
+  the host manifest lists it and the helper checks it again. Requests are
+  `{id, method, params}`, answers `{id, result}` or `{id, error:{code,
+  message}}`; the methods are documented in the crate's `bridge` module.
+- **Installing:** `client::request_install` asks Arcade Tools to install an
+  app (`tools.install`, §11); without Tools the caller opens the app's release
+  page from the catalog.
+
 ## 6. Errors
 
 | Code | Meaning |

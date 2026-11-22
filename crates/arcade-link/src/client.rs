@@ -384,6 +384,18 @@ pub fn adapt_inputs(request: &InvokeRequest, accepts: &[String]) -> Option<Invok
     Some(adapted)
 }
 
+/// Asks Arcade Tools to install `app` (`tools.install`; the user confirms in Tools). Every app and the helper use
+/// this one call for "Install Arcade X" entries. `not_installed` when Tools itself isn't installed: callers then
+/// open the app's release page (`catalog::Catalog::releases_url`).
+pub fn request_install(locations: &Locations, me: &PeerInfo, app: &str) -> Result<(), LinkError> {
+    let registry = crate::registry::Registry::load(locations);
+    let tools = registry.get(crate::manifest::ids::TOOLS).ok_or_else(|| LinkError::new(ErrorCode::NotInstalled, "Arcade Tools isn't installed"))?;
+    let mut request = InvokeRequest::new("tools.install", "install-prompt");
+    request.options = json!({ "app": app });
+    request.inputs = vec![Content::plain(app)];
+    invoke_action(locations, me, tools, &request, CallOptions::default()).map(|_| ())
+}
+
 /// Starts `manifest`'s app in the background and connects once its
 /// endpoint answers (within [`LAUNCH_TIMEOUT`]).
 pub fn launch_and_connect(locations: &Locations, manifest: &Manifest, me: &PeerInfo) -> Result<Client, LinkError> {
