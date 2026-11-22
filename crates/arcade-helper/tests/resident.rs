@@ -110,13 +110,13 @@ fn input(w: &World, name: &str) -> String {
 fn a_menu_click_runs_and_places_the_result_beside_the_input() {
     let w = world("place");
     let a = input(&w, "a.png");
-    std::fs::write(w.root.join("Pictures/a.png.out"), b"keep me").unwrap();
+    std::fs::write(w.root.join("Pictures").join("a.png.out"), b"keep me").unwrap();
     let id = w.resident.queue(RunSpec { reference: "arcade.paint/paint.invert".into(), paths: vec![a], ..RunSpec::default() }).unwrap();
     let job = wait_finished(&w.resident, id);
     assert_eq!(job.status, "done", "{job:?}");
     assert_eq!((job.title.as_str(), job.app.as_str()), ("Invert colors", "arcade.paint"));
-    assert_eq!(job.files, [w.root.join("Pictures/a.png (1).out").to_string_lossy()]);
-    assert_eq!(std::fs::read(w.root.join("Pictures/a.png.out")).unwrap(), b"keep me");
+    assert_eq!(job.files, [w.root.join("Pictures").join("a.png (1).out").to_string_lossy()]);
+    assert_eq!(std::fs::read(w.root.join("Pictures").join("a.png.out")).unwrap(), b"keep me");
     let seen = w.paint.seen.lock().unwrap();
     assert_eq!(seen[0].options, json!({"strength": 5}), "the form's defaults");
     assert_eq!(seen[0].context.source, "file-manager");
