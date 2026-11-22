@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.15] — 2026-11-22
+
 ### Fixed
 - `engines::download_tesseract` runs curl, the downloaded AppImage's unpacking and its version check with the user's
   environment (`childenv::sanitize`). From Arcade Tools' AppImage the system curl loaded Tools' bundled, older
