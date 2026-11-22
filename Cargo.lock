@@ -31,6 +31,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcade-helper"
+version = "1.0.15"
+dependencies = [
+ "arcade-link",
+ "base64",
+ "serde",
+ "serde_json",
+ "sha2",
+ "windows-sys",
+]
+
+[[package]]
 name = "arcade-link"
 version = "1.0.15"
 dependencies = [
