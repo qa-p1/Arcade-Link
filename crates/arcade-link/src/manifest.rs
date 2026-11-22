@@ -1,10 +1,12 @@
 //! App manifests (`<registry>/<arcade-id>.json`, SPEC §3).
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
 
 use crate::content::{self, Content};
+use crate::form::Form;
 use crate::paths::{self, Locations};
 
 pub const MANIFEST_SCHEMA: u32 = 1;
@@ -311,7 +313,93 @@ pub struct Action {
     /// A short grouping label for long lists ("Image", "Pipelines").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    // ---- Link 1.1 (SPEC §3, all optional; a malformed value reads as absent instead of hiding the card) ----
+    /// The options form, so any caller can ask for the options (Box's catalog form format, `form::Form`).
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Option::is_none")]
+    pub options: Option<Form>,
+    /// Where the action makes sense ([`surface`]). Empty: derived from `accepts` ([`Action::surfaces`]).
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Vec::is_empty")]
+    pub surfaces: Vec<String>,
+    /// How strongly the app suggests it, per accepted type pattern (0–100). Replaces `featuredFor`.
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "BTreeMap::is_empty")]
+    pub rank: BTreeMap<String, u8>,
+    /// Search words beyond the title ("join pdf", "combine").
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Vec::is_empty")]
+    pub keywords: Vec<String>,
+    /// A shared name for what the action does (`image.read-text`), so two apps doing the same job are recognized
+    /// as such without a central list: both show until the user picks a default.
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Option::is_none")]
+    pub job: Option<String>,
+    /// Safe to run with the form's defaults straight from a menu. Never true in effect for actions that are
+    /// interactive or overwrite, delete, upload, or run commands ([`Action::is_one_click`]).
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "std::ops::Not::not")]
+    pub one_click: bool,
+    /// The most inputs it takes at once, so callers can grey it out with the reason.
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Option::is_none")]
+    pub max_items: Option<u32>,
+    /// What it needs that may be missing: `engine:<name>` or `app:<arcade-id>`. Callers show "Install …".
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<String>,
+    /// Where results go by default ([`output`]).
+    #[serde(default, deserialize_with = "lenient", skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
 }
+
+/// Reads a Link 1.1 field, or its default when the value has the wrong shape: an app's mistake in an optional field
+/// must not make every reader drop its whole card.
+fn lenient<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(serde_json::from_value(v).unwrap_or_default())
+}
+
+/// Where an action can be offered (SPEC §3, `surfaces`).
+pub mod surface {
+    pub const FILE_MENU: &str = "file-menu";
+    pub const FOLDER_MENU: &str = "folder-menu";
+    pub const BROWSER_IMAGE: &str = "browser-image";
+    pub const BROWSER_LINK: &str = "browser-link";
+    pub const BROWSER_VIDEO: &str = "browser-video";
+    pub const BROWSER_AUDIO: &str = "browser-audio";
+    pub const BROWSER_SELECTION: &str = "browser-selection";
+    pub const BROWSER_PAGE: &str = "browser-page";
+    pub const BROWSER_PDF: &str = "browser-pdf";
+    pub const BROWSER_DOWNLOAD: &str = "browser-download";
+    pub const PALETTE: &str = "palette";
+    pub const SCREEN: &str = "screen";
+    pub const ALL: [&str; 12] = [
+        FILE_MENU,
+        FOLDER_MENU,
+        BROWSER_IMAGE,
+        BROWSER_LINK,
+        BROWSER_VIDEO,
+        BROWSER_AUDIO,
+        BROWSER_SELECTION,
+        BROWSER_PAGE,
+        BROWSER_PDF,
+        BROWSER_DOWNLOAD,
+        PALETTE,
+        SCREEN,
+    ];
+}
+
+/// Where results go by default (SPEC §3, `output`).
+pub mod output {
+    /// Next to the input, never overwriting.
+    pub const BESIDE: &str = "beside";
+    /// The user's (or browser's) downloads folder.
+    pub const DOWNLOADS: &str = "downloads";
+    /// Ask every time.
+    pub const ASK: &str = "ask";
+    /// Nothing is saved; the result is shown or copied.
+    pub const NONE: &str = "none";
+}
+
+/// Effects that rule out running from a menu without a form or confirmation.
+const NOT_ONE_CLICK: [&str; 4] = ["overwrites-files", "deletes-files", "uploads-content", "executes-commands"];
 
 fn one() -> u32 {
     1
@@ -373,6 +461,76 @@ impl Action {
     /// Supported on this OS (an empty list means everywhere).
     pub fn on_this_platform(&self) -> bool {
         self.platforms.is_empty() || self.platforms.iter().any(|p| p == paths::current_platform())
+    }
+
+    /// Where the action can be offered: its `surfaces`, or (when it names none) derived from what it accepts.
+    /// Every action is also listed in searchable palettes.
+    pub fn surfaces(&self) -> Vec<&str> {
+        if !self.surfaces.is_empty() {
+            return self.surfaces.iter().map(String::as_str).collect();
+        }
+        let mut out: Vec<&str> = Vec::new();
+        let mut add = |s: &'static str| {
+            if !out.contains(&s) {
+                out.push(s);
+            }
+        };
+        for a in &self.accepts {
+            let t = a.split(";hint=").next().unwrap_or("").trim().trim_end_matches("[]");
+            match t {
+                "folder/reference" => add(surface::FOLDER_MENU),
+                "text/url" => {
+                    add(surface::BROWSER_LINK);
+                    add(surface::BROWSER_PAGE);
+                }
+                "*" => {
+                    add(surface::FILE_MENU);
+                    add(surface::BROWSER_SELECTION);
+                }
+                t if t.starts_with("text/") => add(surface::BROWSER_SELECTION),
+                t if t.starts_with("file/") => {
+                    add(surface::FILE_MENU);
+                    add(surface::BROWSER_DOWNLOAD);
+                    let browser = |kind: &str| content::type_matches(t, kind) || content::type_matches(kind, t);
+                    if browser("file/image") {
+                        add(surface::BROWSER_IMAGE);
+                    }
+                    if browser("file/video") {
+                        add(surface::BROWSER_VIDEO);
+                    }
+                    if browser("file/audio") {
+                        add(surface::BROWSER_AUDIO);
+                    }
+                    if browser("file/pdf") {
+                        add(surface::BROWSER_PDF);
+                    }
+                }
+                t if t.starts_with("screen/") => add(surface::SCREEN),
+                _ => {}
+            }
+        }
+        add(surface::PALETTE);
+        out
+    }
+
+    /// Offered on `surface`.
+    pub fn on_surface(&self, surface: &str) -> bool {
+        self.surfaces().contains(&surface)
+    }
+
+    /// Safe to run with defaults from a menu: marked `oneClick`, not interactive, and without an effect that needs
+    /// a confirmation (SPEC §1.8).
+    pub fn is_one_click(&self) -> bool {
+        self.one_click && !self.interactive && !self.effects.iter().any(|e| NOT_ONE_CLICK.contains(&e.as_str()))
+    }
+
+    /// How strongly the app suggests the action for a value of type `kind` (0–100): the highest `rank` whose pattern
+    /// takes `kind`; for cards without `rank`, 60 when `featuredFor` takes it, else 0.
+    pub fn rank_for(&self, kind: &str) -> u8 {
+        if self.rank.is_empty() {
+            return if self.featured_for.iter().any(|t| content::type_matches(t, kind)) { 60 } else { 0 };
+        }
+        self.rank.iter().filter(|(t, _)| content::type_matches(t, kind)).map(|(_, r)| (*r).min(100)).max().unwrap_or(0)
     }
 
     /// Shown for `content`: available here, and accepts it. This is the
@@ -509,6 +667,25 @@ mod tests {
         assert_eq!(appimage_for(Path::new("/tmp/.mount_OtherXYZ/usr/bin/x")).as_deref(), Some("/home/u/Other.AppImage"));
         std::env::remove_var("APPIMAGE");
         std::env::remove_var("APPDIR");
+    }
+
+    #[test]
+    fn link_1_1_fields_round_trip_and_stay_out_of_old_cards() {
+        let old = serde_json::json!({"id": "x.a", "title": "A", "accepts": ["file/pdf"]});
+        let a: Action = serde_json::from_value(old).unwrap();
+        let written = serde_json::to_value(&a).unwrap();
+        for key in ["options", "surfaces", "rank", "keywords", "job", "oneClick", "maxItems", "requires", "output"] {
+            assert!(written.get(key).is_none(), "{key} written for a card that doesn't use it");
+        }
+        let new = serde_json::json!({"id": "x.b", "title": "B", "accepts": ["file/image"], "oneClick": true,
+            "options": {"version": 1, "controls": [{"key": "q", "label": "Quality", "type": "number", "default": 80}]},
+            "surfaces": ["file-menu"], "rank": {"file/image": 70}, "keywords": ["shrink"], "job": "image.compress",
+            "maxItems": 10, "requires": ["engine:ffmpeg"], "output": "beside"});
+        let b: Action = serde_json::from_value(new.clone()).unwrap();
+        assert!(b.is_one_click() && b.on_surface(surface::FILE_MENU) && !b.on_surface(surface::BROWSER_IMAGE));
+        assert_eq!(b.options.as_ref().unwrap().defaults().get("q"), Some(&serde_json::json!(80)));
+        let again: Action = serde_json::from_value(serde_json::to_value(&b).unwrap()).unwrap();
+        assert_eq!(serde_json::to_value(&again).unwrap(), serde_json::to_value(&b).unwrap());
     }
 
     #[test]

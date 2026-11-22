@@ -115,6 +115,13 @@ QString standardMessage(const QString &code, const QString &app, const QString &
 
 // ---- Content (SPEC §5) -----------------------------------------------------
 
+// A refined type's broader type (SPEC §5.1: file/csv → file/spreadsheet), or empty.
+QString parentType(const QString &kind);
+QStringList ancestorTypes(const QString &kind);
+bool isKind(const QString &kind, const QString &of);
+// The type to send `offered` as to an action accepting `accepts`: itself if named, else the closest named parent.
+QString typeFor(const QJsonArray &accepts, const QString &offered);
+QJsonObject adaptInputs(const QJsonObject &request, const QJsonArray &accepts);
 bool typeMatches(const QString &accept, const QString &offered);
 bool contentMatches(const QString &accept, const QJsonObject &content);
 bool acceptsContent(const QJsonArray &accepts, const QJsonObject &content);
@@ -147,6 +154,13 @@ QString executablePath();                      // $APPIMAGE or the running binar
 // Shown for this content: link enabled, available, on this OS, accepts it.
 bool actionOffered(const QJsonObject &manifest, const QJsonObject &action, const QJsonObject &content);
 bool actionUsable(const QJsonObject &manifest, const QJsonObject &action);
+// Link 1.1 (SPEC §3). A malformed field reads as absent, as in Rust.
+// Where the action is offered: its `surfaces`, else derived from `accepts` (always with "palette").
+QStringList actionSurfaces(const QJsonObject &action);
+// Marked oneClick, not interactive, and no overwriting, deleting, uploading or command effect.
+bool actionIsOneClick(const QJsonObject &action);
+// 0–100: the highest `rank` whose pattern takes `kind`; without `rank`, 60 when `featuredFor` takes it.
+int actionRankFor(const QJsonObject &action, const QString &kind);
 
 class Registry : public QObject {
     Q_OBJECT

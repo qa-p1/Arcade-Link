@@ -30,6 +30,7 @@ pub mod endpoint;
 #[cfg(feature = "engines")]
 pub mod engines;
 pub mod error;
+pub mod form;
 pub mod handoff;
 #[cfg(feature = "install")]
 pub mod install;

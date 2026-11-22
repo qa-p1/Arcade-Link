@@ -52,6 +52,10 @@ fn content_matching_and_kinds() {
     for case in v["kinds"].as_array().unwrap() {
         assert_eq!(file_kind_for_path(Path::new(case["path"].as_str().unwrap())), case["kind"].as_str().unwrap(), "{case}");
     }
+    for case in v["sendAs"].as_array().unwrap() {
+        let accepts: Vec<String> = serde_json::from_value(case["accepts"].clone()).unwrap();
+        assert_eq!(arcade_link::content::type_for(&accepts, case["offered"].as_str().unwrap()), case["send"].as_str().unwrap(), "{case}");
+    }
 }
 
 #[test]
@@ -96,5 +100,29 @@ fn accelerators() {
     }
     for pair in v["different"].as_array().unwrap() {
         assert_ne!(normalize_accelerator(pair[0].as_str().unwrap()), normalize_accelerator(pair[1].as_str().unwrap()), "{pair}");
+    }
+}
+
+#[test]
+fn actions() {
+    let v = load("actions.json");
+    for case in v["actions"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let action: arcade_link::manifest::Action = serde_json::from_value(case["action"].clone()).unwrap_or_else(|e| panic!("{name}: {e}"));
+        if let Some(want) = case["surfaces"].as_array() {
+            let mut want: Vec<&str> = want.iter().map(|s| s.as_str().unwrap()).collect();
+            let mut got = action.surfaces();
+            want.sort_unstable();
+            got.sort_unstable();
+            assert_eq!(got, want, "{name}");
+        }
+        if let Some(want) = case["oneClick"].as_bool() {
+            assert_eq!(action.is_one_click(), want, "{name}");
+        }
+        if let Some(rank) = case["rank"].as_object() {
+            for (kind, want) in rank {
+                assert_eq!(u64::from(action.rank_for(kind)), want.as_u64().unwrap(), "{name}: {kind}");
+            }
+        }
     }
 }

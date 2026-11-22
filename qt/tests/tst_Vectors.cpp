@@ -76,6 +76,33 @@ private slots:
             const QJsonObject o = c.toObject();
             QCOMPARE(fileKindForPath(o.value(QStringLiteral("path")).toString()), o.value(QStringLiteral("kind")).toString());
         }
+        for (const auto &c : v.value(QStringLiteral("sendAs")).toArray()) {
+            const QJsonObject o = c.toObject();
+            QCOMPARE(typeFor(o.value(QStringLiteral("accepts")).toArray(), o.value(QStringLiteral("offered")).toString()),
+                     o.value(QStringLiteral("send")).toString());
+        }
+    }
+
+    void actions()
+    {
+        const QJsonObject v = load(QStringLiteral("actions.json"));
+        for (const auto &c : v.value(QStringLiteral("actions")).toArray()) {
+            const QJsonObject o = c.toObject();
+            const QByteArray name = o.value(QStringLiteral("name")).toString().toUtf8();
+            const QJsonObject action = o.value(QStringLiteral("action")).toObject();
+            if (o.contains(QStringLiteral("surfaces"))) {
+                QStringList want, got = actionSurfaces(action);
+                for (const auto &s : o.value(QStringLiteral("surfaces")).toArray()) want << s.toString();
+                want.sort();
+                got.sort();
+                QVERIFY2(got == want, name.constData());
+            }
+            if (o.contains(QStringLiteral("oneClick")))
+                QVERIFY2(actionIsOneClick(action) == o.value(QStringLiteral("oneClick")).toBool(), name.constData());
+            const QJsonObject rank = o.value(QStringLiteral("rank")).toObject();
+            for (auto it = rank.begin(); it != rank.end(); ++it)
+                QVERIFY2(actionRankFor(action, it.key()) == it.value().toInt(), (name + ": " + it.key().toUtf8()).constData());
+        }
     }
 
     void errors()

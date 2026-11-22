@@ -347,6 +347,9 @@ pub fn invoke_action(
     if !action.available {
         return Err(LinkError::unavailable(action.reason.clone().unwrap_or_default()));
     }
+    // Send each input as a type the target's card names (a `.csv` goes to an older app as `file/spreadsheet`).
+    let adapted = adapt_inputs(request, &action.accepts);
+    let request = adapted.as_ref().unwrap_or(request);
     let mut noop = |_: &JobProgress| {};
     let on_progress: &mut dyn FnMut(&JobProgress) = match opts.on_progress.take() {
         Some(f) => f,
@@ -365,6 +368,20 @@ pub fn invoke_action(
     }
     let mut c = launch_and_connect(locations, manifest, me)?;
     c.invoke(request, on_progress, opts.cancel)
+}
+
+/// `request` with every input's type replaced by the type `accepts` names for it (`content::type_for`), or `None`
+/// when nothing changes.
+pub fn adapt_inputs(request: &InvokeRequest, accepts: &[String]) -> Option<InvokeRequest> {
+    let types: Vec<String> = request.inputs.iter().map(|c| crate::content::type_for(accepts, &c.kind)).collect();
+    if types.iter().zip(&request.inputs).all(|(t, c)| *t == c.kind) {
+        return None;
+    }
+    let mut adapted = request.clone();
+    for (c, t) in adapted.inputs.iter_mut().zip(types) {
+        c.kind = t;
+    }
+    Some(adapted)
 }
 
 /// Starts `manifest`'s app in the background and connects once its

@@ -371,6 +371,31 @@ static QPair<QString, QString> splitHint(const QString &accept)
     return {accept.left(i).trimmed(), accept.mid(i + 6).trimmed()};
 }
 
+QString parentType(const QString &kind)
+{
+    static const QHash<QString, QString> parents{
+        {QStringLiteral("file/csv"), QStringLiteral("file/spreadsheet")},
+        {QStringLiteral("file/json"), QStringLiteral("file/code")},
+        {QStringLiteral("file/html"), QStringLiteral("file/code")},
+        {QStringLiteral("file/svg"), QStringLiteral("file/image")},
+        {QStringLiteral("file/ebook"), QStringLiteral("file/document")},
+        {QStringLiteral("file/markdown"), QStringLiteral("file/text")},
+        {QStringLiteral("text/markdown"), QStringLiteral("text/plain")},
+    };
+    const QString parent = parents.value(baseType(kind));
+    if (parent.isEmpty()) return {};
+    return kind.endsWith(QStringLiteral("[]")) ? parent + QStringLiteral("[]") : parent;
+}
+
+QStringList ancestorTypes(const QString &kind)
+{
+    QStringList out;
+    for (QString k = parentType(kind); !k.isEmpty(); k = parentType(k)) out << k;
+    return out;
+}
+
+bool isKind(const QString &kind, const QString &of) { return kind == of || ancestorTypes(kind).contains(of); }
+
 bool typeMatches(const QString &acceptIn, const QString &offered)
 {
     const QString accept = splitHint(acceptIn).first;
@@ -383,8 +408,8 @@ bool typeMatches(const QString &acceptIn, const QString &offered)
     const QString af = a.section(QLatin1Char('/'), 0, 0), of = o.section(QLatin1Char('/'), 0, 0);
     if (af != of) return false;
     const QString as = a.section(QLatin1Char('/'), 1), os = o.section(QLatin1Char('/'), 1);
-    if (af == u"text") return as == u"*" || (as == u"plain" && (os == u"url" || os == u"rich"));
-    if (af == u"file") return as == u"*" || as == u"any";
+    if (af == u"text") return as == u"*" || (as == u"plain" && (os == u"url" || os == u"rich" || os == u"markdown"));
+    if (af == u"file") return as == u"*" || as == u"any" || ancestorTypes(o).contains(a);
     if (af == u"structured" || af == u"screen") return as == u"*";
     return false;
 }
@@ -410,6 +435,42 @@ bool acceptsType(const QJsonArray &accepts, const QString &offered)
     return false;
 }
 
+QString typeFor(const QJsonArray &accepts, const QString &offered)
+{
+    // A pattern names `t` when it is `t` (or its array form), or a wildcard that takes it.
+    const auto named = [&accepts](const QString &t) {
+        for (const auto &v : accepts) {
+            const QString a = splitHint(v.toString()).first;
+            const QString sub = baseType(a).section(QLatin1Char('/'), 1);
+            if (a == u"*" || ((baseType(a) == baseType(t) || sub == u"*" || sub == u"any") && typeMatches(a, t))) return true;
+        }
+        return false;
+    };
+    if (named(offered)) return offered;
+    for (const QString &t : ancestorTypes(offered))
+        if (named(t)) return t;
+    return offered;
+}
+
+QJsonObject adaptInputs(const QJsonObject &request, const QJsonArray &accepts)
+{
+    QJsonArray inputs = request.value(QStringLiteral("inputs")).toArray();
+    bool changed = false;
+    for (qsizetype i = 0; i < inputs.size(); ++i) {
+        QJsonObject c = inputs.at(i).toObject();
+        const QString t = c.value(QStringLiteral("type")).toString();
+        const QString sent = typeFor(accepts, t);
+        if (sent == t) continue;
+        c.insert(QStringLiteral("type"), sent);
+        inputs.replace(i, c);
+        changed = true;
+    }
+    if (!changed) return request;
+    QJsonObject out = request;
+    out.insert(QStringLiteral("inputs"), inputs);
+    return out;
+}
+
 QString fileKindForPath(const QString &path)
 {
     static const QHash<QString, QString> kinds = [] {
@@ -417,18 +478,25 @@ QString fileKindForPath(const QString &path)
         const auto add = [&h](const char *kind, std::initializer_list<const char *> exts) {
             for (const char *e : exts) h.insert(QString::fromLatin1(e), QString::fromLatin1(kind));
         };
+        add("svg", {"svg", "svgz"});
+        add("csv", {"csv", "tsv"});
+        add("json", {"json", "jsonl", "ndjson", "geojson"});
+        add("html", {"html", "htm", "xhtml"});
+        add("markdown", {"md", "markdown", "mdown", "mkd"});
+        add("ebook", {"epub", "mobi", "azw3", "fb2", "djvu"});
+        add("subtitle", {"srt", "vtt", "ass", "ssa", "sub", "sbv", "lrc"});
         add("image", {"png", "jpg", "jpeg", "jpe", "jfif", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif", "ico",
-                      "svg", "jxl", "tga", "qoi", "psd", "raw", "cr2", "nef", "dng", "arw", "exr", "hdr"});
+                      "jxl", "tga", "qoi", "psd", "raw", "cr2", "nef", "dng", "arw", "exr", "hdr"});
         add("video", {"mp4", "mkv", "mov", "webm", "avi", "m4v", "wmv", "flv", "mpg", "mpeg", "3gp", "ogv"});
         add("audio", {"mp3", "wav", "flac", "ogg", "oga", "opus", "m4a", "aac", "wma", "aiff", "aif", "alac", "mid", "midi"});
         add("pdf", {"pdf"});
-        add("document", {"doc", "docx", "odt", "rtf", "pages", "epub"});
-        add("spreadsheet", {"xls", "xlsx", "ods", "csv", "tsv", "numbers"});
+        add("document", {"doc", "docx", "odt", "rtf", "pages"});
+        add("spreadsheet", {"xls", "xlsx", "ods", "numbers"});
         add("presentation", {"ppt", "pptx", "odp", "key"});
         add("archive", {"zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar", "zst", "lz", "lzma", "cab", "iso"});
-        add("text", {"txt", "md", "markdown", "log", "ini", "cfg", "conf", "nfo"});
+        add("text", {"txt", "log", "ini", "cfg", "conf", "nfo"});
         add("code", {"rs", "c", "h", "cpp", "hpp", "cc", "py", "js", "mjs", "ts", "tsx", "jsx", "java", "kt", "go", "rb", "php",
-                     "swift", "cs", "sh", "bash", "zsh", "fish", "ps1", "json", "yaml", "yml", "toml", "xml", "html", "htm",
+                     "swift", "cs", "sh", "bash", "zsh", "fish", "ps1", "yaml", "yml", "toml", "xml",
                      "css", "scss", "sql", "lua", "dart", "qml", "vue", "svelte"});
         add("font", {"ttf", "otf", "woff", "woff2", "ttc"});
         add("model", {"obj", "stl", "gltf", "glb", "fbx", "3mf", "dae", "ply"});
@@ -616,6 +684,83 @@ bool actionUsable(const QJsonObject &manifest, const QJsonObject &action)
 {
     const bool enabled = manifest.value(QStringLiteral("settings")).toObject().value(QStringLiteral("linkEnabled")).toBool(true);
     return enabled && action.value(QStringLiteral("available")).toBool(true) && onThisPlatform(action);
+}
+
+QStringList actionSurfaces(const QJsonObject &action)
+{
+    QStringList named;
+    const QJsonValue own = action.value(QStringLiteral("surfaces"));
+    if (own.isArray()) {
+        for (const auto &v : own.toArray()) {
+            if (!v.isString()) {
+                named.clear();
+                break;
+            }
+            named << v.toString();
+        }
+    }
+    if (!named.isEmpty()) return named;
+    QStringList out;
+    const auto add = [&out](const char *s) {
+        const QString surface = QString::fromLatin1(s);
+        if (!out.contains(surface)) out << surface;
+    };
+    for (const auto &v : action.value(QStringLiteral("accepts")).toArray()) {
+        const QString t = baseType(splitHint(v.toString()).first);
+        if (t == u"folder/reference") {
+            add("folder-menu");
+        } else if (t == u"text/url") {
+            add("browser-link");
+            add("browser-page");
+        } else if (t == u"*") {
+            add("file-menu");
+            add("browser-selection");
+        } else if (t.startsWith(QStringLiteral("text/"))) {
+            add("browser-selection");
+        } else if (t.startsWith(QStringLiteral("file/"))) {
+            add("file-menu");
+            add("browser-download");
+            const auto browser = [&t](const QString &kind) { return typeMatches(t, kind) || typeMatches(kind, t); };
+            if (browser(QStringLiteral("file/image"))) add("browser-image");
+            if (browser(QStringLiteral("file/video"))) add("browser-video");
+            if (browser(QStringLiteral("file/audio"))) add("browser-audio");
+            if (browser(QStringLiteral("file/pdf"))) add("browser-pdf");
+        } else if (t.startsWith(QStringLiteral("screen/"))) {
+            add("screen");
+        }
+    }
+    add("palette");
+    return out;
+}
+
+bool actionIsOneClick(const QJsonObject &action)
+{
+    if (action.value(QStringLiteral("oneClick")).toBool(false) != true || action.value(QStringLiteral("interactive")).toBool())
+        return false;
+    static const QStringList blocked{QStringLiteral("overwrites-files"), QStringLiteral("deletes-files"),
+                                     QStringLiteral("uploads-content"), QStringLiteral("executes-commands")};
+    for (const auto &e : action.value(QStringLiteral("effects")).toArray())
+        if (blocked.contains(e.toString())) return false;
+    return true;
+}
+
+int actionRankFor(const QJsonObject &action, const QString &kind)
+{
+    // Like Rust's u8: every value a whole number from 0 to 255, or the whole map reads as absent.
+    const QJsonValue rankValue = action.value(QStringLiteral("rank"));
+    QJsonObject rank = rankValue.isObject() ? rankValue.toObject() : QJsonObject{};
+    for (auto it = rank.begin(); it != rank.end(); ++it) {
+        const double r = it.value().toDouble(-1);
+        if (!it.value().isDouble() || r < 0 || r > 255 || r != std::floor(r)) {
+            rank = {};
+            break;
+        }
+    }
+    if (rank.isEmpty()) return acceptsType(action.value(QStringLiteral("featuredFor")).toArray(), kind) ? 60 : 0;
+    int best = 0;
+    for (auto it = rank.begin(); it != rank.end(); ++it)
+        if (typeMatches(it.key(), kind)) best = std::max(best, std::min(100, it.value().toInt()));
+    return best;
 }
 
 bool actionOffered(const QJsonObject &manifest, const QJsonObject &action, const QJsonObject &content)
@@ -1461,10 +1606,12 @@ bool invokeAction(const Locations &locations, const QString &myId, const QString
         if (error) *error = Error::make(QStringLiteral("unavailable"), reason, reason);
         return false;
     }
-    if (auto c = Client::connect(locations, appId, myId, myVersion)) return c->invoke(request, result, error, progress, cancel);
+    // Send each input as a type the target's card names (a `.csv` goes to an older app as `file/spreadsheet`).
+    const QJsonObject adapted = adaptInputs(request, action.value(QStringLiteral("accepts")).toArray());
+    if (auto c = Client::connect(locations, appId, myId, myVersion)) return c->invoke(adapted, result, error, progress, cancel);
     const QJsonValue invokeArgs = manifest.value(QStringLiteral("launch")).toObject().value(QStringLiteral("invoke"));
     if (!action.value(QStringLiteral("interactive")).toBool() && invokeArgs.isArray())
-        return runOneShot(manifest, request, result, error, progress, cancel);
+        return runOneShot(manifest, adapted, result, error, progress, cancel);
     const QString exe = manifest.value(QStringLiteral("executable")).toString();
     if (!QFileInfo(exe).isFile()) {
         if (error) *error = Error::make(QStringLiteral("not_installed"), QStringLiteral("%1 is not installed").arg(name));
@@ -1486,7 +1633,7 @@ bool invokeAction(const Locations &locations, const QString &myId, const QString
     t.start();
     // A bounded wait during a user-initiated launch (not idle polling).
     while (t.elapsed() < LaunchTimeoutMs) {
-        if (auto c = Client::connect(locations, appId, myId, myVersion)) return c->invoke(request, result, error, progress, cancel);
+        if (auto c = Client::connect(locations, appId, myId, myVersion)) return c->invoke(adapted, result, error, progress, cancel);
         QThread::msleep(20);
     }
     if (error) *error = Error::make(QStringLiteral("launch_failed"), QStringLiteral("%1 did not start in time").arg(name));

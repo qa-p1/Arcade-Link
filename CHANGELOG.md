@@ -5,6 +5,27 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Cards can describe much more about each action, so other apps, the file manager menus and the browser extension
+  can offer it without code of their own (SPEC §3, all optional, ignored by Link 1.0 apps): `options` (the options
+  form, in Arcade Box's catalog format: new `form` module with defaults, visibility and value checks), `surfaces`
+  (where it makes sense: file menu, browser image, selection, …; derived from `accepts` when absent), `rank`
+  (supersedes `featuredFor`), `keywords`, `job` (recognizes two apps doing the same job), `oneClick`, `maxItems`,
+  `requires` and `output`. A malformed value in one of these reads as absent instead of hiding the whole card.
+  Rust: `Action::surfaces`, `on_surface`, `is_one_click`, `rank_for`; Qt: `actionSurfaces`, `actionIsOneClick`,
+  `actionRankFor`. New vectors: `spec/vectors/actions.json`.
+- Refined content types (SPEC §5.1): `file/svg`, `file/csv`, `file/json`, `file/html`, `file/markdown`,
+  `file/ebook` and `text/markdown`, each also its broader type (`file/csv` is a `file/spreadsheet`), plus the new
+  `file/subtitle` (srt, vtt, ass, …, formerly `file/any`). `content::parent_type`, `is_kind`, `type_for`; Qt
+  `parentType`, `ancestorTypes`, `isKind`, `typeFor`, `adaptInputs`.
+
+### Changed
+- `invoke_action` (Rust and Qt) sends each input as the type the target's card names: a `.csv` reaches an app that
+  only knows `file/spreadsheet` as `file/spreadsheet` (SPEC §5.2), so older apps never see a type they don't know.
+- File kinds by extension: `.svg`, `.csv`/`.tsv`, `.json`, `.html`, `.md` and e-book files now report their refined
+  kind, and subtitle files report `file/subtitle`. When an app moves to Link 1.1, any code of its own that compares
+  a kind by name (`kind == "spreadsheet"`) should use `content::is_kind` / `isKind` so `.csv` still counts.
+
 ### Security
 - The app template locks `url` 2.5.9 (RUSTSEC-2026-0592: stack overflow in `Url::origin` on nested `blob:` URLs).
   Link's own crates don't use `url`.
