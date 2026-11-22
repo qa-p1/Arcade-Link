@@ -1094,6 +1094,12 @@ def helper_offers_and_runs_real_apps_from_the_file_menu(s):
     offered = {o['app'] for o in offers}
     assert set(apps) <= offered, f'offers for a PNG come from {sorted(offered)}'
     assert all(o['app'] != 'arcade.helper' for o in offers), 'the helper never offers its own actions'
+    # Box converts pictures with libvips (the runner has it, as a user has it from Tools' Engines page or their
+    # distribution); Box finds it shortly after starting.
+    def convert_ready():
+        actions = json.loads(s.cli('describe', 'box', '--json', check=True).stdout)
+        return any(a['id'] == 'box:arcade.image.convert#webp' and a.get('available', True) for a in actions)
+    wait(convert_ready, "Box's image provider did not become available", timeout=30, interval=.2)
     # A result is placed next to the picture and never replaces a file already there.
     (pictures / 'holiday photo.webp').write_bytes(b'mine')
     job = _helper_job(s, 'arcade.box/box:arcade.image.convert#webp', png)
