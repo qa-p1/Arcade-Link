@@ -491,7 +491,11 @@ impl Handler for ResidentHandler {
         json!({"mode": "background", "jobs": store.jobs.iter().filter(|r| !r.view.finished()).count()})
     }
 
+    /// Arcade Tools quits the helper before replacing it; never while a job would be lost.
     fn quit(&self) -> Result<(), LinkError> {
+        if self.0.store.lock().unwrap_or_else(|e| e.into_inner()).jobs.iter().any(|r| !r.view.finished()) {
+            return Err(LinkError::busy());
+        }
         std::thread::spawn(|| {
             std::thread::sleep(Duration::from_millis(100));
             std::process::exit(0);

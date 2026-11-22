@@ -32,11 +32,17 @@ const HELP: &str = "arcade-helper: Arcade's actions in your file manager and bro
   arcade-helper --version";
 
 fn exe() -> PathBuf {
-    // An AppImage runs from a temporary mount: menus must call the AppImage itself.
-    std::env::var_os("APPIMAGE")
-        .map(PathBuf::from)
-        .filter(|p| p.is_file())
-        .or_else(|| std::env::current_exe().ok())
+    // A helper inside an AppImage runs from a temporary mount: menus must call the AppImage itself. Only then:
+    // Arcade Tools' AppImage starts the installed copy with its own APPIMAGE and APPDIR in the environment.
+    let current = std::env::current_exe().ok();
+    let in_appimage = match (std::env::var_os("APPDIR"), &current) {
+        (Some(dir), Some(exe)) => !dir.is_empty() && exe.starts_with(&dir),
+        _ => false,
+    };
+    in_appimage
+        .then(|| std::env::var_os("APPIMAGE").map(PathBuf::from).filter(|p| p.is_file()))
+        .flatten()
+        .or(current)
         .unwrap_or_else(|| PathBuf::from("arcade-helper"))
 }
 
