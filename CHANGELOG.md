@@ -21,6 +21,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The real-fleet e2e (`tools/e2e_artifacts.py`) took an app's package from its five newest successful main runs,
   and the apps' daily scheduled Nightly runs filled them: Box's and Look's CI packages were never found and every
   check that needs them failed ("no unexpired … artifact"). Scheduled runs are skipped, like Dependabot's.
+- The real-fleet check `disabling_link_in_find_keeps_its_own_icon` asked Find for `--status` while the Find it had
+  just started was still unpacking itself (the harness runs AppImages with `APPIMAGE_EXTRACT_AND_RUN`, one folder per
+  AppImage). On a cold runner the second unpack broke the first and Find exited 126, so the check failed whenever it
+  was Find's first start in the job. It now waits, with a start's 20 s, until Find runs from the unpacked folder.
 
 ## [1.0.14] — 2026-11-17
 
