@@ -133,6 +133,16 @@ class HubHarnessTests(unittest.TestCase):
         self.assertEqual(chosen[0]['databaseId'], 19)
         self.assertIn('actions/runs/19/artifacts', ' '.join(command.call_args_list[1].args[0]))
 
+    def test_scheduled_nightly_runs_do_not_hide_the_packaging_run(self):
+        # Box and Look main, 2026-11-22: five daily Nightly runs were the newest successful runs.
+        runs = [{'databaseId': 30 + n, 'event': 'schedule'} for n in range(5)] + [{'databaseId': 29, 'event': 'push'}]
+        responses = [json.dumps(runs), json.dumps([{'artifacts': [{'name': 'arcade-look-linux-x86_64', 'expired': False}]}])]
+        with patch.object(e2e_artifacts, 'command', side_effect=responses) as command:
+            _, chosen = e2e_artifacts.select(e2e.FLEET['arcade.look'])
+        self.assertIsNotNone(chosen)
+        self.assertEqual(chosen[0]['databaseId'], 29)
+        self.assertIn('actions/runs/29/artifacts', ' '.join(command.call_args_list[1].args[0]))
+
     def test_link_off_edits_current_profiles_without_recreating_legacy_files(self):
         with patch.object(e2e, 'CHECKS', {}):
             e2e.load_check_modules(real_apps=True)

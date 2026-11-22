@@ -399,6 +399,16 @@ def hosted_real_apps_remove_their_status_notifier_items(s):
         watcher.close()
 
 
+def executables():
+    """This user's processes' executables."""
+    found = []
+    for entry in Path('/proc').iterdir():
+        if entry.name.isdigit():
+            with contextlib.suppress(OSError):
+                found.append(os.readlink(entry / 'exe'))
+    return found
+
+
 @check('trayhost')
 def disabling_link_in_find_keeps_its_own_icon(s):
     s.kill('arcade.find')
@@ -410,11 +420,21 @@ def disabling_link_in_find_keeps_its_own_icon(s):
     s.start('arcade.tools')
     s.start('arcade.find', wait=False)
     executable = binary('arcade.find')
+    process = s.procs['arcade.find']
+    def started():
+        # The harness runs AppImages with APPIMAGE_EXTRACT_AND_RUN, which unpacks into one folder per AppImage (under
+        # the session's TMPDIR). A `--status` run while the starting Find is still unpacking unpacks into the same
+        # folder and breaks it: on a cold runner, where this was Find's first start in the job, Find exited 126
+        # (2026-11-22). Ask only once Find runs from the unpacked folder.
+        assert process.poll() is None, f'Find exited ({process.returncode}); log:\n{s.log("arcade.find")}'
+        return any('/appimage_extracted_' in exe and exe.endswith('/usr/bin/arcade-find') for exe in executables())
     def own():
         result = run_app(s, executable, '--status', check=False)
         return json.loads(result.stdout) if result.returncode == 0 else None
+    # Link is off, so `s.start` can't wait for its endpoint; this is Find's start, with a start's 20 s (`wait_running`).
+    wait(started, lambda: f'Find did not start; log:\n{s.log("arcade.find")}', timeout=20)
     status = wait(lambda: (value if value and value.get('tray') == 'own' else None) if (value := own()) is not None else None,
-                  lambda: f'Find with Link disabled did not report own tray: {own()}', timeout=5)
+                  lambda: f'Find with Link disabled did not report own tray: {own()}; log:\n{s.log("arcade.find")}', timeout=5)
     # The earlier SIGKILL may leave a stale endpoint file; no live process
     # (least of all this Find) may own it while Link is disabled.
     if s.endpoint('arcade.find').exists():

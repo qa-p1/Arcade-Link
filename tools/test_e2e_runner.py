@@ -27,11 +27,13 @@ class RunnerGuards(unittest.TestCase):
     def test_profile_and_desktop_environment_are_replaced(self):
         with patch.dict(os.environ, {'HOME': '/real-home', 'WAYLAND_DISPLAY': 'real-wayland',
                                     'HYPRLAND_INSTANCE_SIGNATURE': 'real-hypr', 'DISPLAY': ':0',
-                                    'DBUS_SESSION_BUS_ADDRESS': 'real-bus', 'APPIMAGE': '/real-app'}):
+                                    'DBUS_SESSION_BUS_ADDRESS': 'real-bus', 'APPIMAGE': '/real-app', 'TMPDIR': '/tmp'}):
             env = e2e.isolated_env(self.root)
         self.assertEqual(env['HOME'], str(self.root / 'home'))
-        for key in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR', 'ARCADE_HOME'):
-            self.assertTrue(Path(env[key]).is_relative_to(self.root))
+        # TMPDIR too: AppImages unpack there, and a folder shared with another session breaks both (exit 126/127).
+        for key in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR', 'ARCADE_HOME', 'TMPDIR'):
+            self.assertTrue(Path(env[key]).is_relative_to(self.root), key)
+        self.assertTrue(Path(env['TMPDIR']).is_dir())
         for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE', 'DISPLAY', 'DBUS_SESSION_BUS_ADDRESS', 'APPIMAGE'):
             self.assertNotIn(key, env)
 
