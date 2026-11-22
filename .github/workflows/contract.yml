@@ -23,7 +23,7 @@ jobs:
           - { app: shelf, repo: Arcade-Shelf }
           - { app: wheel, repo: Arcade-wheel }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Session tools
         timeout-minutes: 8
         run: |
