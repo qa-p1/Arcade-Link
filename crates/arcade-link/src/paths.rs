@@ -127,6 +127,15 @@ impl Locations {
     pub fn endpoint(&self, app_id: &str) -> PathBuf {
         self.runtime.join(format!("{app_id}.endpoint"))
     }
+
+    /// The shared copy of the app list (`catalog.json`), next to the registry folder so registry watchers never
+    /// read it as an app's card.
+    pub fn catalog(&self) -> PathBuf {
+        match self.registry.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent.join("catalog.json"),
+            _ => self.registry.join("..").join("catalog.json"),
+        }
+    }
 }
 
 /// "linux", "windows" or "macos": the names used in manifests' `platforms`.

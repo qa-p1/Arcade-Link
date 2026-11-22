@@ -180,6 +180,23 @@ Rules:
   `QFileSystemWatcher`) or on demand, off the UI thread. Opening a menu that
   shows peer entries does no disk or IPC work.
 
+### 3.1 The shared app list
+
+Arcade Tools stores the `catalog.json` it downloads from Arcade-catalog next to
+the registry folder (`<registry>/../catalog.json`; never inside it, so it is
+never read as a card), replacing it atomically and only with a document that
+has an `apps` array with at least one app. Every app reads that copy for
+other apps' display name (`name`), one-line `tagline`, release page (`repo`,
+`owner/name` on GitHub) and the "what these two do together" sentence
+(`pairs: {peer-id: sentence}`). Arcade Tools' own entry is the top-level
+`tools` object. The Connected apps page lists the apps the catalog lists
+(never Arcade Tools): the ones Link knows in their usual order, then the others
+in catalog order. A catalog entry with the wrong shape,
+or an id that isn't `arcade.<name>`, is skipped. Without a readable copy, the
+values compiled into Link apply, so each app still works alone. A new Arcade
+app therefore needs its card and a catalog entry, not a Link release. Vectors:
+`spec/vectors/catalog.json`.
+
 ## 4. Transport and wire protocol
 
 ### 4.1 Endpoint

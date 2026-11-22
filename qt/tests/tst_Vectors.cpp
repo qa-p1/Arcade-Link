@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QtTest>
+#include <QTemporaryDir>
 
 #ifndef ARCADE_LINK_VECTORS
 #define ARCADE_LINK_VECTORS "spec/vectors"
@@ -103,6 +104,42 @@ private slots:
             for (auto it = rank.begin(); it != rank.end(); ++it)
                 QVERIFY2(actionRankFor(action, it.key()) == it.value().toInt(), (name + ": " + it.key().toUtf8()).constData());
         }
+    }
+
+    void catalog()
+    {
+        const QJsonObject v = load(QStringLiteral("catalog.json"));
+        const auto check = [](const Catalog &c, const QJsonObject &o) {
+            const auto s = [&o](const char *k) { return o.value(QLatin1String(k)).toString(); };
+            const QString fn = s("fn");
+            QJsonValue got;
+            if (fn == u"name") got = c.name(s("id"));
+            else if (fn == u"tagline") got = c.tagline(s("id"));
+            else if (fn == u"releasesUrl") got = c.releasesUrl(s("id"));
+            else if (fn == u"pair") got = c.pair(s("app"), s("peer"));
+            else if (fn == u"appIds") got = QJsonArray::fromStringList(c.appIds());
+            QVERIFY2(got == o.value(QStringLiteral("expect")), qPrintable(QJsonDocument(o).toJson(QJsonDocument::Compact)));
+        };
+        bool ok = false;
+        const Catalog c = Catalog::parse(QJsonDocument(v.value(QStringLiteral("catalog")).toObject()).toJson(), &ok);
+        QVERIFY(ok);
+        for (const auto &l : v.value(QStringLiteral("lookups")).toArray()) check(c, l.toObject());
+        for (const auto &l : v.value(QStringLiteral("fallback")).toArray()) check(Catalog{}, l.toObject());
+    }
+
+    void sharedCatalogCopy()
+    {
+        QTemporaryDir dir;
+        const Locations loc = Locations::under(dir.path());
+        QCOMPARE(Catalog::load(loc).name(QStringLiteral("arcade.box")), QStringLiteral("Arcade Box"));
+        QVERIFY(!writeSharedCatalog(loc, "{\"apps\": []}"));
+        QVERIFY(!writeSharedCatalog(loc, "not json"));
+        const QByteArray text = R"({"apps": [{"id": "arcade.paint", "name": "Arcade Paint", "repo": "qa-p1/Arcade-paint"}]})";
+        bool changed = false;
+        QVERIFY(writeSharedCatalog(loc, text, &changed) && changed);
+        QVERIFY(writeSharedCatalog(loc, text, &changed) && !changed);
+        QVERIFY(!QFileInfo(loc.catalogPath()).absolutePath().startsWith(QFileInfo(loc.registry).absoluteFilePath()));
+        QCOMPARE(Catalog::load(loc).name(QStringLiteral("arcade.paint")), QStringLiteral("Arcade Paint"));
     }
 
     void errors()

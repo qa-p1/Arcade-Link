@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QMutex>
 #include <QProcess>
 #include <QRandomGenerator>
 #include <QSaveFile>
@@ -74,6 +75,27 @@ QString osIdentifier(const QString &id)
     return name.startsWith(QStringLiteral("Arcade ")) ? QStringLiteral("dev.arcade.") + name.mid(7) : QString();
 }
 
+QString peerDescription(const QString &app, const QString &peer)
+{
+    static const QHash<QString, QString> pairs{
+        {QStringLiteral("arcade.find>arcade.box"), QStringLiteral("Run tools on files from your search.")},
+        {QStringLiteral("arcade.find>arcade.lens"), QStringLiteral("Search for files from a screen selection.")},
+        {QStringLiteral("arcade.find>arcade.look"), QStringLiteral("Preview files from your search.")},
+        {QStringLiteral("arcade.find>arcade.wheel"), QStringLiteral("Open a file search from the wheel.")},
+        {QStringLiteral("arcade.find>arcade.clipboard"), QStringLiteral("Send search results to your copy history.")},
+        {QStringLiteral("arcade.find>arcade.shelf"), QStringLiteral("Keep search results on a shelf.")},
+        {QStringLiteral("arcade.find>arcade.tools"), QStringLiteral("Manage Find's updates and shortcuts.")},
+        {QStringLiteral("arcade.lens>arcade.box"), QStringLiteral("Run Box tools and pipelines on a selection.")},
+        {QStringLiteral("arcade.lens>arcade.look"), QStringLiteral("Preview a selection in Look.")},
+        {QStringLiteral("arcade.lens>arcade.clipboard"), QStringLiteral("Send a selection to your copy history.")},
+        {QStringLiteral("arcade.lens>arcade.shelf"), QStringLiteral("Keep a selection on a shelf.")},
+        {QStringLiteral("arcade.lens>arcade.find"), QStringLiteral("Search your files for selected text.")},
+        {QStringLiteral("arcade.lens>arcade.wheel"), QStringLiteral("Add a selected link or file to the wheel.")},
+        {QStringLiteral("arcade.lens>arcade.tools"), QStringLiteral("Manage Lens's updates and shortcuts.")},
+    };
+    return pairs.value(app + QLatin1Char('>') + peer, appPitch(peer));
+}
+
 QString releasesUrl(const QString &id)
 {
     if (id == Ids::Box) return QStringLiteral("https://github.com/qa-p1/Arcade-box/releases");
@@ -133,6 +155,138 @@ Locations Locations::discover()
 
 QString Locations::manifestPath(const QString &appId) const { return QDir(registry).filePath(appId + QStringLiteral(".json")); }
 QString Locations::endpointPath(const QString &appId) const { return QDir(runtime).filePath(appId + QStringLiteral(".endpoint")); }
+
+QString Locations::catalogPath() const
+{
+    QDir dir(registry);
+    return dir.cdUp() ? dir.filePath(QStringLiteral("catalog.json")) : QDir(registry).filePath(QStringLiteral("../catalog.json"));
+}
+
+// ---- Catalog ----------------------------------------------------------------
+
+static bool validCatalogApp(const QJsonValue &v)
+{
+    if (!v.isObject()) return false;
+    const QJsonObject o = v.toObject();
+    const QString id = o.value(QStringLiteral("id")).toString();
+    if (!o.value(QStringLiteral("id")).isString() || !id.startsWith(QStringLiteral("arcade.")) || id.size() <= 7) return false;
+    for (const char *key : {"name", "tagline", "repo"})
+        if (o.contains(QLatin1String(key)) && !o.value(QLatin1String(key)).isString()) return false;
+    if (o.contains(QStringLiteral("pairs"))) {
+        if (!o.value(QStringLiteral("pairs")).isObject()) return false;
+        for (const auto &p : o.value(QStringLiteral("pairs")).toObject())
+            if (!p.isString()) return false;
+    }
+    return true;
+}
+
+Catalog Catalog::parse(const QByteArray &json, bool *ok)
+{
+    Catalog c;
+    QJsonParseError err{};
+    const QJsonDocument doc = QJsonDocument::fromJson(json, &err);
+    const bool valid = err.error == QJsonParseError::NoError && doc.isObject() && doc.object().value(QStringLiteral("apps")).isArray();
+    if (ok) *ok = valid;
+    if (!valid) return c;
+    for (const auto &v : doc.object().value(QStringLiteral("apps")).toArray())
+        if (validCatalogApp(v)) c.apps << v.toObject();
+    // Arcade Tools has its own entry beside the apps.
+    if (validCatalogApp(doc.object().value(QStringLiteral("tools")))) c.apps << doc.object().value(QStringLiteral("tools")).toObject();
+    return c;
+}
+
+Catalog Catalog::load(const Locations &locations)
+{
+    static QMutex mutex;
+    static QString cachedPath;
+    static QDateTime cachedTime;
+    static Catalog cached;
+    const QString path = locations.catalogPath();
+    const QFileInfo info(path);
+    const QDateTime modified = info.exists() ? info.lastModified() : QDateTime();
+    QMutexLocker lock(&mutex);
+    if (cachedPath == path && modified.isValid() && cachedTime == modified) return cached;
+    QFile f(path);
+    Catalog c;
+    if (f.open(QIODevice::ReadOnly)) c = parse(f.readAll());
+    cachedPath = path;
+    cachedTime = modified;
+    cached = c;
+    return c;
+}
+
+QJsonObject Catalog::app(const QString &id) const
+{
+    for (const auto &a : apps)
+        if (a.value(QStringLiteral("id")).toString() == id) return a;
+    return {};
+}
+
+QString Catalog::name(const QString &id) const
+{
+    const QString n = app(id).value(QStringLiteral("name")).toString();
+    return n.isEmpty() ? appName(id) : n;
+}
+
+QString Catalog::tagline(const QString &id) const
+{
+    const QString t = app(id).value(QStringLiteral("tagline")).toString();
+    return t.isEmpty() ? appPitch(id) : t;
+}
+
+QString Catalog::pair(const QString &appId, const QString &peer) const
+{
+    const QString own = app(appId).value(QStringLiteral("pairs")).toObject().value(peer).toString();
+    if (!own.isEmpty()) return own;
+    const QString compiled = peerDescription(appId, peer);
+    return compiled.isEmpty() || compiled == appPitch(peer) ? tagline(peer) : compiled;
+}
+
+QString Catalog::releasesUrl(const QString &id) const
+{
+    const QString repo = app(id).value(QStringLiteral("repo")).toString();
+    if (repo.split(QLatin1Char('/'), Qt::SkipEmptyParts).size() == 2)
+        return QStringLiteral("https://github.com/%1/releases").arg(repo);
+    return ArcadeLink::releasesUrl(id);
+}
+
+QStringList Catalog::appIds() const
+{
+    QStringList listed;
+    for (const auto &a : apps) {
+        const QString id = a.value(QStringLiteral("id")).toString();
+        if (id != Ids::Tools) listed << id;
+    }
+    if (listed.isEmpty()) return Ids::apps();
+    QStringList out;
+    for (const QString &id : Ids::apps())
+        if (listed.contains(id)) out << id;
+    for (const QString &id : listed)
+        if (!Ids::apps().contains(id)) out << id;
+    return out;
+}
+
+bool writeSharedCatalog(const Locations &locations, const QByteArray &json, bool *changed, QString *error)
+{
+    if (changed) *changed = false;
+    bool ok = false;
+    if (Catalog::parse(json, &ok).apps.isEmpty()) {
+        if (error) *error = ok ? QStringLiteral("catalog lists no apps") : QStringLiteral("not a catalog");
+        return false;
+    }
+    const QString path = locations.catalogPath();
+    QFile old(path);
+    if (old.open(QIODevice::ReadOnly) && old.readAll() == json) return true;
+    old.close();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly) || f.write(json) != json.size() || !f.commit()) {
+        if (error) *error = f.errorString();
+        return false;
+    }
+    if (changed) *changed = true;
+    return true;
+}
 
 QString currentPlatform()
 {

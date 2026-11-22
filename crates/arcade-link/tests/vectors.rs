@@ -126,3 +126,24 @@ fn actions() {
         }
     }
 }
+
+#[test]
+fn catalog() {
+    use arcade_link::catalog::Catalog;
+    let v = load("catalog.json");
+    let check = |c: &Catalog, case: &Value| {
+        let s = |k: &str| case[k].as_str().unwrap_or_default();
+        let got = match s("fn") {
+            "name" => Value::from(c.name(s("id"))),
+            "tagline" => Value::from(c.tagline(s("id"))),
+            "releasesUrl" => Value::from(c.releases_url(s("id"))),
+            "pair" => Value::from(c.pair(s("app"), s("peer"))),
+            "appIds" => Value::from(c.app_ids()),
+            other => panic!("unknown lookup {other}"),
+        };
+        assert_eq!(got, case["expect"], "{case}");
+    };
+    let c = Catalog::parse(&v["catalog"].to_string()).unwrap();
+    v["lookups"].as_array().unwrap().iter().for_each(|case| check(&c, case));
+    v["fallback"].as_array().unwrap().iter().for_each(|case| check(&Catalog::default(), case));
+}

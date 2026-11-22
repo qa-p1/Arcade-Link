@@ -14,6 +14,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   `requires` and `output`. A malformed value in one of these reads as absent instead of hiding the whole card.
   Rust: `Action::surfaces`, `on_surface`, `is_one_click`, `rank_for`; Qt: `actionSurfaces`, `actionIsOneClick`,
   `actionRankFor`. New vectors: `spec/vectors/actions.json`.
+- The app list is data (SPEC §3.1): `catalog` module (Qt `Catalog`) reads names, taglines, release pages and pair
+  sentences from the copy of Arcade-catalog's `catalog.json` that Arcade Tools keeps at `Locations::catalog()`
+  (`<registry>/../catalog.json`), and `catalog::write_shared` (Qt `writeSharedCatalog`) stores it. The compiled
+  values are the fallback, so a new Arcade app needs a catalog entry, not a Link release. Qt gains
+  `peerDescription`. The CLI names apps from the catalog. Vectors: `spec/vectors/catalog.json`.
 - Refined content types (SPEC §5.1): `file/svg`, `file/csv`, `file/json`, `file/html`, `file/markdown`,
   `file/ebook` and `text/markdown`, each also its broader type (`file/csv` is a `file/spreadsheet`), plus the new
   `file/subtitle` (srt, vtt, ass, …, formerly `file/any`). `content::parent_type`, `is_kind`, `type_for`; Qt

@@ -49,6 +49,8 @@ QStringList apps();
 QString appName(const QString &id);
 QString appPitch(const QString &id);
 QString releasesUrl(const QString &id);
+// What `app` and `peer` do together (compiled; Catalog::pair reads the shared list first).
+QString peerDescription(const QString &app, const QString &peer);
 // The app's OS identifier (STANDARD.md §10), e.g. dev.arcade.Box; empty for an unknown id.
 QString osIdentifier(const QString &id);
 
@@ -62,7 +64,26 @@ struct Locations {
     static Locations under(const QString &root);
     QString manifestPath(const QString &appId) const;
     QString endpointPath(const QString &appId) const;
+    // The shared app list, next to the registry folder (never inside it).
+    QString catalogPath() const;
 };
+
+// The shared app list (SPEC §3.1), from Arcade-catalog's catalog.json, kept by Arcade Tools at
+// Locations::catalogPath(). Every lookup falls back to the compiled value, so each app still works alone.
+struct Catalog {
+    QList<QJsonObject> apps;
+    // Entries with the wrong shape, or an id that isn't arcade.<name>, are skipped; no `apps` array → *ok false.
+    static Catalog parse(const QByteArray &json, bool *ok = nullptr);
+    static Catalog load(const Locations &locations); // re-read only when the file changes
+    QJsonObject app(const QString &id) const;
+    QString name(const QString &id) const;
+    QString tagline(const QString &id) const;
+    QString pair(const QString &app, const QString &peer) const;
+    QString releasesUrl(const QString &id) const;
+    QStringList appIds() const; // known apps still listed (usual order), then new ones (catalog order); no Tools
+};
+// Tools: store a downloaded catalog. Refuses text that isn't a catalog with an app. Returns false on error.
+bool writeSharedCatalog(const Locations &locations, const QByteArray &json, bool *changed = nullptr, QString *error = nullptr);
 
 QString currentPlatform();                     // "linux", "windows", "macos"
 bool ensurePrivateDir(const QString &dir);     // mkpath + 0700 on Unix
