@@ -164,7 +164,9 @@ fn asking_for_a_folder_waits_and_cancel_ends_it() {
         assert!(start.elapsed() < Duration::from_secs(5));
         std::thread::sleep(Duration::from_millis(20));
     }
-    // Arcade Tools can't stop the helper (to replace it) while a job waits.
+    // Arcade Tools can't stop the helper (to replace it) while a job waits, and its status says so.
+    let status = arcade_link::server::Handler::status(&arcade_helper::resident::ResidentHandler(w.resident.clone()));
+    assert_eq!((status["busy"].as_bool(), status["jobs"].as_u64()), (Some(true), Some(1)), "{status}");
     let quit = arcade_link::server::Handler::quit(&arcade_helper::resident::ResidentHandler(w.resident.clone()));
     assert_eq!(quit.unwrap_err().code, arcade_link::ErrorCode::Busy);
     let chosen = w.root.join("Chosen");

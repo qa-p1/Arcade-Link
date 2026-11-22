@@ -488,7 +488,9 @@ impl Handler for ResidentHandler {
 
     fn status(&self) -> Value {
         let store = self.0.store.lock().unwrap_or_else(|e| e.into_inner());
-        json!({"mode": "background", "jobs": store.jobs.iter().filter(|r| !r.view.finished()).count()})
+        let unfinished = store.jobs.iter().filter(|r| !r.view.finished()).count();
+        // `busy`: Arcade Tools doesn't replace an app (or the helper) that says so.
+        json!({"mode": "background", "jobs": unfinished, "busy": unfinished > 0})
     }
 
     /// Arcade Tools quits the helper before replacing it; never while a job would be lost.
