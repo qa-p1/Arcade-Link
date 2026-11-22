@@ -290,7 +290,7 @@ impl Resident {
         }
         self.bump(&mut store);
         loop {
-            let Some(r) = store.jobs.iter_mut().find(|r| r.view.id == id) else { return None };
+            let r = store.jobs.iter_mut().find(|r| r.view.id == id)?;
             if let Some(answer) = r.answer.take() {
                 if answer.is_some() {
                     r.view.status = "running".into();
