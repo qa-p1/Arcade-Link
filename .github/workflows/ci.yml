@@ -44,6 +44,11 @@ jobs:
         run: |
           "$GITHUB_WORKSPACE/tools/ci/apt-install.sh" --no-install-recommends minisign
           echo ARCADE_REQUIRE_MINISIGN=1 >> "$GITHUB_ENV"
+      # arcade-helper's menu test launches its entries through GLib and validates them (required where CI is set).
+      - name: Desktop entry tools (helper menus)
+        if: runner.os == 'Linux'
+        timeout-minutes: 12
+        run: '"$GITHUB_WORKSPACE/tools/ci/apt-install.sh" --no-install-recommends desktop-file-utils libglib2.0-bin libxml2-utils'
       - name: Test
         run: cargo test --workspace --all-features --locked
       - name: Another user is refused (needs root)

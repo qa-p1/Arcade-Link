@@ -2,6 +2,7 @@
 //! SPEC §5.5; Arcade-catalog `dev/everywhere/PLAN.md` §4.4–4.5). Arcade Tools installs it and starts it at login.
 
 pub mod bridge;
+pub mod cli;
 pub mod client;
 pub mod ids;
 pub mod integrations;

@@ -1038,3 +1038,86 @@ def tools_preferences_restore_without_any_app_binary(s):
     finally:
         first.close()
         second.close()
+
+
+# ---- The Arcade helper with real apps (Arcade-catalog dev/everywhere/PLAN.md §5 item 2) ----------------------
+
+def _helper(s, *args, timeout=60):
+    exe = LINK / 'target/debug/arcade-helper'
+    assert exe.is_file(), f'{exe} is not built (cargo build -p arcade-helper)'
+    r = subprocess.run([str(exe), *args], env=s.env, capture_output=True, text=True, timeout=timeout)
+    assert r.returncode == 0, (args, r.stdout, r.stderr)
+    return r.stdout
+
+
+def _helper_png(path, width=64, height=48):
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+    rows = (b'\0' + b'\x30\x90\xc8' * width) * height
+    path.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+                     + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
+    return path
+
+
+def _helper_job(s, reference, path, timeout=150):
+    """Runs `reference` on `path` as a pinned menu entry does and returns the finished job."""
+    deadline = time.monotonic() + timeout
+    while True:
+        before = {j['id'] for j in json.loads(_helper(s, 'jobs'))['jobs']}
+        _helper(s, 'run', reference, str(path))
+        while True:
+            mine = [j for j in json.loads(_helper(s, 'jobs', '--wait-ms', '2000', timeout=30))['jobs'] if j['id'] not in before]
+            done = [j for j in mine if j['status'] in ('done', 'failed', 'cancelled')]
+            if done:
+                break
+            assert time.monotonic() < deadline, f'{reference} did not finish: {mine}'
+        job = done[0]
+        # A freshly started Box answers "still checking its engines" until its first probe ends.
+        if job['status'] == 'failed' and 'still checking its engines' in job.get('message', '') and time.monotonic() < deadline:
+            time.sleep(1)
+            continue
+        return job
+
+
+@check('tools-hub')
+def helper_offers_and_runs_real_apps_from_the_file_menu(s):
+    apps = ['arcade.box', 'arcade.look', 'arcade.lens']
+    fleet(s, apps)
+    pictures = s.root / 'home/Pictures'
+    pictures.mkdir(parents=True, exist_ok=True)
+    png = _helper_png(pictures / 'holiday photo.png')
+    # What the picker would list for a picture, straight from the real apps' cards.
+    offers = json.loads(_helper(s, 'offers', str(png)))
+    offered = {o['app'] for o in offers}
+    assert set(apps) <= offered, f'offers for a PNG come from {sorted(offered)}'
+    assert all(o['app'] != 'arcade.helper' for o in offers), 'the helper never offers its own actions'
+    # Box converts pictures with libvips (the runner has it, as a user has it from Tools' Engines page or their
+    # distribution); Box finds it shortly after starting.
+    def convert_ready():
+        actions = json.loads(s.cli('describe', 'box', '--json', check=True).stdout)
+        return any(a['id'] == 'box:arcade.image.convert#webp' and a.get('available', True) for a in actions)
+    wait(convert_ready, "Box's image provider did not become available", timeout=30, interval=.2)
+    # A result is placed next to the picture and never replaces a file already there.
+    (pictures / 'holiday photo.webp').write_bytes(b'mine')
+    job = _helper_job(s, 'arcade.box/box:arcade.image.convert#webp', png)
+    assert job['status'] == 'done', job
+    # Box writes beside the picture under its own name; whatever the name, it is new.
+    placed = Path(job['files'][0]) if job.get('files') else None
+    assert placed and placed.parent == pictures and placed.name != 'holiday photo.webp', job
+    assert placed.read_bytes()[8:12] == b'WEBP', job
+    assert (pictures / 'holiday photo.webp').read_bytes() == b'mine'
+    # Actions that answer with data finish without files.
+    for reference in ('arcade.look/look.inspect', 'arcade.lens/lens.recognize'):
+        job = _helper_job(s, reference, png)
+        assert job['status'] == 'done', job
+    # The resident wrote the menus into this profile; removing them leaves nothing behind.
+    state = s.root / 'arcade/helper/integrations.json'
+    open_with = s.root / 'data/applications/dev.arcade.helper.desktop'
+    assert state.is_file() and open_with.is_file(), (state, open_with)
+    _helper(s, 'integrate', '--remove')
+    assert not open_with.exists() and not (s.root / 'arcade/apps/arcade.helper.json').exists()
+    subprocess.run(['pkill', '-f', f'{LINK / "target/debug/arcade-helper"} --background'], check=False)
+    return f'offers from {sorted(offered)}; Box result placed as {placed.name}; Look and Lens done; menus removed'

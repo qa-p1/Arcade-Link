@@ -488,12 +488,23 @@ impl Handler for ResidentHandler {
 
     fn status(&self) -> Value {
         let store = self.0.store.lock().unwrap_or_else(|e| e.into_inner());
-        json!({"mode": "background", "jobs": store.jobs.iter().filter(|r| !r.view.finished()).count()})
+        let unfinished = store.jobs.iter().filter(|r| !r.view.finished()).count();
+        // `busy`: Arcade Tools doesn't replace an app (or the helper) that says so.
+        json!({"mode": "background", "jobs": unfinished, "busy": unfinished > 0})
     }
 
+    /// Arcade Tools reads `busy` in the status before it replaces the helper, and quits it regardless when Tools
+    /// itself is removed (a running program would keep its files from being deleted on Windows).
     fn quit(&self) -> Result<(), LinkError> {
-        std::thread::spawn(|| {
+        // The endpoint goes first, so whoever asked sees the helper gone at once on every OS.
+        let locations = self.0.locations.clone();
+        std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(100));
+            if let Ok(e) = arcade_link::endpoint::read(&locations, ids::HELPER_ID) {
+                if e.pid == std::process::id() {
+                    arcade_link::endpoint::remove_if_ours(&locations, ids::HELPER_ID, &e.token);
+                }
+            }
             std::process::exit(0);
         });
         Ok(())

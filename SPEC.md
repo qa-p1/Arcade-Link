@@ -458,6 +458,12 @@ offers): `helper.run`, `helper.jobs`, `helper.cancel`, `helper.answer`,
 `helper.dismiss` and `helper.integrate`, all accepting
 `structured/arcade-helper` on surface `internal`. The running helper owns
 every job, so closing the progress window or the browser never cancels work.
+Its status says `busy` while a job is unfinished, and Arcade Tools replaces the
+helper only when it isn't (`quit` itself always quits, so removing Tools can
+stop it). Menus must call a path that stays put:
+Tools installs the helper next to itself, and on Linux copies it out of its
+AppImage to a per-user folder (the helper names `$APPIMAGE` only when it runs
+from that AppImage's own mount).
 
 - **Menus:** the helper writes per-user file manager entries (Linux: Open
   With, Nautilus/Caja scripts, Dolphin, Nemo, Thunar; Windows: a cascading

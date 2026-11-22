@@ -109,6 +109,73 @@ impl State {
     }
 }
 
+/// Where a previous [`apply`] put Arcade: the file managers and browsers it reached, for Arcade Tools' Everywhere
+/// page (`arcade-helper status`). Names are what the user knows them by, each once, in first-written order.
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reach {
+    pub file_managers: Vec<String>,
+    pub browsers: Vec<String>,
+}
+
+fn browser_name(place: &str) -> Option<&'static str> {
+    let p = place.to_lowercase().replace('\\', "/");
+    [
+        ("google/chrome", "Chrome"),
+        ("google-chrome", "Chrome"),
+        ("chromium", "Chromium"),
+        ("brave", "Brave"),
+        ("edge", "Edge"),
+        ("vivaldi", "Vivaldi"),
+        ("librewolf", "LibreWolf"),
+        (".zen/", "Zen"),
+        ("mozilla", "Firefox"),
+    ]
+    .iter()
+    .find(|(needle, _)| p.contains(needle))
+    .map(|(_, name)| *name)
+}
+
+fn file_manager_name(place: &str) -> Option<&'static str> {
+    let p = place.to_lowercase().replace('\\', "/");
+    [
+        ("nautilus/scripts", "Files (Nautilus)"),
+        ("caja/scripts", "Caja"),
+        ("kio/servicemenus", "Dolphin"),
+        ("nemo/actions", "Nemo"),
+        ("thunar/uca.xml", "Thunar"),
+        ("applications/dev.arcade.helper", "Open With (every file manager)"),
+        ("/shell/arcade", "File Explorer"),
+    ]
+    .iter()
+    .find(|(needle, _)| p.contains(needle))
+    .map(|(_, name)| *name)
+}
+
+impl State {
+    pub fn reach(&self) -> Reach {
+        let mut reach = Reach::default();
+        let places = self
+            .files
+            .iter()
+            .map(|f| f.to_string_lossy().into_owned())
+            .chain(self.thunar.iter().map(|t| t.to_string_lossy().into_owned()))
+            .chain(self.registry_roots.iter().cloned());
+        for place in places {
+            let lower = place.to_lowercase();
+            let (list, name) = if lower.contains("nativemessaginghosts") || lower.contains("native-messaging-hosts") {
+                (&mut reach.browsers, browser_name(&place))
+            } else {
+                (&mut reach.file_managers, file_manager_name(&place))
+            };
+            if let Some(name) = name.filter(|n| !list.iter().any(|x| x == n)) {
+                list.push(name.to_string());
+            }
+        }
+        reach
+    }
+}
+
 /// What changed on disk.
 #[derive(Debug, Default, PartialEq)]
 pub struct Applied {
@@ -226,4 +293,36 @@ pub fn plan_for_this_os(exe: &Path, entries: &[Entry], home: &Home) -> Plan {
     plan.registry.extend(browsers.registry);
     plan.registry_roots.extend(browsers.registry_roots);
     plan
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reach_names_the_file_managers_and_browsers_once() {
+        let state = State {
+            files: [
+                "/h/.local/share/applications/dev.arcade.helper.desktop",
+                "/h/.local/share/applications/dev.arcade.helper.pin1.desktop",
+                "/h/.local/share/nautilus/scripts/Arcade/Arcade…",
+                "/h/.config/caja/scripts/Arcade/Arcade…",
+                "/h/.local/share/kio/servicemenus/dev.arcade.helper.desktop",
+                "/h/.local/share/nemo/actions/dev.arcade.helper.nemo_action",
+                "/h/.config/google-chrome/NativeMessagingHosts/dev.arcade.helper.json",
+                "/h/.zen/native-messaging-hosts/dev.arcade.helper.json",
+                "/h/.mozilla/native-messaging-hosts/dev.arcade.helper.json",
+                "/h/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/dev.arcade.helper.json",
+            ]
+            .iter()
+            .map(PathBuf::from)
+            .collect(),
+            thunar: Some(PathBuf::from("/h/.config/Thunar/uca.xml")),
+            registry_roots: vec![r"Software\Classes\*\shell\Arcade".into(), r"Software\Microsoft\Edge\NativeMessagingHosts\dev.arcade.helper".into()],
+        };
+        let reach = state.reach();
+        assert_eq!(reach.file_managers, ["Open With (every file manager)", "Files (Nautilus)", "Caja", "Dolphin", "Nemo", "Thunar", "File Explorer"]);
+        assert_eq!(reach.browsers, ["Chrome", "Zen", "Firefox", "Brave", "Edge"]);
+        assert_eq!(State::default().reach(), Reach::default());
+    }
 }
