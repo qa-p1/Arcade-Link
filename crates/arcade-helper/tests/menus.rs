@@ -13,7 +13,8 @@
 //! The validators are required where `CI` is set; elsewhere a missing one is reported and its check left out.
 
 // The shared helpers are used by the Linux and Windows checks only.
-#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#![cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code, unused_imports))]
+#![cfg_attr(windows, allow(dead_code))]
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
