@@ -259,7 +259,7 @@ mod tests {
         let user = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<actions>\n<action>\n\t<name>Open Terminal Here</name>\n\t<unique-id>1234</unique-id>\n</action>\n</actions>\n";
         let ours = plan(Path::new("/x"), &[pin()], &Home::under(Path::new("/h"))).thunar.unwrap().1;
         let once = thunar_merged(Some(user), &ours).unwrap();
-        assert!(once.contains("Open Terminal Here") && once.contains("arcade-helper-0") && once.contains("&apos;") == false);
+        assert!(once.contains("Open Terminal Here") && once.contains("arcade-helper-0") && !once.contains("&apos;"));
         assert_eq!(thunar_merged(Some(&once), &ours).unwrap(), once, "merging again changes nothing");
         assert_eq!(thunar_merged(Some(&once), &[]).unwrap(), user, "removing ours restores the user's file");
         assert!(thunar_merged(Some("garbage"), &ours).is_none());
