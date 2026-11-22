@@ -157,11 +157,55 @@ pub fn type_matches(accept: &str, offered: &str) -> bool {
     let a_sub = a.split_once('/').map_or("", |x| x.1);
     let o_sub = o.split_once('/').map_or("", |x| x.1);
     match af {
-        "text" => a_sub == "*" || (a_sub == "plain" && (o_sub == "url" || o_sub == "rich")),
-        "file" => a_sub == "*" || a_sub == "any",
+        "text" => a_sub == "*" || (a_sub == "plain" && matches!(o_sub, "url" | "rich" | "markdown")),
+        "file" => a_sub == "*" || a_sub == "any" || ancestors(o).any(|t| t == a),
         "structured" | "screen" => a_sub == "*",
         _ => false,
     }
+}
+
+/// The broader type a refined type also is (SPEC §5.1): `file/csv` is a `file/spreadsheet`, `file/json` and
+/// `file/html` are `file/code`, `file/svg` is a `file/image`, `file/ebook` is a `file/document`, `file/markdown` is a
+/// `file/text`, `text/markdown` is `text/plain`. An action that accepts the broader type takes the refined one, so
+/// cards written before a kind was refined keep working. Arrays keep their `[]`.
+pub fn parent_type(kind: &str) -> Option<String> {
+    let array = is_array(kind);
+    let parent = match base(kind) {
+        "file/csv" => "file/spreadsheet",
+        "file/json" | "file/html" => "file/code",
+        "file/svg" => "file/image",
+        "file/ebook" => "file/document",
+        "file/markdown" => "file/text",
+        "text/markdown" => "text/plain",
+        _ => return None,
+    };
+    Some(if array { format!("{parent}[]") } else { parent.to_string() })
+}
+
+/// `kind` itself is not included; its parent, the parent's parent, and so on.
+fn ancestors(kind: &str) -> impl Iterator<Item = String> {
+    std::iter::successors(parent_type(kind), |k| parent_type(k))
+}
+
+/// Whether `kind` is `of` or a refinement of it (`is_kind("file/csv", "file/spreadsheet")` is true).
+pub fn is_kind(kind: &str, of: &str) -> bool {
+    kind == of || ancestors(kind).any(|k| k == of)
+}
+
+/// The type to send to an action that accepts `accepts`: `offered` if one of the patterns names it (or a wildcard
+/// takes it), otherwise the closest broader type a pattern names. A refined kind is only sent to an app whose card
+/// names it, so an app built before the kind existed still recognizes what it receives.
+pub fn type_for(accepts: &[String], offered: &str) -> String {
+    // A pattern names `t` when it is `t` itself (or `t`'s array form, which takes a single value too), or a
+    // wildcard (`*`, `<family>/*`, `file/any`) that takes it.
+    let named = |t: &str| {
+        accepts.iter().any(|a| {
+            let (a, _) = split_hint(a);
+            let sub = base(a).split_once('/').map_or("", |x| x.1);
+            a == "*" || (base(a) == base(t) || sub == "*" || sub == "any") && type_matches(a, t)
+        })
+    };
+    std::iter::once(offered.to_string()).chain(ancestors(offered)).find(|t| named(t)).unwrap_or_else(|| offered.to_string())
 }
 
 /// Whether `content` satisfies `accept`, including a required hint.
@@ -189,19 +233,25 @@ pub fn file_kind_for_path(path: &Path) -> &'static str {
 /// The Link file kind for a lower-case extension without the dot.
 pub fn file_kind_for_extension(ext: &str) -> &'static str {
     match ext {
-        "png" | "jpg" | "jpeg" | "jpe" | "jfif" | "gif" | "webp" | "bmp" | "tif" | "tiff" | "heic" | "heif" | "avif" | "ico" | "svg" | "jxl" | "tga"
-        | "qoi" | "psd" | "raw" | "cr2" | "nef" | "dng" | "arw" | "exr" | "hdr" => "image",
+        "svg" | "svgz" => "svg",
+        "csv" | "tsv" => "csv",
+        "json" | "jsonl" | "ndjson" | "geojson" => "json",
+        "html" | "htm" | "xhtml" => "html",
+        "md" | "markdown" | "mdown" | "mkd" => "markdown",
+        "epub" | "mobi" | "azw3" | "fb2" | "djvu" => "ebook",
+        "srt" | "vtt" | "ass" | "ssa" | "sub" | "sbv" | "lrc" => "subtitle",
+        "png" | "jpg" | "jpeg" | "jpe" | "jfif" | "gif" | "webp" | "bmp" | "tif" | "tiff" | "heic" | "heif" | "avif" | "ico" | "jxl" | "tga" | "qoi"
+        | "psd" | "raw" | "cr2" | "nef" | "dng" | "arw" | "exr" | "hdr" => "image",
         "mp4" | "mkv" | "mov" | "webm" | "avi" | "m4v" | "wmv" | "flv" | "mpg" | "mpeg" | "3gp" | "ogv" => "video",
         "mp3" | "wav" | "flac" | "ogg" | "oga" | "opus" | "m4a" | "aac" | "wma" | "aiff" | "aif" | "alac" | "mid" | "midi" => "audio",
         "pdf" => "pdf",
-        "doc" | "docx" | "odt" | "rtf" | "pages" | "epub" => "document",
-        "xls" | "xlsx" | "ods" | "csv" | "tsv" | "numbers" => "spreadsheet",
+        "doc" | "docx" | "odt" | "rtf" | "pages" => "document",
+        "xls" | "xlsx" | "ods" | "numbers" => "spreadsheet",
         "ppt" | "pptx" | "odp" | "key" => "presentation",
         "zip" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "7z" | "rar" | "zst" | "lz" | "lzma" | "cab" | "iso" => "archive",
-        "txt" | "md" | "markdown" | "log" | "ini" | "cfg" | "conf" | "nfo" => "text",
+        "txt" | "log" | "ini" | "cfg" | "conf" | "nfo" => "text",
         "rs" | "c" | "h" | "cpp" | "hpp" | "cc" | "py" | "js" | "mjs" | "ts" | "tsx" | "jsx" | "java" | "kt" | "go" | "rb" | "php" | "swift" | "cs" | "sh"
-        | "bash" | "zsh" | "fish" | "ps1" | "json" | "yaml" | "yml" | "toml" | "xml" | "html" | "htm" | "css" | "scss" | "sql" | "lua" | "dart" | "qml"
-        | "vue" | "svelte" => "code",
+        | "bash" | "zsh" | "fish" | "ps1" | "yaml" | "yml" | "toml" | "xml" | "css" | "scss" | "sql" | "lua" | "dart" | "qml" | "vue" | "svelte" => "code",
         "ttf" | "otf" | "woff" | "woff2" | "ttc" => "font",
         "obj" | "stl" | "gltf" | "glb" | "fbx" | "3mf" | "dae" | "ply" => "model",
         _ => "any",
@@ -229,6 +279,35 @@ mod tests {
         assert!(!type_matches("file/image", "file/pdf"));
         assert!(type_matches("file/any", "file/pdf"));
         assert!(!type_matches("folder/reference", "file/any"));
+    }
+
+    #[test]
+    fn refined_kinds_match_their_broader_type() {
+        assert!(type_matches("file/spreadsheet", "file/csv"));
+        assert!(type_matches("file/spreadsheet[]", "file/csv[]"));
+        assert!(type_matches("file/spreadsheet[]", "file/csv"));
+        assert!(!type_matches("file/spreadsheet", "file/csv[]"));
+        assert!(!type_matches("file/csv", "file/spreadsheet"));
+        assert!(type_matches("file/code", "file/json"));
+        assert!(type_matches("file/image", "file/svg"));
+        assert!(type_matches("text/plain", "text/markdown"));
+        assert!(!type_matches("file/image", "file/subtitle"));
+        assert!(type_matches("file/any", "file/subtitle"));
+    }
+
+    #[test]
+    fn a_refined_kind_is_sent_as_what_the_card_names() {
+        let old_card = vec!["file/spreadsheet".to_string()];
+        assert_eq!(type_for(&old_card, "file/csv"), "file/spreadsheet");
+        let new_card = vec!["file/csv".to_string(), "file/spreadsheet".to_string()];
+        assert_eq!(type_for(&new_card, "file/csv"), "file/csv");
+        let any = vec!["file/*".to_string()];
+        assert_eq!(type_for(&any, "file/csv"), "file/csv");
+        assert_eq!(type_for(&["file/spreadsheet[]".to_string()], "file/csv[]"), "file/spreadsheet[]");
+        assert_eq!(type_for(&["file/spreadsheet[]".to_string()], "file/csv"), "file/spreadsheet");
+        assert_eq!(type_for(&["text/plain".to_string()], "text/markdown"), "text/plain");
+        assert_eq!(type_for(&["file/image".to_string()], "file/pdf"), "file/pdf");
+        assert!(is_kind("file/csv", "file/spreadsheet") && !is_kind("file/spreadsheet", "file/csv"));
     }
 
     #[test]

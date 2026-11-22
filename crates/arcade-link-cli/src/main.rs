@@ -371,7 +371,7 @@ fn invoke(loc: &Locations, args: &[String]) -> Result<(), String> {
 
 fn simple(loc: &Locations, args: &[String], method: &str, params: Value) -> Result<(), String> {
     let id = app_id(args.get(1).ok_or("needs an app")?);
-    let name = arcade_link::manifest::app_name(&id).to_string();
+    let name = arcade_link::catalog::Catalog::load(loc).name(&id);
     let shown = |e: arcade_link::LinkError| format!("{} [{}]", e.user_message(&name), e);
     let mut c = Client::connect(loc, &id, &me()).map_err(shown)?;
     let r = c.call(method, params).map_err(shown)?;
