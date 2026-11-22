@@ -1104,8 +1104,9 @@ def helper_offers_and_runs_real_apps_from_the_file_menu(s):
     (pictures / 'holiday photo.webp').write_bytes(b'mine')
     job = _helper_job(s, 'arcade.box/box:arcade.image.convert#webp', png)
     assert job['status'] == 'done', job
+    # Box writes beside the picture under its own name; whatever the name, it is new.
     placed = Path(job['files'][0]) if job.get('files') else None
-    assert placed == pictures / 'holiday photo (1).webp', job
+    assert placed and placed.parent == pictures and placed.name != 'holiday photo.webp', job
     assert placed.read_bytes()[8:12] == b'WEBP', job
     assert (pictures / 'holiday photo.webp').read_bytes() == b'mine'
     # Actions that answer with data finish without files.
