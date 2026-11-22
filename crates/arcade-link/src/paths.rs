@@ -131,9 +131,19 @@ impl Locations {
     /// The shared copy of the app list (`catalog.json`), next to the registry folder so registry watchers never
     /// read it as an app's card.
     pub fn catalog(&self) -> PathBuf {
+        self.beside_registry("catalog.json")
+    }
+
+    /// The user's choices about offers (defaults per job, hidden and pinned actions, output folder), shared by
+    /// every app and the helper.
+    pub fn offer_prefs(&self) -> PathBuf {
+        self.beside_registry("offers.json")
+    }
+
+    fn beside_registry(&self, name: &str) -> PathBuf {
         match self.registry.parent() {
-            Some(parent) if !parent.as_os_str().is_empty() => parent.join("catalog.json"),
-            _ => self.registry.join("..").join("catalog.json"),
+            Some(parent) if !parent.as_os_str().is_empty() => parent.join(name),
+            _ => self.registry.join("..").join(name),
         }
     }
 }

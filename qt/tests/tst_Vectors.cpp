@@ -140,6 +140,44 @@ private slots:
         QVERIFY(writeSharedCatalog(loc, text, &changed) && !changed);
         QVERIFY(!QFileInfo(loc.catalogPath()).absolutePath().startsWith(QFileInfo(loc.registry).absoluteFilePath()));
         QCOMPARE(Catalog::load(loc).name(QStringLiteral("arcade.paint")), QStringLiteral("Arcade Paint"));
+
+        QCOMPARE(loadOfferPrefs(loc), QJsonObject{});
+        const QJsonObject prefs{{QStringLiteral("pinned"), QJsonArray{QStringLiteral("arcade.clipboard/clipboard.add")}}};
+        QVERIFY(saveOfferPrefs(loc, prefs));
+        QCOMPARE(loadOfferPrefs(loc), prefs);
+        QVERIFY(!QFileInfo(loc.offerPrefsPath()).absolutePath().startsWith(QFileInfo(loc.registry).absoluteFilePath()));
+    }
+
+    void offersVectors()
+    {
+        const QJsonObject v = load(QStringLiteral("offers.json"));
+        QList<QJsonObject> cards;
+        for (const auto &c : v.value(QStringLiteral("cards")).toArray()) cards << c.toObject();
+        for (const auto &c : v.value(QStringLiteral("inputType")).toArray()) {
+            const QJsonObject o = c.toObject();
+            const QString got = offerInputType(o.value(QStringLiteral("items")).toArray());
+            QCOMPARE(got, o.value(QStringLiteral("type")).toString());
+        }
+        for (const auto &c : v.value(QStringLiteral("cases")).toArray()) {
+            const QJsonObject o = c.toObject();
+            const QByteArray name = o.value(QStringLiteral("name")).toString().toUtf8();
+            const QList<QJsonObject> got = offers(o.value(QStringLiteral("items")).toArray(), o.value(QStringLiteral("surface")).toString(),
+                                                  cards, o.value(QStringLiteral("rules")).toObject(), o.value(QStringLiteral("prefs")).toObject());
+            const QJsonArray want = o.value(QStringLiteral("expect")).toArray();
+            QStringList gotRefs, wantRefs;
+            for (const auto &g : got) gotRefs << g.value(QStringLiteral("app")).toString() + QLatin1Char('/') + g.value(QStringLiteral("action")).toString();
+            for (const auto &w : want) wantRefs << w.toObject().value(QStringLiteral("ref")).toString();
+            QVERIFY2(gotRefs == wantRefs, (name + ": " + gotRefs.join(QLatin1Char(',')).toUtf8()).constData());
+            for (qsizetype i = 0; i < got.size(); ++i) {
+                const QJsonObject g = got.at(i), w = want.at(i).toObject();
+                const QByteArray where = name + ": " + wantRefs.at(i).toUtf8();
+                for (const auto &[key, fallback] : {std::pair{"enabled", true}, {"preferred", false}, {"other", false}, {"choose", false}, {"pinned", false}})
+                    QVERIFY2(g.value(QLatin1String(key)).toBool(false) == w.value(QLatin1String(key)).toBool(fallback), (where + " " + key).constData());
+                for (const char *key : {"rank", "title", "reason", "install", "group", "oneClick"})
+                    if (w.contains(QLatin1String(key)))
+                        QVERIFY2(g.value(QLatin1String(key)) == w.value(QLatin1String(key)), (where + " " + key).constData());
+            }
+        }
     }
 
     void errors()

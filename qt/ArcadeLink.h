@@ -66,6 +66,8 @@ struct Locations {
     QString endpointPath(const QString &appId) const;
     // The shared app list, next to the registry folder (never inside it).
     QString catalogPath() const;
+    // The user's choices about offers (offers.json), next to the registry folder.
+    QString offerPrefsPath() const;
 };
 
 // The shared app list (SPEC §3.1), from Arcade-catalog's catalog.json, kept by Arcade Tools at
@@ -81,6 +83,7 @@ struct Catalog {
     QString pair(const QString &app, const QString &peer) const;
     QString releasesUrl(const QString &id) const;
     QStringList appIds() const; // known apps still listed (usual order), then new ones (catalog order); no Tools
+    QJsonObject rules;          // corrections to offers (SPEC §5.5); empty when absent
 };
 // Tools: store a downloaded catalog. Refuses text that isn't a catalog with an app. Returns false on error.
 bool writeSharedCatalog(const Locations &locations, const QByteArray &json, bool *changed = nullptr, QString *error = nullptr);
@@ -175,6 +178,15 @@ QString executablePath();                      // $APPIMAGE or the running binar
 // Shown for this content: link enabled, available, on this OS, accepts it.
 bool actionOffered(const QJsonObject &manifest, const QJsonObject &action, const QJsonObject &content);
 bool actionUsable(const QJsonObject &manifest, const QJsonObject &action);
+
+// "What can I do with this?" (SPEC §5.5), the same rules as Rust's offers module (spec/vectors/offers.json).
+// Items are {type, size?, hints?}. Offers are {app, action, title, group?, rank, enabled, reason?, install?, job?,
+// preferred?, other?, choose?, pinned?, oneClick?} (absent booleans are false).
+QString offerInputType(const QJsonArray &items); // empty: nothing selected, or no shared type
+QList<QJsonObject> offers(const QJsonArray &items, const QString &surface, const QList<QJsonObject> &cards,
+                          const QJsonObject &rules, const QJsonObject &prefs);
+QJsonObject loadOfferPrefs(const Locations &locations); // {} when missing or malformed
+bool saveOfferPrefs(const Locations &locations, const QJsonObject &prefs);
 // Link 1.1 (SPEC §3). A malformed field reads as absent, as in Rust.
 // Where the action is offered: its `surfaces`, else derived from `accepts` (always with "palette").
 QStringList actionSurfaces(const QJsonObject &action);

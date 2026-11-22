@@ -409,6 +409,45 @@ first node's input in `inputs`; its effects are the union of its nodes'
 effects. A pipeline's `{app:"arcade.box", action:"box.pipeline.run",
 options.pipeline}` is what Wheel slots and Lens/Look entries store.
 
+### 5.5 Offers
+
+"What can I do with this?" has one answer, computed by Link (Rust
+`offers::offers`, Qt `offers`) from the installed cards, the catalog's `rules`
+and the user's choices. Every caller (apps, the file manager menus, the
+browser extension) shows that answer instead of keeping its own list of other
+apps' actions; a caller may add its own actions beside it.
+
+- **Input:** the selected items (`{type, size?, hints?}`) and a surface
+  (§3; empty means any). One item is offered as its type, with its hints;
+  several files as the array of the narrowest type they all are
+  (`file/csv` + `file/spreadsheet` → `file/spreadsheet[]`, otherwise
+  `file/any[]`); nothing selected matches actions with empty `accepts`. Text
+  mixed with files, or several folders, has no shared type and gets no offers.
+- **Included:** every action of a card with Link on, on this OS, offered on
+  the surface, taking the input, and neither hidden by `rules.hide` nor by the
+  user. An unavailable action appears only when it names `requires`, as a
+  disabled entry with `install` set to the first requirement; otherwise it is
+  left out (§1: never a broken entry). More items than `maxItems`, or a file
+  larger than `maxBytes`, gives a disabled entry with the reason ("Takes at
+  most 50 items", "Takes files up to 16 MB").
+- **Rank:** the action's rank for the kind (§3; arrays rank as their base
+  kind) plus the largest matching `rules.boost` value.
+- **Jobs:** an offer's job is `rules.jobs[ref]`, else the card's `job`. When
+  actions of two or more apps share a job: with no default for it, all get
+  `choose` (callers show them all and offer "Always use …"); with a default
+  (`defaults[job]`, an offered reference), that one is `preferred` and the rest
+  are `other` (callers put them under "Other apps").
+- **Order:** pinned first, then enabled before disabled, then not-`other`
+  before `other`, then higher rank, then title (case-insensitive), app id and
+  action id.
+
+References are `<app-id>/<action-id>`. `rules` (in `catalog.json`):
+`{hide:[ref], rename:{ref:title}, boost:{ref:{pattern:points}},
+jobs:{ref:job}}`. The user's choices live in `offers.json` next to the
+registry folder: `{defaults:{job:ref}, hidden:[ref], pinned:[ref],
+outputFolder?, askWhere?}`; a malformed file reads as no choices. Vectors:
+`spec/vectors/offers.json`.
+
 ## 6. Errors
 
 | Code | Meaning |

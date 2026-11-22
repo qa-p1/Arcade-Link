@@ -37,6 +37,7 @@ pub mod handoff;
 pub mod install;
 pub mod logs;
 pub mod manifest;
+pub mod offers;
 pub mod oneshot;
 pub mod paths;
 pub mod presence;

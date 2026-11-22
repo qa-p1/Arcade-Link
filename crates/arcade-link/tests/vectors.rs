@@ -147,3 +147,38 @@ fn catalog() {
     v["lookups"].as_array().unwrap().iter().for_each(|case| check(&c, case));
     v["fallback"].as_array().unwrap().iter().for_each(|case| check(&Catalog::default(), case));
 }
+
+#[test]
+fn offers() {
+    use arcade_link::offers::{input_type, offers, Item, Prefs, Rules};
+    let v = load("offers.json");
+    let cards: Vec<Manifest> = v["cards"].as_array().unwrap().iter().map(|c| Manifest::from_json(&c.to_string()).unwrap()).collect();
+    for case in v["inputType"].as_array().unwrap() {
+        let items: Vec<Item> = serde_json::from_value(case["items"].clone()).unwrap();
+        assert_eq!(input_type(&items).map(Value::from).unwrap_or(Value::Null), case["type"], "{case}");
+    }
+    for case in v["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let items: Vec<Item> = serde_json::from_value(case["items"].clone()).unwrap();
+        let rules: Rules = serde_json::from_value(case.get("rules").cloned().unwrap_or_default()).unwrap_or_default();
+        let prefs: Prefs = serde_json::from_value(case.get("prefs").cloned().unwrap_or_default()).unwrap_or_default();
+        let got = offers(&items, case["surface"].as_str().unwrap(), &cards, &rules, &prefs);
+        let want = case["expect"].as_array().unwrap();
+        let refs: Vec<String> = got.iter().map(|o| o.reference()).collect();
+        let want_refs: Vec<&str> = want.iter().map(|e| e["ref"].as_str().unwrap()).collect();
+        assert_eq!(refs, want_refs, "{name}");
+        for (o, e) in got.iter().zip(want) {
+            let o = serde_json::to_value(o).unwrap();
+            let flag = |k: &str, default: bool| (o.get(k).and_then(Value::as_bool).unwrap_or(false), e.get(k).and_then(Value::as_bool).unwrap_or(default));
+            for (k, d) in [("enabled", true), ("preferred", false), ("other", false), ("choose", false), ("pinned", false)] {
+                let (g, w) = flag(k, d);
+                assert_eq!(g, w, "{name}: {} {k}", e["ref"]);
+            }
+            for k in ["rank", "title", "reason", "install", "group", "oneClick"] {
+                if let Some(w) = e.get(k) {
+                    assert_eq!(o.get(k).unwrap_or(&Value::Null), w, "{name}: {} {k}", e["ref"]);
+                }
+            }
+        }
+    }
+}
