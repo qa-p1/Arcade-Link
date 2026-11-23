@@ -6,6 +6,7 @@
 
 pub mod browsers;
 pub mod linux;
+pub mod macos;
 pub mod windows;
 
 use serde::{Deserialize, Serialize};
@@ -146,6 +147,7 @@ fn file_manager_name(place: &str) -> Option<&'static str> {
         ("thunar/uca.xml", "Thunar"),
         ("applications/dev.arcade.helper", "Open With (every file manager)"),
         ("/shell/arcade", "File Explorer"),
+        ("library/services/dev.arcade.helper", "Finder"),
     ]
     .iter()
     .find(|(needle, _)| p.contains(needle))
@@ -247,6 +249,9 @@ pub fn apply(plan: &Plan, state_path: &Path) -> io::Result<Applied> {
     if !plan.registry.is_empty() || !old.registry_roots.is_empty() {
         windows::apply(&old.registry_roots, &plan.registry_roots, &plan.registry)?;
     }
+    if cfg!(target_os = "macos") && done != Applied::default() {
+        macos::refresh();
+    }
     let state = State {
         files: plan.files.iter().map(|f| f.path.clone()).collect(),
         thunar: plan.thunar.as_ref().map(|(p, _)| p.clone()),
@@ -269,11 +274,20 @@ pub fn remove_all(state_path: &Path) -> io::Result<Applied> {
     Ok(done)
 }
 
-/// Removes our own folders once they're empty (`nautilus/scripts/Arcade`), never anything else.
+/// Removes our own folders once they're empty (`nautilus/scripts/Arcade`, a Quick Action's
+/// `dev.arcade.helper….workflow/Contents`), never anything else.
 fn remove_empty_parent(path: &Path) {
-    if let Some(dir) = path.parent() {
-        if dir.file_name().is_some_and(|n| n == "Arcade") {
-            std::fs::remove_dir(dir).ok();
+    let Some(dir) = path.parent() else { return };
+    if dir.file_name().is_some_and(|n| n == "Arcade") {
+        std::fs::remove_dir(dir).ok();
+    }
+    let bundle = dir.parent().filter(|b| {
+        dir.file_name().is_some_and(|n| n == "Contents")
+            && b.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("dev.arcade.helper") && n.ends_with(".workflow"))
+    });
+    if let Some(bundle) = bundle {
+        if std::fs::remove_dir(dir).is_ok() {
+            std::fs::remove_dir(bundle).ok();
         }
     }
 }
@@ -283,8 +297,7 @@ pub fn plan_for_this_os(exe: &Path, entries: &[Entry], home: &Home) -> Plan {
     let mut plan = if cfg!(windows) {
         windows::plan(exe, entries)
     } else if cfg!(target_os = "macos") {
-        // Finder's entries are Services declared by the Arcade Tools app bundle; nothing per user to write.
-        Plan::default()
+        macos::plan(exe, entries, home)
     } else {
         linux::plan(exe, entries, home)
     };
@@ -313,6 +326,7 @@ mod tests {
                 "/h/.zen/native-messaging-hosts/dev.arcade.helper.json",
                 "/h/.mozilla/native-messaging-hosts/dev.arcade.helper.json",
                 "/h/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/dev.arcade.helper.json",
+                "/h/Library/Services/dev.arcade.helper.workflow/Contents/Info.plist",
             ]
             .iter()
             .map(PathBuf::from)
@@ -321,7 +335,7 @@ mod tests {
             registry_roots: vec![r"Software\Classes\*\shell\Arcade".into(), r"Software\Microsoft\Edge\NativeMessagingHosts\dev.arcade.helper".into()],
         };
         let reach = state.reach();
-        assert_eq!(reach.file_managers, ["Open With (every file manager)", "Files (Nautilus)", "Caja", "Dolphin", "Nemo", "Thunar", "File Explorer"]);
+        assert_eq!(reach.file_managers, ["Open With (every file manager)", "Files (Nautilus)", "Caja", "Dolphin", "Nemo", "Finder", "Thunar", "File Explorer"]);
         assert_eq!(reach.browsers, ["Chrome", "Zen", "Firefox", "Brave", "Edge"]);
         assert_eq!(State::default().reach(), Reach::default());
     }

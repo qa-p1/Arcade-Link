@@ -9,11 +9,14 @@
 //!   action.
 //! - Windows (in CI only: it writes the real `HKCU`): each verb's command line run with the file in place of `%1`;
 //!   removing leaves no key.
+//! - macOS: each Quick Action's plists pass `plutil -lint`; its shell step runs with the selected files as
+//!   arguments (as Automator's "as arguments" does) and the whole workflow runs under `automator`; removing leaves
+//!   no bundle.
 //!
 //! The validators are required where `CI` is set; elsewhere a missing one is reported and its check left out.
 
 // The shared helpers are used by the Linux and Windows checks only.
-#![cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code, unused_imports))]
+#![cfg_attr(not(any(target_os = "linux", windows, target_os = "macos")), allow(dead_code, unused_imports))]
 #![cfg_attr(windows, allow(dead_code))]
 
 use std::path::{Path, PathBuf};
@@ -29,6 +32,13 @@ fn main() {
         std::fs::write(out, args.join("\n")).expect("record the arguments");
         return;
     }
+    // Started by a Quick Action, which may not pass our environment on: record next to the program.
+    if cfg!(target_os = "macos") && matches!(std::env::args().nth(1).as_deref(), Some("run" | "menu")) {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let out = std::env::current_exe().unwrap().with_file_name("argv");
+        std::fs::write(out, args.join("\n")).expect("record the arguments");
+        return;
+    }
     let root = std::env::temp_dir().join(format!("arcade-helper-menus-{}", std::process::id()));
     std::fs::remove_dir_all(&root).ok();
     std::fs::create_dir_all(&root).unwrap();
@@ -36,6 +46,8 @@ fn main() {
     linux::run(&root);
     #[cfg(windows)]
     windows::run(&root);
+    #[cfg(target_os = "macos")]
+    macos::run(&root);
     std::fs::remove_dir_all(&root).ok();
     println!("menus: ok");
 }
@@ -348,5 +360,70 @@ mod windows {
             assert!(!status.success(), "{r} left behind");
         }
         eprintln!("menus: {checked} verbs checked on Windows");
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod macos {
+    use super::*;
+    use std::process::Command;
+
+    fn lint(file: &Path) {
+        let r = Command::new("plutil").arg("-lint").arg(file).output().unwrap();
+        assert!(r.status.success(), "{}: {}", file.display(), String::from_utf8_lossy(&r.stdout));
+    }
+
+    /// One value out of a plist, by key path, as `plutil` reads it.
+    fn extract(file: &Path, key: &str) -> String {
+        let r = Command::new("plutil").args(["-extract", key, "raw", "-o", "-"]).arg(file).output().unwrap();
+        assert!(r.status.success(), "{key} in {}: {}", file.display(), String::from_utf8_lossy(&r.stderr));
+        String::from_utf8(r.stdout).unwrap().trim_end_matches('\n').to_string()
+    }
+
+    pub fn run(root: &Path) {
+        let exe = recorder(&root.join("Arcade o'k & $x `y` <z>"), "arcade helper");
+        let out = exe.with_file_name("argv");
+        let files_dir = root.join("files");
+        std::fs::create_dir_all(&files_dir).unwrap();
+        let a = files_dir.join("a b.png");
+        let b = files_dir.join("it's $HOME \"q\" & <x>.png");
+        for f in [&a, &b] {
+            std::fs::write(f, b"png").unwrap();
+        }
+        let files = [a.as_path(), b.as_path()];
+        let home = Home::under(&root.join("home"));
+        let entries = entries();
+        let plan = integrations::plan_for_this_os(&exe, &entries, &home);
+        let state = root.join("state.json");
+        integrations::apply(&plan, &state).unwrap();
+        let services = home.home.join("Library/Services");
+        let automator = tool("automator");
+        for (i, entry) in entries.iter().enumerate() {
+            let bundle = services.join(if entry.is_picker() { "dev.arcade.helper.workflow".to_string() } else { format!("dev.arcade.helper.pin{i}.workflow") });
+            let (info, wflow) = (bundle.join("Contents/Info.plist"), bundle.join("Contents/document.wflow"));
+            lint(&info);
+            lint(&wflow);
+            assert_eq!(extract(&info, "NSServices.0.NSMenuItem.default"), entry.title);
+            assert_eq!(extract(&info, "NSServices.0.NSMessage"), "runWorkflowAsService");
+            assert_eq!(extract(&wflow, "workflowMetaData.workflowTypeIdentifier"), "com.apple.Automator.servicesMenu");
+            assert_eq!(extract(&wflow, "actions.0.action.ActionParameters.inputMethod"), "1", "files go in as arguments");
+
+            // The shell step, run as Automator runs it: `sh -c <command> <files…>`.
+            let command = extract(&wflow, "actions.0.action.ActionParameters.COMMAND_STRING");
+            let r = Command::new("/bin/sh").arg("-c").arg(&command).arg("sh").args(files).output().unwrap();
+            assert!(r.status.success(), "{command}");
+            assert_eq!(recorded(&out), expected(entry, &files), "shell step of {}", bundle.display());
+
+            // The whole workflow under Automator, with one file as its input.
+            if let Some(automator) = &automator {
+                let r = Command::new(automator).arg("-i").arg(&a).arg(&bundle).output().unwrap();
+                assert!(r.status.success(), "automator {}: {}{}", bundle.display(), String::from_utf8_lossy(&r.stdout), String::from_utf8_lossy(&r.stderr));
+                assert_eq!(recorded(&out), expected(entry, &[a.as_path()]), "automator {}", bundle.display());
+            }
+        }
+        integrations::remove_all(&state).unwrap();
+        let left: Vec<_> = std::fs::read_dir(&services).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+        assert!(left.is_empty(), "left behind: {left:?}");
+        eprintln!("menus: {} Quick Actions checked on macOS", entries.len());
     }
 }
