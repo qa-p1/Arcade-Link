@@ -174,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "arcade-helper"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "arcade-link",
  "base64",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "arcade-link"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "base64",
  "blake2",
@@ -211,7 +211,7 @@ dependencies = [
 
 [[package]]
 name = "arcade-link-cli"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "arcade-link",
  "libc",

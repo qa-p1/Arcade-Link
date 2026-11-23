@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-11-23
+
 ### Added
 - `arcade-helper` on macOS: Finder Quick Actions ("Arcade…" and each pinned action) in `~/Library/Services`,
   filtered to each action's file types and kept in step like the Linux and Windows entries. Checked in CI with
