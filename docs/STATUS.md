@@ -1,5 +1,16 @@
 # Arcade Link status
 
+## 2026-11-22: 1.1.0 (cards, offers, the Arcade helper)
+
+- 1.1.0 is `b79b89d` (#82 dependencies, #84 offers, #85–#86 the helper). Its post-merge CI, Ecosystem e2e and
+  Desktop harness passed; the real-apps Ecosystem e2e passed every job but one check, once:
+  `tools_first_restart_and_clean_quit_preserve_real_app_trays`, where the real Find exited 127 at start with an empty
+  log (run 45063055289). 127 from Find's AppRun (`/bin/sh`, `exec usr/bin/arcade-find`) means the file was missing in
+  its unpacked folder: another process unpacking or removing the same folder. Which one is not known yet: no other
+  app starts Find in that check, and each session has its own `TMPDIR`. `Session.wait_running` now reports, on an
+  exit 126/127, every other process using the package or an unpacked folder and what the folders hold, so a
+  repeat names the cause. Open until then.
+
 ## 2026-11-02: ecosystem harness follows the overhauled apps
 
 - Latest library tag: `v0.4.15` (`56798545d263c104ded54877239750f9645c32a3`).

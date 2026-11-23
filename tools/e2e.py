@@ -325,7 +325,8 @@ class Session:
                 return
             p = self.procs.get(app)
             if p and p.poll() is not None:
-                raise AssertionError(f"{app} exited ({p.returncode}); log:\n{self.log(app)}")
+                extra = self.unpack_report(p.args[0]) if p.returncode in (126, 127) else ""
+                raise AssertionError(f"{app} exited ({p.returncode}); log:\n{self.log(app)}{extra}")
             time.sleep(0.05)
         raise AssertionError(f"{app} did not start serving the Link; log:\n{self.log(app)}")
 
@@ -372,6 +373,31 @@ class Session:
     def log(self, app: str) -> str:
         p = self.root / f"{app}.log"
         return p.read_text(errors="replace")[-3000:] if p.exists() else ""
+
+    def unpack_report(self, exe: str) -> str:
+        """Exit 126/127 at start means the shell or the kernel could not run a file in the AppImage's unpacked
+        folder (busy, half written or removed). Name every other process using that package or folder, and what the
+        folder holds now, so the next failure says which process raced it (one exit 127 on 2026-11-22, cause not
+        yet known)."""
+        if os.name == "nt":
+            return ""
+        tmp = Path(self.env.get("TMPDIR", "/tmp"))
+        name = Path(exe).name
+        lines = []
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit() or entry.name == str(os.getpid()):
+                continue
+            try:
+                cmdline = (entry / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace").strip()
+                target = os.readlink(entry / "exe")
+            except OSError:
+                continue
+            if name in cmdline or "/appimage_extracted_" in target:
+                lines.append(f"  pid {entry.name}: {target} | {cmdline[:200]}")
+        for folder in sorted(tmp.glob("appimage_extracted_*")):
+            files = sorted(str(f.relative_to(folder)) for f in folder.rglob("*") if f.parent == folder or f.parent.name == "bin")[:20]
+            lines.append(f"  {folder.name}: {files}")
+        return "\nUnpack state (other processes on the package, unpacked folders):\n" + ("\n".join(lines) or "  none")
 
     def kill(self, app: str, sig=None) -> None:
         p = self.procs.pop(app, None)
