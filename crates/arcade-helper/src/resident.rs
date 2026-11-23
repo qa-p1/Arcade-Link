@@ -385,6 +385,9 @@ impl Resident {
 
 /// Keeps the menu entries current: rewrites them when an app's card changes, or the catalog or the user's choices
 /// do (both live next to the registry folder). Events are coalesced; nothing is polled.
+///
+/// When its own card goes, the helper was uninstalled (`integrate --remove` takes the entries away, then the card):
+/// it stops instead of writing the entries back.
 pub fn watch(r: Arc<Resident>) {
     use notify::Watcher as _;
     let (tx, rx) = std::sync::mpsc::channel::<()>();
@@ -411,6 +414,9 @@ pub fn watch(r: Arc<Resident>) {
         while rx.recv().is_ok() {
             std::thread::sleep(Duration::from_millis(300));
             while rx.try_recv().is_ok() {}
+            if !r.locations.manifest(ids::HELPER_ID).exists() {
+                leave(&r.locations);
+            }
             if let Err(e) = r.refresh_integrations() {
                 eprintln!("arcade-helper: menu entries: {e}");
             }
@@ -500,13 +506,18 @@ impl Handler for ResidentHandler {
         let locations = self.0.locations.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(100));
-            if let Ok(e) = arcade_link::endpoint::read(&locations, ids::HELPER_ID) {
-                if e.pid == std::process::id() {
-                    arcade_link::endpoint::remove_if_ours(&locations, ids::HELPER_ID, &e.token);
-                }
-            }
-            std::process::exit(0);
+            leave(&locations);
         });
         Ok(())
     }
+}
+
+/// Takes this helper's endpoint away (not one a newer helper wrote meanwhile) and exits.
+fn leave(locations: &Locations) -> ! {
+    if let Ok(e) = arcade_link::endpoint::read(locations, ids::HELPER_ID) {
+        if e.pid == std::process::id() {
+            arcade_link::endpoint::remove_if_ours(locations, ids::HELPER_ID, &e.token);
+        }
+    }
+    std::process::exit(0);
 }

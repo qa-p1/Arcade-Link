@@ -5,6 +5,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `arcade-helper` on macOS: Finder Quick Actions ("Arcade…" and each pinned action) in `~/Library/Services`,
+  filtered to each action's file types and kept in step like the Linux and Windows entries. Checked in CI with
+  `plutil` and by running each Quick Action under `automator`.
+
+### Fixed
+- `arcade-helper` stops when its card is removed (uninstalling with `arcade-helper integrate --remove` while it
+  runs) instead of writing its menu entries back on the next card or catalog change.
+- Tier 2 smoke (`tools/desktop/tests/smoke.py`) sets `ARCADE_NO_INSTALL_PROMPT=1`, so an app that asks to install
+  itself before it starts (Arcade Box, Arcade Lens) doesn't wait on that dialog when started with `--dashboard`.
+
 ## [1.1.0] — 2026-11-22
 
 ### Added

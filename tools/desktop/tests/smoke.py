@@ -16,7 +16,10 @@ show = sys.argv[sys.argv.index("--show") + 1] if "--show" in sys.argv else "--ba
 desktop = os.environ.get("ARCADE_DESKTOP", "?")
 home = tempfile.mkdtemp(prefix="smoke-home-")
 env = {**os.environ, "HOME": home, "XDG_CONFIG_HOME": f"{home}/.config", "XDG_DATA_HOME": f"{home}/.local/share",
-       "XDG_CACHE_HOME": f"{home}/.cache", "ARCADE_HOME": f"{home}/arcade-link", "APPIMAGE_EXTRACT_AND_RUN": "1"}
+       "XDG_CACHE_HOME": f"{home}/.cache", "ARCADE_HOME": f"{home}/arcade-link", "APPIMAGE_EXTRACT_AND_RUN": "1",
+       # The app was installed just above, but from a temp path an app may still offer to install itself before it
+       # starts (Box and Lens ask in a dialog, which would block --dashboard on a desktop with nobody to answer it).
+       "ARCADE_NO_INSTALL_PROMPT": "1"}
 subprocess.run([app, "--install", "--silent", "--no-launch"], env=env, timeout=120, capture_output=True)
 proc = subprocess.Popen([app, show], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 problems = []

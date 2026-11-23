@@ -67,3 +67,57 @@ fn the_resident_quits_at_once_and_leaves_no_endpoint() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("removed"), "{}", String::from_utf8_lossy(&out.stdout));
     std::fs::remove_dir_all(&root).ok();
 }
+
+/// Uninstalling while the helper runs (`integrate --remove`: the entries, then its card) stops it, and it doesn't
+/// write the entries back on its way out.
+#[test]
+fn removing_its_card_stops_the_resident() {
+    let root = std::env::temp_dir().join(format!("arcade-helper-uninstall-{}", std::process::id()));
+    std::fs::remove_dir_all(&root).ok();
+    std::fs::create_dir_all(&root).unwrap();
+    let locations = Locations::under(&root.join("arcade"));
+    let helper = |arg: &str| {
+        let mut c = std::process::Command::new(env!("CARGO_BIN_EXE_arcade-helper"));
+        c.arg(arg)
+            .env("ARCADE_HOME", root.join("arcade"))
+            .env("HOME", root.join("home"))
+            .env("XDG_DATA_HOME", root.join("data"))
+            .env("XDG_CONFIG_HOME", root.join("config"))
+            .env("APPDATA", root.join("roaming"))
+            .env("LOCALAPPDATA", root.join("local"));
+        c
+    };
+    let mut child = helper("--background").spawn().unwrap();
+    let start = Instant::now();
+    while !locations.manifest("arcade.helper").exists() || arcade_link::endpoint::read(&locations, "arcade.helper").is_err() {
+        assert!(start.elapsed() < Duration::from_secs(20), "the helper didn't start");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(Duration::from_millis(500));
+    let out = helper("integrate").arg("--remove").output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let start = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if start.elapsed() > Duration::from_secs(10) {
+            child.kill().ok();
+            panic!("the helper still runs 10 s after its card was removed");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert!(status.success(), "{status}");
+    assert!(arcade_link::endpoint::read(&locations, "arcade.helper").is_err(), "endpoint left behind");
+    // Nothing written back (Linux: the Open With entries live under XDG_DATA_HOME/applications).
+    std::thread::sleep(Duration::from_millis(500));
+    #[cfg(target_os = "linux")]
+    {
+        let apps = root.join("data").join("applications");
+        let left: Vec<_> = std::fs::read_dir(&apps).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+        assert!(left.is_empty(), "entries written back: {left:?}");
+    }
+    let out = helper("integrate").arg("--remove").output().unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("0 written, 0 removed"), "{}", String::from_utf8_lossy(&out.stdout));
+    std::fs::remove_dir_all(&root).ok();
+}
