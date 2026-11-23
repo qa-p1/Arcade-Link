@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn one_quick_action_per_entry_for_its_types() {
         let plan = plan(Path::new("/Applications/Arcade Tools.app/Contents/MacOS/arcade-helper"), &[Entry::picker(), pin()], &Home::under(Path::new("/h")));
-        let paths: Vec<_> = plan.files.iter().map(|f| f.path.to_string_lossy().into_owned()).collect();
+        let paths: Vec<_> = plan.files.iter().map(|f| f.path.to_string_lossy().replace('\\', "/")).collect();
         assert_eq!(
             paths,
             [
