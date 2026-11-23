@@ -1,5 +1,15 @@
 # Arcade Link status
 
+## 2026-11-23: 1.1.1 (Finder, the helper stops on uninstall)
+
+- 1.1.1 is #88: the helper writes Finder Quick Actions on macOS (checked in CI by `plutil` and by running each one
+  under `automator`), stops when its card is removed instead of writing its menus back (Tools 1.1.0 Gates
+  `verify-helper`), and the Tier 2 smoke sets `ARCADE_NO_INSTALL_PROMPT=1` so Box and Lens can be smoke-tested with
+  `--dashboard` again. Tagged after its post-merge CI, Ecosystem e2e and Desktop harness.
+- The Find exit 127 below: #87 makes a repeat name the other process; it has not repeated since.
+- Not in 1.1.1: egui 0.37 for the design kit. It needs Rust 1.95, so Link, Tools, Find and Lens move off 1.88
+  together; recorded in the plan's backlog.
+
 ## 2026-11-22: 1.1.0 (cards, offers, the Arcade helper)
 
 - 1.1.0 is `b79b89d` (#82 dependencies, #84 offers, #85–#86 the helper). Its post-merge CI, Ecosystem e2e and
