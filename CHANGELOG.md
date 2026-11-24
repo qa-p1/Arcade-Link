@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-11-24
+
 ### Fixed
 - `arcade-helper` runs an action that takes no input (empty `accepts`: Arcade Box's password generator, timer, IP,
   loan calculator…) when asked with none, once, instead of refusing with "nothing to run on". The browser
