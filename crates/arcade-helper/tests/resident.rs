@@ -23,10 +23,13 @@ struct Paint {
 
 impl Handler for Paint {
     fn describe(&self) -> Vec<Action> {
-        vec![paint_action()]
+        vec![paint_action(), swatch_action()]
     }
     fn invoke(&self, request: InvokeRequest, _ctx: &InvokeContext) -> Result<Reply, LinkError> {
         self.seen.lock().unwrap().push(request.clone());
+        if request.action == "paint.swatch" {
+            return Ok(Reply::Done(InvokeResult { outputs: vec![Content::text("text/plain", "#5a5a5a")], message: None, data: None }));
+        }
         let mut outputs = Vec::new();
         for c in &request.inputs {
             for p in c.path.iter().chain(&c.paths) {
@@ -44,6 +47,11 @@ fn paint_action() -> Action {
     serde_json::from_value(json!({"id": "paint.invert", "title": "Invert colors", "accepts": ["file/image", "file/image[]"], "oneClick": true,
         "options": {"version": 1, "controls": [{"key": "strength", "label": "Strength", "type": "number", "default": 5}]}}))
     .unwrap()
+}
+
+/** An action that takes nothing: a random colour. */
+fn swatch_action() -> Action {
+    serde_json::from_value(json!({"id": "paint.swatch", "title": "Random colour", "accepts": []})).unwrap()
 }
 
 struct World {
@@ -73,7 +81,7 @@ fn world(name: &str) -> World {
     let exe = std::env::current_exe().unwrap();
     let mut m = Manifest::new("arcade.paint", "1.0.0", &exe.to_string_lossy());
     m.name = "Arcade Paint".into();
-    m.actions = vec![paint_action()];
+    m.actions = vec![paint_action(), swatch_action()];
     write_manifest(&locations, &m).unwrap();
     let server =
         Server::start(ServerConfig { app: PeerInfo { id: "arcade.paint".into(), version: "1.0.0".into() }, locations: locations.clone() }, paint.clone())
@@ -149,6 +157,19 @@ fn missing_apps_and_actions_fail_with_a_sentence() {
     let id = w.resident.queue(RunSpec { reference: "arcade.paint/paint.gone".into(), paths: vec![a], ..RunSpec::default() }).unwrap();
     assert!(wait_finished(&w.resident, id).message.contains("no longer offers"));
     assert!(w.resident.queue(RunSpec { reference: "arcade.paint/paint.invert".into(), ..RunSpec::default() }).is_err(), "nothing to run on");
+    std::fs::remove_dir_all(&w.root).ok();
+}
+
+#[test]
+fn an_action_that_takes_nothing_runs_once_without_input() {
+    let w = world("nothing");
+    let id = w.resident.queue(RunSpec { reference: "arcade.paint/paint.swatch".into(), origin: "browser".into(), ..RunSpec::default() }).unwrap();
+    let job = wait_finished(&w.resident, id);
+    assert_eq!((job.status.as_str(), job.title.as_str(), job.inputs), ("done", "Random colour", 0), "{job:?}");
+    assert_eq!(job.texts, ["#5a5a5a"]);
+    let seen = w.paint.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1, "one request");
+    assert!(seen[0].inputs.is_empty());
     std::fs::remove_dir_all(&w.root).ok();
 }
 

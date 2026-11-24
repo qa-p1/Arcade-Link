@@ -433,12 +433,13 @@ impl eframe::App for Progress {
             let s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
             (s.jobs.clone(), s.gone)
         };
-        // A system notification for each job that finishes while the window isn't in front.
+        // A system notification for each job that finishes while the window isn't in front. The browser extension
+        // tells about its own jobs, with their results, so those aren't announced twice.
         let focused = ctx.input(|i| i.focused);
         let fresh: Vec<&JobView> = jobs.iter().filter(|j| j.finished() && !self.seen_done.contains(&j.id)).collect();
         for j in fresh {
             self.seen_done.push(j.id);
-            if !focused && j.status != "cancelled" {
+            if !focused && j.status != "cancelled" && j.origin != "browser" {
                 let body = if j.status == "done" { format!("{} finished.", j.title) } else { j.message.clone() };
                 notify_rust::Notification::new().appname("Arcade").summary(&j.title).body(&body).show().ok();
             }

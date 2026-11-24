@@ -5,6 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- `arcade-helper` runs an action that takes no input (empty `accepts`: Arcade Box's password generator, timer, IP,
+  loan calculator…) when asked with none, once, instead of refusing with "nothing to run on". The browser
+  extension's search runs these from its popup.
+- `arcade-helper`'s progress window no longer sends a system notification for jobs started from the browser: the
+  extension announces them itself, with the result, so they aren't announced twice.
+
 ## [1.1.1] — 2026-11-23
 
 ### Added
