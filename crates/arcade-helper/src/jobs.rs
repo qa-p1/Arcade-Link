@@ -182,9 +182,31 @@ pub fn place(outputs: &[Content], dir: Option<&Path>) -> std::io::Result<Placed>
     Ok(placed)
 }
 
+/// How far a job of `total` runs is while run `index` reports `current`. An app with no number for its step
+/// (looking up a video, joining files) sends none: the first run then has none either, so the bar moves instead
+/// of sitting at 0; later runs still count the ones that finished.
+pub fn overall(index: usize, total: f32, current: Option<f32>) -> Option<f32> {
+    let total = total.max(1.0);
+    match current {
+        Some(fraction) => Some((index as f32 + fraction.clamp(0.0, 1.0)) / total),
+        None if index > 0 => Some(index as f32 / total),
+        None => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_number_from_the_app_stays_no_number_until_a_run_has_finished() {
+        assert_eq!(overall(0, 1.0, None), None);
+        assert_eq!(overall(0, 1.0, Some(0.36)), Some(0.36));
+        assert_eq!(overall(0, 1.0, Some(2.0)), Some(1.0));
+        assert_eq!(overall(1, 4.0, None), Some(0.25));
+        assert_eq!(overall(1, 4.0, Some(0.5)), Some(0.375));
+        assert_eq!(overall(0, 4.0, None), None);
+    }
     use serde_json::json;
 
     fn action(v: Value) -> Action {

@@ -13,6 +13,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   extension's search runs these from its popup.
 - `arcade-helper`'s progress window no longer sends a system notification for jobs started from the browser: the
   extension announces them itself, with the result, so they aren't announced twice.
+- `arcade-helper` keeps "no number" as no number when an app sends progress without a fraction (Arcade Box looking
+  up a video, joining files). Its progress window and the browser extension then show a moving bar instead of one
+  sitting at 0. With several runs, the finished ones still count.
 
 ## [1.1.1] — 2026-11-23
 

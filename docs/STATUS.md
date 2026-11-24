@@ -4,8 +4,9 @@
 
 - 1.1.2 is #90: the helper runs an action that takes no input (Box's password generator, timer, IP…) once when
   asked with none, as the browser extension's popup does, and its progress window doesn't send a second system
-  notification for jobs the extension started (the extension shows its own). Tagged after its post-merge CI,
-  Ecosystem e2e and Desktop harness.
+  notification for jobs the extension started (the extension shows its own). It also has #92: progress with no
+  number stays no number, so the bar moves instead of sitting at 0 (Box now sends real progress or none). Tagged
+  after its post-merge CI, Ecosystem e2e and Desktop harness.
 - Not in 1.1.2: Zen's native messaging folder. The helper writes both candidates (`~/.zen` and Mozilla's); which one
   Zen reads is confirmed on the owner's computer (catalog dev/everywhere/LOCAL-PROMPTS.md, prompt B).
 
