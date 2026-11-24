@@ -1,5 +1,14 @@
 # Arcade Link status
 
+## 2026-11-24: 1.1.2 (the helper for the browser extension)
+
+- 1.1.2 is #90: the helper runs an action that takes no input (Box's password generator, timer, IP…) once when
+  asked with none, as the browser extension's popup does, and its progress window doesn't send a second system
+  notification for jobs the extension started (the extension shows its own). Tagged after its post-merge CI,
+  Ecosystem e2e and Desktop harness.
+- Not in 1.1.2: Zen's native messaging folder. The helper writes both candidates (`~/.zen` and Mozilla's); which one
+  Zen reads is confirmed on the owner's computer (catalog dev/everywhere/LOCAL-PROMPTS.md, prompt B).
+
 ## 2026-11-23: 1.1.1 (Finder, the helper stops on uninstall)
 
 - 1.1.1 is #88: the helper writes Finder Quick Actions on macOS (checked in CI by `plutil` and by running each one
