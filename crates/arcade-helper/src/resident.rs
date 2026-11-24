@@ -364,10 +364,10 @@ impl Resident {
             }
             let request = jobs::request(&spec.reference, &action, inputs, &spec.values, spec.origin())?;
             let mut on_progress = |p: &arcade_link::wire::JobProgress| {
-                let f = (i as f32 + p.fraction.unwrap_or(0.0)) / total;
+                let f = jobs::overall(i, total, p.fraction);
                 let message = p.message.clone();
                 self.update(id, |v| {
-                    v.fraction = Some(f);
+                    v.fraction = f;
                     v.message = message;
                 });
             };
