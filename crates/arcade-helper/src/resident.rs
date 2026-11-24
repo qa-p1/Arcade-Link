@@ -168,12 +168,14 @@ impl Resident {
     /// Queues a run, or adds its files to a file-menu job on the same action queued a moment ago.
     pub fn queue(&self, spec: RunSpec) -> Result<u64, LinkError> {
         let (app, _, _) = jobs::parse_reference(&spec.reference).ok_or_else(|| LinkError::denied("not an action reference"))?;
-        if spec.paths.is_empty() && spec.inputs.is_empty() {
+        let action = self.registry.with(|r| r.get(app).and_then(|m| action_of(m, &spec.reference)).cloned());
+        // An action that takes nothing (a password generator, a timer) runs from the browser's popup with no input.
+        let takes_nothing = action.as_ref().is_some_and(|a| a.accepts.is_empty());
+        if spec.paths.is_empty() && spec.inputs.is_empty() && !takes_nothing {
             return Err(LinkError::denied("nothing to run on"));
         }
         let catalog = Catalog::load(&self.locations);
-        let title =
-            self.registry.with(|r| r.get(app).and_then(|m| action_of(m, &spec.reference)).map(|a| a.title.clone())).unwrap_or_else(|| spec.reference.clone());
+        let title = action.map(|a| a.title).unwrap_or_else(|| spec.reference.clone());
         let mut store = self.store.lock().unwrap_or_else(|e| e.into_inner());
         if spec.origin() == Origin::FileMenu && spec.inputs.is_empty() {
             if let Some(r) = store.jobs.iter_mut().find(|r| {
@@ -337,7 +339,13 @@ impl Resident {
             return Err(format!("{} no longer offers this. Update it from Arcade Tools.", catalog.name(app)));
         };
         let paths: Vec<PathBuf> = spec.paths.iter().map(PathBuf::from).collect();
-        let runs = if spec.inputs.is_empty() { jobs::runs_for(&action, &paths) } else { vec![spec.inputs.clone()] };
+        let runs = if !spec.inputs.is_empty() {
+            vec![spec.inputs.clone()]
+        } else if paths.is_empty() && action.accepts.is_empty() {
+            vec![Vec::new()]
+        } else {
+            jobs::runs_for(&action, &paths)
+        };
         let prefs = Prefs::load(&self.locations);
         let dir = match jobs::target(&action, &prefs, spec.origin(), paths.first().map(PathBuf::as_path)) {
             Target::Folder(d) => Some(d),

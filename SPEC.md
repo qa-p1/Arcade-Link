@@ -476,7 +476,11 @@ from that AppImage's own mount).
 - **Results:** files an action returns are copied, never overwriting
   (`name (1).ext`), next to the input (file menus) or to the output folder
   (`outputFolder`, else Downloads; browser), or the user is asked when
-  `askWhere` is set. Clicks on one action within 400 ms run as one job.
+  `askWhere` is set. Clicks on one action within 400 ms run as one job. A
+  run needs an input, except for an action whose `accepts` is empty (a
+  password generator, a timer), which runs once with none. Jobs started from
+  the browser are announced by the extension, not by the helper's own
+  system notification.
 - **Browser:** the extension talks native messaging to host
   `dev.arcade.helper` (a u32 length in native byte order, then UTF-8 JSON;
   at most 1 MiB out and 64 MiB in). Only the Arcade extension's ID is let in:
